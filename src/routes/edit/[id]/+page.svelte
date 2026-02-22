@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onMount } from 'svelte';
+import { toast } from 'svelte-sonner';
 import { goto } from '$app/navigation';
 import { page } from '$app/stores';
 import CommandBar from '$lib/components/CommandBar.svelte';
@@ -31,6 +32,8 @@ let focalPoints = $state<FocalPoint[]>([]);
 let loading = $state(true);
 
 let saveStatus = $state<'saved' | 'saving' | 'unsaved'>('saved');
+let saveProgress = $state(0);
+let saveTotal = $state(0);
 
 const photoId = Number($page.params.id);
 
@@ -88,6 +91,8 @@ function handleKeyDown(event: KeyboardEvent) {
 
 async function saveMetadata() {
 	saveStatus = 'saving';
+	saveProgress = 0;
+	saveTotal = frames.length + focalPoints.length;
 	try {
 		for (const frame of frames) {
 			await updateFrame(frame.id, {
@@ -97,6 +102,7 @@ async function saveMetadata() {
 				height: frame.height,
 				label: frame.label
 			});
+			saveProgress++;
 		}
 		for (const point of focalPoints) {
 			await updateFocalPoint(point.id, {
@@ -105,11 +111,14 @@ async function saveMetadata() {
 				label: point.label,
 				required: point.required
 			});
+			saveProgress++;
 		}
 		saveStatus = 'saved';
+		toast.success('Saved');
 	} catch (error) {
 		console.error('Failed to save metadata:', error);
 		saveStatus = 'unsaved';
+		toast.error('Save failed');
 	}
 }
 
@@ -198,6 +207,12 @@ async function handleSetOutputDir() {
 <svelte:window onkeydown={handleKeyDown} />
 
 <div class="editor">
+	{#if saveStatus === 'saving' && saveTotal > 0}
+		<div class="save-progress">
+			<div class="save-progress-bar" style="width:{(saveProgress / saveTotal) * 100}%"></div>
+		</div>
+	{/if}
+
 	<a href="/" class="back-btn" aria-label="Back">
 		<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
 			<path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -259,5 +274,21 @@ async function handleSetOutputDir() {
 		align-items: center;
 		justify-content: center;
 		color: #6b7280;
+	}
+
+	.save-progress {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 3px;
+		z-index: 100;
+		background: rgba(255, 255, 255, 0.1);
+	}
+
+	.save-progress-bar {
+		height: 100%;
+		background: #3b82f6;
+		transition: width 0.15s ease;
 	}
 </style>
