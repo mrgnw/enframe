@@ -4,19 +4,20 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { onDestroy, onMount } from 'svelte';
 import { importFile } from '$lib/db';
 import { getImageSrc } from '$lib/tauri';
-import { getWatchDir, scanWatchDir, setWatchDir } from '$lib/watch';
+import { persistWatchDir, scanWatchDir } from '$lib/watch';
 
 interface Props {
 	onPhotosImported?: () => void;
+	highlighted?: boolean;
+	watchDir: string | null;
+	onWatchDirChange?: (dir: string | null) => void;
 }
 
-let { onPhotosImported }: Props = $props();
+let { onPhotosImported, highlighted = false, watchDir, onWatchDirChange }: Props = $props();
 
-let watchDir = $state<string | null>(getWatchDir());
 let knownPaths = $state<Set<string>>(new Set());
 let polling = $state(false);
 let timer: ReturnType<typeof setInterval> | null = null;
-let dragOver = $state(false);
 let importing = $state(false);
 
 onMount(() => {
@@ -77,71 +78,39 @@ function loadImageDimensions(src: string): Promise<{ width: number; height: numb
 	});
 }
 
-function handleDrop(e: DragEvent) {
-	e.preventDefault();
-	e.stopPropagation();
-	dragOver = false;
-
-	const items = e.dataTransfer?.items;
-	if (!items) return;
-
-	for (const item of Array.from(items)) {
-		const entry = item.webkitGetAsEntry?.();
-		if (entry?.isDirectory) {
-			const path = (e.dataTransfer?.files[0] as any)?.path;
-			if (path) {
-				watchDir = path;
-				setWatchDir(path);
-				knownPaths = new Set();
-				startPolling();
-				return;
-			}
-		}
+function updateDir(dir: string | null) {
+	persistWatchDir(dir);
+	onWatchDirChange?.(dir);
+	if (dir) {
+		knownPaths = new Set();
+		startPolling();
+	} else {
+		stopPolling();
+		knownPaths = new Set();
 	}
-}
-
-function handleDragOver(e: DragEvent) {
-	e.preventDefault();
-	e.stopPropagation();
-	dragOver = true;
-}
-
-function handleDragLeave(e: DragEvent) {
-	e.preventDefault();
-	dragOver = false;
 }
 
 async function pickWatchDir() {
 	const dir = await open({ directory: true, title: 'Select folder to watch' });
 	if (!dir || typeof dir !== 'string') return;
-	watchDir = dir;
-	setWatchDir(dir);
-	knownPaths = new Set();
-	startPolling();
+	updateDir(dir);
 }
 
 function clearWatch() {
-	stopPolling();
-	watchDir = null;
-	setWatchDir(null);
-	knownPaths = new Set();
+	updateDir(null);
 }
 
 let dirName = $derived(watchDir?.split('/').pop() ?? '');
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions, a11y_no_noninteractive_tabindex -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="watch-pill"
 	class:active={!!watchDir}
-	class:drag-over={dragOver}
+	class:highlighted
 	class:clickable={!watchDir}
-	ondrop={handleDrop}
-	ondragover={handleDragOver}
-	ondragleave={handleDragLeave}
 	onclick={() => { if (!watchDir) pickWatchDir(); }}
 	role={watchDir ? undefined : 'button'}
-	tabindex={watchDir ? undefined : 0}
 >
 	{#if watchDir}
 		<Eye size={14} class="icon-watch" />
@@ -151,7 +120,7 @@ let dirName = $derived(watchDir?.split('/').pop() ?? '');
 		{:else}
 			<span class="status watching">WATCHING</span>
 		{/if}
-		<button class="clear-btn" onclick={clearWatch} title="Stop watching">
+		<button class="clear-btn" onclick={(e) => { e.stopPropagation(); clearWatch(); }} title="Stop watching">
 			<X size={12} />
 		</button>
 	{:else}
@@ -170,21 +139,22 @@ let dirName = $derived(watchDir?.split('/').pop() ?? '');
 		border: 1px solid #333;
 		border-radius: 0.375rem;
 		font-size: 0.75rem;
-		cursor: default;
+		cursor: pointer;
 		transition: border-color 0.15s, background 0.15s;
 		white-space: nowrap;
+		color: #ccc;
 	}
 
-	.watch-pill.clickable {
-		cursor: pointer;
-	}
-
-	.watch-pill.clickable:hover {
+	.watch-pill:hover:not(:disabled) {
 		border-color: #555;
 		background: #222;
 	}
 
-	.watch-pill.drag-over {
+	.watch-pill:disabled {
+		cursor: default;
+	}
+
+	.watch-pill.highlighted {
 		border-color: #4ade80;
 		background: #1a2e1a;
 	}

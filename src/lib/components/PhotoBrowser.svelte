@@ -1,11 +1,38 @@
 <script lang="ts">
 import { Aperture, ChevronDown, ChevronUp, FolderPlus } from '@lucide/svelte';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { open } from '@tauri-apps/plugin-dialog';
-import { onMount } from 'svelte';
+import { stat } from '@tauri-apps/plugin-fs';
+import { onDestroy, onMount } from 'svelte';
 import { type Frame, importFile, listAllFrames, listPhotos, type Photo } from '$lib/db';
-import { getFilePathFromDrop, getImageSrc } from '$lib/tauri';
+import { getImageSrc } from '$lib/tauri';
+import { getWatchDir, persistWatchDir } from '$lib/watch';
 import LightroomBrowser from './LightroomBrowser.svelte';
 import WatchDir from './WatchDir.svelte';
+
+const IMAGE_EXTS = new Set([
+	'jpg',
+	'jpeg',
+	'png',
+	'tiff',
+	'tif',
+	'heic',
+	'heif',
+	'webp',
+	'avif',
+	'jxl',
+	'dng',
+	'arw',
+	'cr2',
+	'cr3',
+	'nef',
+	'raf'
+]);
+
+function isImagePath(path: string): boolean {
+	const ext = path.split('.').pop()?.toLowerCase() ?? '';
+	return IMAGE_EXTS.has(ext);
+}
 
 function loadImageDimensions(src: string): Promise<{ width: number; height: number }> {
 	return new Promise((resolve, reject) => {
@@ -21,10 +48,57 @@ let framesByPhoto = $state<Record<number, Frame[]>>({});
 let loading = $state(true);
 let importing = $state(false);
 let showLightroom = $state(false);
-let openDragOver = $state(false);
+let dragging = $state(false);
+let draggingDir = $state(false);
+let watchDir = $state<string | null>(getWatchDir());
+let unlisten: (() => void) | null = null;
 
 onMount(async () => {
 	await loadPhotos();
+
+	unlisten = await getCurrentWebview().onDragDropEvent(async (event) => {
+		if (event.payload.type === 'enter') {
+			dragging = true;
+			const paths = event.payload.paths;
+			if (paths.length === 1) {
+				try {
+					const info = await stat(paths[0]);
+					draggingDir = info.isDirectory;
+				} catch {
+					draggingDir = false;
+				}
+			} else {
+				draggingDir = false;
+			}
+		} else if (event.payload.type === 'leave') {
+			dragging = false;
+			draggingDir = false;
+		} else if (event.payload.type === 'drop') {
+			const paths = event.payload.paths;
+			dragging = false;
+			draggingDir = false;
+
+			if (paths.length === 1) {
+				try {
+					const info = await stat(paths[0]);
+					if (info.isDirectory) {
+						watchDir = paths[0];
+						persistWatchDir(paths[0]);
+						return;
+					}
+				} catch {}
+			}
+
+			const imagePaths = paths.filter(isImagePath);
+			if (imagePaths.length > 0) {
+				await importFiles(imagePaths);
+			}
+		}
+	});
+});
+
+onDestroy(() => {
+	unlisten?.();
 });
 
 async function loadPhotos() {
@@ -75,83 +149,28 @@ async function handleOpenClick() {
 	const files = Array.isArray(selected) ? selected : [selected];
 	await importFiles(files);
 }
-
-async function handleOpenDrop(e: DragEvent) {
-	e.preventDefault();
-	e.stopPropagation();
-	openDragOver = false;
-	const files = e.dataTransfer?.files;
-	if (!files || files.length === 0) return;
-
-	const paths: string[] = [];
-	for (const file of Array.from(files)) {
-		const path = await getFilePathFromDrop(file);
-		if (path) paths.push(path);
-	}
-	if (paths.length > 0) await importFiles(paths);
-}
-
-function handleOpenDragOver(e: DragEvent) {
-	e.preventDefault();
-	e.stopPropagation();
-	openDragOver = true;
-}
-
-function handleOpenDragLeave(e: DragEvent) {
-	e.preventDefault();
-	openDragOver = false;
-}
-
-let bodyDragOver = $state(false);
-
-async function handleBodyDrop(e: DragEvent) {
-	e.preventDefault();
-	bodyDragOver = false;
-	const files = e.dataTransfer?.files;
-	if (!files || files.length === 0) return;
-
-	const paths: string[] = [];
-	for (const file of Array.from(files)) {
-		const path = await getFilePathFromDrop(file);
-		if (path) paths.push(path);
-	}
-	if (paths.length > 0) await importFiles(paths);
-}
-
-function handleBodyDragOver(e: DragEvent) {
-	e.preventDefault();
-	bodyDragOver = true;
-}
-
-function handleBodyDragLeave(e: DragEvent) {
-	if (e.currentTarget === e.target) {
-		bodyDragOver = false;
-	}
-}
 </script>
 
 <div
 	class="photo-browser"
-	class:body-drag-over={bodyDragOver}
+	class:drag-active={dragging && !draggingDir}
 	role="application"
-	ondrop={handleBodyDrop}
-	ondragover={handleBodyDragOver}
-	ondragleave={handleBodyDragLeave}
 >
 	<div class="header" data-tauri-drag-region>
 		<h1>Enframe</h1>
 		<div class="actions">
-			<WatchDir onPhotosImported={loadPhotos} />
+			<WatchDir
+				{watchDir}
+				onWatchDirChange={(dir) => { watchDir = dir; }}
+				onPhotosImported={loadPhotos}
+				highlighted={dragging && draggingDir}
+			/>
 
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<button
 				class="action-pill open-pill"
-				class:drag-over={openDragOver}
+				class:drag-over={dragging && !draggingDir}
 				onclick={handleOpenClick}
 				disabled={importing}
-				ondrop={handleOpenDrop}
-				ondragover={handleOpenDragOver}
-				ondragleave={handleOpenDragLeave}
 			>
 				<FolderPlus size={14} />
 				{importing ? 'Importing...' : 'Open'}
@@ -184,7 +203,7 @@ function handleBodyDragLeave(e: DragEvent) {
 	{:else if photos.length === 0}
 		<div class="empty">
 			<p>No photos yet</p>
-			<p class="hint">Drop images onto Open, or browse Lightroom</p>
+			<p class="hint">Drop images here, click Open, or browse Lightroom</p>
 		</div>
 	{:else}
 		<div class="grid">
@@ -224,20 +243,29 @@ function handleBodyDragLeave(e: DragEvent) {
 			{/each}
 		</div>
 	{/if}
+
+	{#if dragging}
+		<div class="drop-overlay">
+			{#if draggingDir}
+				<span class="drop-label">Drop to set watch folder</span>
+			{:else}
+				<span class="drop-label">Drop to import</span>
+			{/if}
+		</div>
+	{/if}
 </div>
 
 <style>
 	.photo-browser {
+		position: relative;
 		padding: 2rem;
 		padding-top: 3.5rem;
 		min-height: 100vh;
-		transition: outline-color 0.15s;
-		outline: 2px dashed transparent;
-		outline-offset: -2px;
 	}
 
-	.photo-browser.body-drag-over {
-		outline-color: #2563eb;
+	.photo-browser.drag-active {
+		outline: 2px dashed #2563eb;
+		outline-offset: -2px;
 	}
 
 	.header {
@@ -290,6 +318,27 @@ function handleBodyDragLeave(e: DragEvent) {
 	.lr-pill.active {
 		border-color: #2563eb;
 		color: white;
+	}
+
+	.drop-overlay {
+		position: fixed;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(0, 0, 0, 0.6);
+		z-index: 1000;
+		pointer-events: none;
+	}
+
+	.drop-label {
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: white;
+		padding: 1rem 2rem;
+		background: rgba(37, 99, 235, 0.8);
+		border-radius: 0.75rem;
+		border: 2px dashed rgba(255, 255, 255, 0.4);
 	}
 
 	.loading,

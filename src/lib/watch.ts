@@ -17,7 +17,7 @@ export function getWatchDir(): string | null {
 	return localStorage.getItem(WATCH_DIR_KEY);
 }
 
-export function setWatchDir(dir: string | null): void {
+export function persistWatchDir(dir: string | null): void {
 	if (dir) {
 		localStorage.setItem(WATCH_DIR_KEY, dir);
 	} else {
