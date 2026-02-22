@@ -1,11 +1,15 @@
 <script lang="ts">
 import { onMount } from 'svelte';
+import { goto } from '$app/navigation';
 import { page } from '$app/stores';
 import ExportDialog from '$lib/components/ExportDialog.svelte';
 import ImageCanvas from '$lib/components/ImageCanvas.svelte';
 import {
 	addFocalPoint,
 	addFrame,
+	deleteFocalPoint,
+	deleteFrame,
+	deletePhoto,
 	type FocalPoint,
 	type Frame,
 	getFocalPoints,
@@ -73,6 +77,14 @@ async function handleAddFocalPoint() {
 async function handleExport() {
 	showExportDialog = true;
 }
+
+async function handleDeletePhoto() {
+	if (!photo) return;
+	if (confirm(`Delete "${photo.title}"? This will also delete all frames and focal points.`)) {
+		await deletePhoto(photoId);
+		goto('/');
+	}
+}
 </script>
 
 <div class="editor">
@@ -83,6 +95,7 @@ async function handleExport() {
 			<button onclick={handleAddFrame}>Add Frame</button>
 			<button onclick={handleAddFocalPoint}>Add Focal Point</button>
 			<button onclick={handleExport}>Export</button>
+			<button class="delete-btn" onclick={handleDeletePhoto}>Delete Photo</button>
 		</div>
 	</div>
 
@@ -147,6 +160,14 @@ async function handleExport() {
 
 	button:hover {
 		background: #1d4ed8;
+	}
+
+	button.delete-btn {
+		background: #dc2626;
+	}
+
+	button.delete-btn:hover {
+		background: #b91c1c;
 	}
 
 	.loading,

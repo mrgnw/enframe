@@ -166,7 +166,20 @@ export async function deleteFocalPoint(id: number): Promise<void> {
 	await db.execute('DELETE FROM focal_points WHERE id = $1', [id]);
 }
 
-export async function importFile(filePath: string, metadata?: { width?: number; height?: number; title?: string }): Promise<number> {
+export async function deleteFrame(id: number): Promise<void> {
+	const db = await getDb();
+	await db.execute('DELETE FROM frames WHERE id = $1', [id]);
+}
+
+export async function deletePhoto(id: number): Promise<void> {
+	const db = await getDb();
+	await db.execute('DELETE FROM photos WHERE id = $1', [id]);
+}
+
+export async function importFile(
+	filePath: string,
+	metadata?: { width?: number; height?: number; title?: string }
+): Promise<number> {
 	return addPhoto({
 		file_path: filePath,
 		width: metadata?.width,

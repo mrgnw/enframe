@@ -1,9 +1,18 @@
 <script lang="ts">
-import { onMount } from 'svelte';
 import { open } from '@tauri-apps/plugin-dialog';
-import { listPhotos, importFile, type Photo } from '$lib/db';
+import { onMount } from 'svelte';
+import { importFile, listPhotos, type Photo } from '$lib/db';
+import { getFilePathFromDrop, getImageSrc } from '$lib/tauri';
 import LightroomBrowser from './LightroomBrowser.svelte';
-import { getImageSrc, getFilePathFromDrop } from '$lib/tauri';
+
+async function loadImageDimensions(src: string): Promise<{ width: number; height: number }> {
+	return new Promise((resolve, reject) => {
+		const img = new Image();
+		img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+		img.onerror = reject;
+		img.src = src;
+	});
+}
 
 let photos = $state<Photo[]>([]);
 let loading = $state(true);
@@ -35,7 +44,9 @@ async function handleFileDrop(event: DragEvent) {
 		for (const file of Array.from(files)) {
 			const path = await getFilePathFromDrop(file);
 			if (path) {
-				await importFile(path);
+				const src = getImageSrc(path);
+				const dims = await loadImageDimensions(src);
+				await importFile(path, dims);
 			} else {
 				console.warn('No file path available for dropped file:', file.name);
 			}
@@ -55,19 +66,23 @@ function handleDragOver(event: DragEvent) {
 async function handleImportClick() {
 	const selected = await open({
 		multiple: true,
-		filters: [{
-			name: 'Images',
-			extensions: ['jpg', 'jpeg', 'png', 'jxl', 'tiff', 'tif', 'webp', 'heic']
-		}]
+		filters: [
+			{
+				name: 'Images',
+				extensions: ['jpg', 'jpeg', 'png', 'jxl', 'tiff', 'tif', 'webp', 'heic']
+			}
+		]
 	});
 
 	if (!selected) return;
-	
+
 	importing = true;
 	try {
 		const files = Array.isArray(selected) ? selected : [selected];
 		for (const path of files) {
-			await importFile(path);
+			const src = getImageSrc(path);
+			const dims = await loadImageDimensions(src);
+			await importFile(path, dims);
 		}
 		await loadPhotos();
 	} catch (error) {

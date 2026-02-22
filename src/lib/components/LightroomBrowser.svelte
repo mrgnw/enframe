@@ -1,49 +1,53 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { listLightroomPreviews, type LightroomPhoto } from '$lib/lightroom';
-	import { importFile } from '$lib/db';
-	import { getImageSrc } from '$lib/tauri';
+import { onMount } from 'svelte';
+import { importFile } from '$lib/db';
+import { type LightroomPhoto, listLightroomPreviews } from '$lib/lightroom';
+import { getImageSrc } from '$lib/tauri';
 
-	let photos = $state<LightroomPhoto[]>([]);
-	let loading = $state(false);
-	let error = $state<string | null>(null);
-	let importing = $state(false);
+let photos = $state<LightroomPhoto[]>([]);
+let loading = $state(false);
+let error = $state<string | null>(null);
+let importing = $state(false);
 
-	let onPhotosImported: (() => void) | undefined = $props();
+interface Props {
+	onPhotosImported?: () => void;
+}
 
-	onMount(async () => {
-		await loadPreviews();
-	});
+let { onPhotosImported }: Props = $props();
 
-	async function loadPreviews() {
-		loading = true;
-		error = null;
-		try {
-			photos = await listLightroomPreviews();
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to load Lightroom previews';
-		} finally {
-			loading = false;
-		}
+onMount(async () => {
+	await loadPreviews();
+});
+
+async function loadPreviews() {
+	loading = true;
+	error = null;
+	try {
+		photos = await listLightroomPreviews();
+	} catch (err) {
+		error = err instanceof Error ? err.message : 'Failed to load Lightroom previews';
+	} finally {
+		loading = false;
 	}
+}
 
-	async function handleImport(photo: LightroomPhoto) {
-		if (!photo.previewPath) return;
+async function handleImport(photo: LightroomPhoto) {
+	if (!photo.previewPath) return;
 
-		importing = true;
-		try {
-			await importFile(photo.previewPath, {
-				width: photo.width,
-				height: photo.height,
-				title: photo.title
-			});
-			if (onPhotosImported) onPhotosImported();
-		} catch (err) {
-			console.error('Failed to import photo:', err);
-		} finally {
-			importing = false;
-		}
+	importing = true;
+	try {
+		await importFile(photo.previewPath, {
+			width: photo.width,
+			height: photo.height,
+			title: photo.title
+		});
+		if (onPhotosImported) onPhotosImported();
+	} catch (err) {
+		console.error('Failed to import photo:', err);
+	} finally {
+		importing = false;
 	}
+}
 </script>
 
 <div class="lightroom-browser">
