@@ -2,11 +2,11 @@
 import { onMount } from 'svelte';
 import { goto } from '$app/navigation';
 import { page } from '$app/stores';
+import CommandBar from '$lib/components/CommandBar.svelte';
 import ImageCanvas from '$lib/components/ImageCanvas.svelte';
 import {
 	addFocalPoint,
 	addFrame,
-	deleteFocalPoint,
 	deleteFrame,
 	deletePhoto,
 	type FocalPoint,
@@ -18,6 +18,7 @@ import {
 	updateFocalPoint,
 	updateFrame
 } from '$lib/db';
+import { exportFrames, exportMetadata, getDefaultExportDir, pickDirectory } from '$lib/export';
 
 type HistoryState = {
 	frames: Frame[];
@@ -33,29 +34,23 @@ let saveStatus = $state<'saved' | 'saving' | 'unsaved'>('saved');
 
 const photoId = Number($page.params.id);
 
-// State history for undo/redo
 let history = $state<HistoryState[]>([]);
 let historyIndex = $state(-1);
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+let exportDir = $state('');
+
 function captureSnapshot() {
-	// Debounce snapshots (500ms delay)
 	if (debounceTimer) clearTimeout(debounceTimer);
 	debounceTimer = setTimeout(() => {
-		// Remove any history after current index (if we've undone and then made changes)
 		history = history.slice(0, historyIndex + 1);
-
-		// Add new snapshot
 		history.push({
 			frames: structuredClone(frames),
 			focalPoints: structuredClone(focalPoints)
 		});
-
-		// Limit history size
 		if (history.length > 50) {
 			history = history.slice(-50);
 		}
-
 		historyIndex = history.length - 1;
 		saveStatus = 'unsaved';
 	}, 500);
@@ -91,27 +86,9 @@ function handleKeyDown(event: KeyboardEvent) {
 	}
 }
 
-function handleWheel(event: WheelEvent) {
-	// Option/Alt + scroll to scrub through history
-	if (event.altKey && history.length > 0) {
-		event.preventDefault();
-
-		const direction = event.deltaY > 0 ? 1 : -1;
-		const newIndex = Math.max(0, Math.min(history.length - 1, historyIndex + direction));
-
-		if (newIndex !== historyIndex) {
-			historyIndex = newIndex;
-			const state = history[historyIndex];
-			frames = structuredClone(state.frames);
-			focalPoints = structuredClone(state.focalPoints);
-		}
-	}
-}
-
 async function saveMetadata() {
 	saveStatus = 'saving';
 	try {
-		// Save all frames
 		for (const frame of frames) {
 			await updateFrame(frame.id, {
 				x: frame.x,
@@ -121,8 +98,6 @@ async function saveMetadata() {
 				label: frame.label
 			});
 		}
-
-		// Save all focal points
 		for (const point of focalPoints) {
 			await updateFocalPoint(point.id, {
 				x: point.x,
@@ -131,7 +106,6 @@ async function saveMetadata() {
 				required: point.required
 			});
 		}
-
 		saveStatus = 'saved';
 	} catch (error) {
 		console.error('Failed to save metadata:', error);
@@ -141,8 +115,6 @@ async function saveMetadata() {
 
 onMount(async () => {
 	await loadPhoto();
-
-	// Capture initial snapshot after load
 	history.push({
 		frames: structuredClone(frames),
 		focalPoints: structuredClone(focalPoints)
@@ -161,6 +133,9 @@ async function loadPhoto() {
 		photo = await getPhoto(photoId);
 		frames = await getFrames(photoId);
 		focalPoints = await getFocalPoints(photoId);
+		if (photo) {
+			exportDir = getDefaultExportDir(photo.file_path);
+		}
 	} catch (error) {
 		console.error('Failed to load photo:', error);
 	} finally {
@@ -170,8 +145,7 @@ async function loadPhoto() {
 
 async function handleAddFrame() {
 	if (!photo) return;
-
-	const id = await addFrame({
+	await addFrame({
 		photo_id: photoId,
 		label: `Frame ${frames.length + 1}`,
 		x: 0.2,
@@ -180,14 +154,12 @@ async function handleAddFrame() {
 		height: 0.6,
 		is_default: false
 	});
-
 	await loadPhoto();
 }
 
 async function handleAddFocalPoint() {
 	if (!photo) return;
-
-	const id = await addFocalPoint({
+	await addFocalPoint({
 		photo_id: photoId,
 		frame_id: undefined,
 		x: 0.5,
@@ -195,7 +167,6 @@ async function handleAddFocalPoint() {
 		label: `Point ${focalPoints.length + 1}`,
 		required: true
 	});
-
 	await loadPhoto();
 }
 
@@ -205,113 +176,85 @@ async function handleDeleteFrame(frameId: number) {
 	saveStatus = 'unsaved';
 }
 
-async function handleDeletePhoto() {
-	if (!photo) return;
-	if (confirm(`Delete "${photo.title}"? This will also delete all frames and focal points.`)) {
-		await deletePhoto(photoId);
-		goto('/');
+async function handleExport() {
+	if (!photo || frames.length === 0) return;
+	try {
+		await exportFrames(photo, frames, exportDir, 0.92);
+		const basename = photo.title?.replace(/\.[^/.]+$/, '').replace(/\s+/g, '-') || 'photo';
+		await exportMetadata(photo, frames, focalPoints, `${exportDir}/${basename}.metadata.json`);
+	} catch (error) {
+		console.error('Export failed:', error);
+	}
+}
+
+async function handleSetOutputDir() {
+	const dir = await pickDirectory();
+	if (dir) {
+		exportDir = dir;
 	}
 }
 </script>
 
-<svelte:window onkeydown={handleKeyDown} onwheel={handleWheel} />
+<svelte:window onkeydown={handleKeyDown} />
 
 <div class="editor">
-	<div class="toolbar">
-		<a href="/">← Back</a>
-		<div class="title">{photo?.title || 'Untitled'}</div>
-		<div class="tools">
-			<button onclick={handleAddFrame}>Add Frame</button>
-			<button onclick={handleAddFocalPoint}>Add Focal Point</button>
-			<button 
-				onclick={saveMetadata} 
-				class:save-btn-unsaved={saveStatus === 'unsaved'}
-				disabled={saveStatus === 'saving' || saveStatus === 'saved'}
-			>
-				{saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved' : 'Save'}
-			</button>
-			<button class="delete-btn" onclick={handleDeletePhoto}>Delete Photo</button>
-		</div>
-	</div>
+	<a href="/" class="back-btn" aria-label="Back">
+		<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+			<path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+		</svg>
+	</a>
 
 	{#if loading}
 		<div class="loading">Loading...</div>
 	{:else if photo}
 		<ImageCanvas {photo} bind:frames bind:focalPoints onchange={handleChange} ondeleteframe={handleDeleteFrame} />
 	{:else}
-		<div class="error">Photo not found</div>
+		<div class="loading">Photo not found</div>
 	{/if}
+
+	<CommandBar
+		onaddframe={handleAddFrame}
+		onaddpoint={handleAddFocalPoint}
+		onsave={saveMetadata}
+		onexport={handleExport}
+		onsetoutputdir={handleSetOutputDir}
+	/>
 </div>
 
 <style>
 	.editor {
+		width: 100vw;
 		height: 100vh;
-		display: flex;
-		flex-direction: column;
+		overflow: hidden;
+		background: #1a1a1a;
 	}
 
-	.toolbar {
+	.back-btn {
+		position: fixed;
+		top: 1rem;
+		left: 1rem;
+		z-index: 50;
 		display: flex;
 		align-items: center;
-		gap: 2rem;
-		padding: 1rem 2rem;
-		border-bottom: 1px solid #e5e7eb;
-		background: white;
-	}
-
-	.toolbar a {
-		color: #2563eb;
+		justify-content: center;
+		width: 2.5rem;
+		height: 2.5rem;
+		border-radius: 0.5rem;
+		background: rgba(0, 0, 0, 0.5);
+		color: rgba(255, 255, 255, 0.8);
 		text-decoration: none;
+		backdrop-filter: blur(8px);
+		transition: background 0.15s, color 0.15s;
 	}
 
-	.title {
-		flex: 1;
-		font-weight: 600;
-	}
-
-	.tools {
-		display: flex;
-		gap: 0.5rem;
-	}
-
-	button {
-		padding: 0.5rem 1rem;
-		background: #2563eb;
+	.back-btn:hover {
+		background: rgba(0, 0, 0, 0.7);
 		color: white;
-		border: none;
-		border-radius: 0.375rem;
-		cursor: pointer;
-		font-size: 0.875rem;
 	}
 
-	button:hover:not(:disabled) {
-		background: #1d4ed8;
-	}
-
-	button:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	button.save-btn-unsaved {
-		background: #f59e0b;
-	}
-
-	button.save-btn-unsaved:hover {
-		background: #d97706;
-	}
-
-	button.delete-btn {
-		background: #dc2626;
-	}
-
-	button.delete-btn:hover {
-		background: #b91c1c;
-	}
-
-	.loading,
-	.error {
-		flex: 1;
+	.loading {
+		width: 100%;
+		height: 100%;
 		display: flex;
 		align-items: center;
 		justify-content: center;
