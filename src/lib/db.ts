@@ -28,6 +28,7 @@ export interface Frame {
 	y: number;
 	width: number;
 	height: number;
+	rotation: number;
 	is_default: boolean;
 	created_at: string;
 }
@@ -71,8 +72,17 @@ export async function getFrames(photoId: number): Promise<Frame[]> {
 export async function addFrame(frame: Omit<Frame, 'id' | 'created_at'>): Promise<number> {
 	const db = await getDb();
 	const result = await db.execute(
-		'INSERT INTO frames (photo_id, label, x, y, width, height, is_default) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-		[frame.photo_id, frame.label, frame.x, frame.y, frame.width, frame.height, frame.is_default ? 1 : 0]
+		'INSERT INTO frames (photo_id, label, x, y, width, height, rotation, is_default) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+		[
+			frame.photo_id,
+			frame.label,
+			frame.x,
+			frame.y,
+			frame.width,
+			frame.height,
+			frame.rotation ?? 0,
+			frame.is_default ? 1 : 0
+		]
 	);
 	return result.lastInsertId ?? 0;
 }
@@ -104,6 +114,10 @@ export async function updateFrame(
 	if (updates.height !== undefined) {
 		sets.push(`height = $${sets.length + 1}`);
 		values.push(updates.height);
+	}
+	if (updates.rotation !== undefined) {
+		sets.push(`rotation = $${sets.length + 1}`);
+		values.push(updates.rotation);
 	}
 
 	if (sets.length === 0) return;

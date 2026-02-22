@@ -4,6 +4,7 @@ import { updateFrame } from '$lib/db';
 
 interface Props {
 	frame: Frame;
+	index?: number;
 	imageWidth: number;
 	imageHeight: number;
 	scale: number;
@@ -16,6 +17,7 @@ interface Props {
 
 let {
 	frame,
+	index = 0,
 	imageWidth,
 	imageHeight,
 	scale,
@@ -221,6 +223,7 @@ async function handleHandlePointerUp(event: PointerEvent) {
 		width: {frame.width * 100}%;
 		height: {frame.height * 100}%;
 		border-width: {borderWidth}px;
+		{frame.rotation ? `transform: rotate(${frame.rotation}deg);` : ''}
 	"
 	role="button"
 	tabindex="0"
@@ -228,9 +231,7 @@ async function handleHandlePointerUp(event: PointerEvent) {
 	onpointermove={handleFramePointerMove}
 	onpointerup={handleFramePointerUp}
 >
-	{#if frame.label}
-		<div class="frame-label" style="transform: scale({labelScale}); transform-origin: bottom left;">{frame.label}</div>
-	{/if}
+	<div class="frame-label" style="transform: scale({labelScale}); transform-origin: bottom left;">{index + 1}</div>
 
 	<!-- Resize handles -->
 	<div class="handle nw" style="{hs}top:{handleOffset}px;left:{handleOffset}px;" role="button" tabindex="-1" aria-label="Resize northwest" onpointerdown={(e) => handleHandlePointerDown(e, 'nw')} onpointermove={handleHandlePointerMove} onpointerup={handleHandlePointerUp}></div>

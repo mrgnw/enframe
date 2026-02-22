@@ -10,6 +10,8 @@ import { goto } from '$app/navigation';
 import { page } from '$app/stores';
 import CommandBar from '$lib/components/CommandBar.svelte';
 import CursorProgress from '$lib/components/CursorProgress.svelte';
+import FloatingToolbar from '$lib/components/FloatingToolbar.svelte';
+import FramePointPanel from '$lib/components/FramePointPanel.svelte';
 import ImageCanvas from '$lib/components/ImageCanvas.svelte';
 import {
 	addFocalPoint,
@@ -25,7 +27,7 @@ import {
 	updateFocalPoint,
 	updateFrame
 } from '$lib/db';
-import { exportFrames, exportMetadata, getDefaultExportDir, pickDirectory } from '$lib/export';
+import { type ExportFormat, exportFrames, exportMetadata, getDefaultExportDir, pickDirectory } from '$lib/export';
 
 type HistoryState = {
 	frames: Frame[];
@@ -48,9 +50,16 @@ let historyIndex = $state(-1);
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 let exportDir = $state('');
+let exportFormat = $state<ExportFormat>('avif');
 let exporting = $state(false);
 let exportProgress = $state(0);
 let exportTotal = $state(0);
+
+let selectedFrameId = $state<number | null>(null);
+let selectedPointId = $state<number | null>(null);
+let panelExpanded = $state(false);
+let imageWidth = $state(0);
+let imageHeight = $state(0);
 
 let mouseX = $state(0);
 let mouseY = $state(0);
@@ -120,7 +129,43 @@ function handleKeyDown(event: KeyboardEvent) {
 	} else if ((event.metaKey || event.ctrlKey) && event.key === 'e') {
 		event.preventDefault();
 		handleExport();
+	} else if (event.key === ',') {
+		event.preventDefault();
+		selectPrevFrame();
+	} else if (event.key === '.') {
+		event.preventDefault();
+		selectNextFrame();
+	} else if (event.key === 'Backspace' || event.key === 'Delete') {
+		if (selectedFrameId != null && !event.metaKey && !event.ctrlKey) {
+			event.preventDefault();
+			handleDeleteFrame(selectedFrameId);
+		}
 	}
+}
+
+function selectNextFrame() {
+	if (frames.length === 0) return;
+	if (selectedFrameId == null) {
+		selectedFrameId = frames[0].id;
+		return;
+	}
+	const idx = frames.findIndex((f) => f.id === selectedFrameId);
+	selectedFrameId = frames[(idx + 1) % frames.length].id;
+}
+
+function selectPrevFrame() {
+	if (frames.length === 0) return;
+	if (selectedFrameId == null) {
+		selectedFrameId = frames[frames.length - 1].id;
+		return;
+	}
+	const idx = frames.findIndex((f) => f.id === selectedFrameId);
+	selectedFrameId = frames[(idx - 1 + frames.length) % frames.length].id;
+}
+
+function setExportFormat(format: ExportFormat) {
+	exportFormat = format;
+	toast.success(`Export format: ${format.toUpperCase()}`);
 }
 
 async function saveMetadata() {
@@ -191,16 +236,19 @@ async function loadPhoto() {
 
 async function handleAddFrame() {
 	if (!photo) return;
-	await addFrame({
+	const id = await addFrame({
 		photo_id: photoId,
-		label: `Frame ${frames.length + 1}`,
+		label: undefined,
 		x: 0.2,
 		y: 0.2,
 		width: 0.6,
 		height: 0.6,
+		rotation: 0,
 		is_default: false
 	});
 	await loadPhoto();
+	selectedFrameId = id;
+	panelExpanded = true;
 }
 
 async function handleAddFocalPoint() {
@@ -218,8 +266,12 @@ async function handleAddFocalPoint() {
 
 async function handleDeleteFrame(frameId: number) {
 	await deleteFrame(frameId);
+	if (selectedFrameId === frameId) {
+		selectedFrameId = null;
+	}
 	await loadPhoto();
 	saveStatus = 'unsaved';
+	captureSnapshot();
 }
 
 async function handleExport() {
@@ -229,7 +281,7 @@ async function handleExport() {
 	exportTotal = frames.length + 1;
 	await yieldFrame();
 	try {
-		await exportFrames(photo, frames, exportDir, 0.92, (current: number, _total: number) => {
+		await exportFrames(photo, frames, exportDir, exportFormat, 0.92, (current: number, _total: number) => {
 			exportProgress = current;
 		});
 		exportProgress = frames.length;
@@ -274,7 +326,45 @@ async function handleSetOutputDir() {
 	{#if loading}
 		<div class="loading">Loading...</div>
 	{:else if photo}
-		<ImageCanvas {photo} bind:frames bind:focalPoints onchange={handleChange} ondeleteframe={handleDeleteFrame} />
+		<ImageCanvas
+			{photo}
+			bind:frames
+			bind:focalPoints
+			{selectedFrameId}
+			{selectedPointId}
+			onchange={handleChange}
+			ondeleteframe={handleDeleteFrame}
+			onselectframe={(id) => { selectedFrameId = id; selectedPointId = null; }}
+			onselectpoint={(id) => { selectedPointId = id; selectedFrameId = null; }}
+			onimageload={(w, h) => { imageWidth = w; imageHeight = h; }}
+		/>
+
+		<div class="floating-ui">
+			<FloatingToolbar
+				canUndo={historyIndex > 0}
+				canRedo={historyIndex < history.length - 1}
+				{saveStatus}
+				{panelExpanded}
+				onundo={undo}
+				onredo={redo}
+				onaddframe={handleAddFrame}
+				onaddpoint={handleAddFocalPoint}
+				onsave={saveMetadata}
+				ontoggle={() => panelExpanded = !panelExpanded}
+			/>
+			<FramePointPanel
+				{frames}
+				{focalPoints}
+				{imageWidth}
+				{imageHeight}
+				{selectedFrameId}
+				{selectedPointId}
+				expanded={panelExpanded}
+				onselectframe={(id) => { selectedFrameId = id; selectedPointId = null; }}
+				onselectpoint={(id) => { selectedPointId = id; selectedFrameId = null; }}
+				onchange={handleChange}
+			/>
+		</div>
 	{:else}
 		<div class="loading">Photo not found</div>
 	{/if}
@@ -285,6 +375,10 @@ async function handleSetOutputDir() {
 		onsave={saveMetadata}
 		onexport={handleExport}
 		onsetoutputdir={handleSetOutputDir}
+		onnextframe={selectNextFrame}
+		onprevframe={selectPrevFrame}
+		ondeleteframe={() => { if (selectedFrameId != null) handleDeleteFrame(selectedFrameId); }}
+		onsetformat={setExportFormat}
 	/>
 </div>
 
@@ -328,4 +422,14 @@ async function handleSetOutputDir() {
 		color: #6b7280;
 	}
 
+	.floating-ui {
+		position: fixed;
+		top: 1rem;
+		right: 1rem;
+		z-index: 50;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 8px;
+	}
 </style>

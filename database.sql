@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS frames (
 	y REAL NOT NULL DEFAULT 0,
 	width REAL NOT NULL DEFAULT 1,
 	height REAL NOT NULL DEFAULT 1,
+	rotation REAL NOT NULL DEFAULT 0,
 	is_default BOOLEAN NOT NULL DEFAULT 0,
 	created_at TEXT DEFAULT (datetime('now'))
 );

@@ -8,11 +8,27 @@ interface Props {
 	photo: Photo;
 	frames?: Frame[];
 	focalPoints?: FocalPoint[];
+	selectedFrameId?: number | null;
+	selectedPointId?: number | null;
 	onchange?: () => void;
 	ondeleteframe?: (frameId: number) => void;
+	onselectframe?: (frameId: number | null) => void;
+	onselectpoint?: (pointId: number | null) => void;
+	onimageload?: (width: number, height: number) => void;
 }
 
-let { photo, frames = $bindable([]), focalPoints = $bindable([]), onchange, ondeleteframe }: Props = $props();
+let {
+	photo,
+	frames = $bindable([]),
+	focalPoints = $bindable([]),
+	selectedFrameId = null,
+	selectedPointId = null,
+	onchange,
+	ondeleteframe,
+	onselectframe,
+	onselectpoint,
+	onimageload
+}: Props = $props();
 
 let containerEl = $state<HTMLDivElement | null>(null);
 let imgEl = $state<HTMLImageElement | null>(null);
@@ -41,6 +57,7 @@ function computeRenderRect() {
 
 function handleImageLoad() {
 	computeRenderRect();
+	if (imgEl) onimageload?.(imgEl.naturalWidth, imgEl.naturalHeight);
 	if (containerEl) {
 		resizeObserver?.disconnect();
 		resizeObserver = new ResizeObserver(() => computeRenderRect());
@@ -50,10 +67,12 @@ function handleImageLoad() {
 
 let resizeObserver: ResizeObserver | undefined;
 
-let selectedFrameId = $state<number | null>(null);
-
 function selectFrame(frameId: number) {
-	selectedFrameId = frameId;
+	onselectframe?.(frameId);
+}
+
+function selectPoint(pointId: number) {
+	onselectpoint?.(pointId);
 }
 
 function handleKeyDown(event: KeyboardEvent) {
@@ -61,7 +80,7 @@ function handleKeyDown(event: KeyboardEvent) {
 		const index = parseInt(event.key) - 1;
 		if (index < frames.length) {
 			event.preventDefault();
-			selectedFrameId = frames[index].id;
+			onselectframe?.(frames[index].id);
 		}
 	}
 }
@@ -84,9 +103,10 @@ function handleKeyDown(event: KeyboardEvent) {
 			class="overlay-container"
 			style="left:{renderRect.x}px;top:{renderRect.y}px;width:{renderRect.w}px;height:{renderRect.h}px;"
 		>
-			{#each frames as frame (frame.id)}
+			{#each frames as frame, i (frame.id)}
 				<ResizableFrame
 					{frame}
+					index={i}
 					imageWidth={renderRect.w}
 					imageHeight={renderRect.h}
 					scale={1}
@@ -96,12 +116,15 @@ function handleKeyDown(event: KeyboardEvent) {
 				/>
 			{/each}
 
-			{#each focalPoints as point (point.id)}
+			{#each focalPoints as point, i (point.id)}
 				<DraggableFocalPoint
 					{point}
+					index={i}
 					imageWidth={renderRect.w}
 					imageHeight={renderRect.h}
 					scale={1}
+					selected={selectedPointId === point.id}
+					onSelect={() => selectPoint(point.id)}
 					{onchange}
 				/>
 			{/each}

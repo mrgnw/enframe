@@ -4,13 +4,16 @@ import { updateFocalPoint } from '$lib/db';
 
 interface Props {
 	point: FocalPoint;
+	index?: number;
 	imageWidth: number;
 	imageHeight: number;
 	scale: number;
+	selected?: boolean;
+	onSelect?: () => void;
 	onchange?: () => void;
 }
 
-let { point, imageWidth, imageHeight, scale, onchange }: Props = $props();
+let { point, index = 0, imageWidth, imageHeight, scale, selected = false, onSelect, onchange }: Props = $props();
 
 let isDragging = $state(false);
 let dragStart = $state({ x: 0, y: 0, pointX: 0, pointY: 0 });
@@ -19,6 +22,7 @@ function handlePointerDown(event: PointerEvent) {
 	if (event.button !== 0) return;
 	event.stopPropagation();
 
+	onSelect?.();
 	isDragging = true;
 	dragStart = {
 		x: event.clientX,
@@ -59,6 +63,7 @@ async function handlePointerUp(event: PointerEvent) {
 	class="focal-point"
 	class:required={point.required}
 	class:dragging={isDragging}
+	class:selected
 	style="
 		left: {point.x * 100}%;
 		top: {point.y * 100}%;
@@ -70,9 +75,7 @@ async function handlePointerUp(event: PointerEvent) {
 	onpointermove={handlePointerMove}
 	onpointerup={handlePointerUp}
 >
-	{#if point.label}
-		<div class="point-label">{point.label}</div>
-	{/if}
+	<div class="point-label">•{index + 1}</div>
 </div>
 
 <style>
@@ -93,6 +96,12 @@ async function handlePointerUp(event: PointerEvent) {
 	.focal-point:hover {
 		transform: scale(1.2);
 		z-index: 10;
+	}
+
+	.focal-point.selected {
+		transform: scale(1.3);
+		z-index: 15;
+		box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.4), 0 4px 8px rgba(0, 0, 0, 0.3);
 	}
 
 	.focal-point.dragging {

@@ -1,5 +1,6 @@
 <script lang="ts">
 import * as Command from '$lib/components/ui/command/index.js';
+import type { ExportFormat } from '$lib/export';
 
 interface Props {
 	onaddframe?: () => void;
@@ -7,9 +8,23 @@ interface Props {
 	onsave?: () => void;
 	onexport?: () => void;
 	onsetoutputdir?: () => void;
+	onnextframe?: () => void;
+	onprevframe?: () => void;
+	ondeleteframe?: () => void;
+	onsetformat?: (format: ExportFormat) => void;
 }
 
-let { onaddframe, onaddpoint, onsave, onexport, onsetoutputdir }: Props = $props();
+let {
+	onaddframe,
+	onaddpoint,
+	onsave,
+	onexport,
+	onsetoutputdir,
+	onnextframe,
+	onprevframe,
+	ondeleteframe,
+	onsetformat
+}: Props = $props();
 
 let open = $state(false);
 
@@ -49,6 +64,31 @@ function run(fn?: () => void) {
 			</Command.Item>
 			<Command.Item onSelect={() => run(onsetoutputdir)}>
 				<span>Set Output Directory</span>
+			</Command.Item>
+		</Command.Group>
+		<Command.Group heading="Frames">
+			<Command.Item onSelect={() => run(onnextframe)}>
+				<span>Next Frame</span>
+				<Command.Shortcut>.</Command.Shortcut>
+			</Command.Item>
+			<Command.Item onSelect={() => run(onprevframe)}>
+				<span>Previous Frame</span>
+				<Command.Shortcut>,</Command.Shortcut>
+			</Command.Item>
+			<Command.Item onSelect={() => run(ondeleteframe)}>
+				<span>Delete Frame</span>
+				<Command.Shortcut>&#9003;</Command.Shortcut>
+			</Command.Item>
+		</Command.Group>
+		<Command.Group heading="Export Format">
+			<Command.Item onSelect={() => { open = false; onsetformat?.('avif'); }}>
+				<span>AVIF</span>
+			</Command.Item>
+			<Command.Item onSelect={() => { open = false; onsetformat?.('jpg'); }}>
+				<span>JPG</span>
+			</Command.Item>
+			<Command.Item onSelect={() => { open = false; onsetformat?.('png'); }}>
+				<span>PNG</span>
 			</Command.Item>
 		</Command.Group>
 	</Command.List>

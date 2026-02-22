@@ -3,11 +3,13 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import type { FocalPoint, Frame, Photo } from './db';
 
-function generateFrameFilename(photo: Photo, frame: Frame, index: number): string {
+export type ExportFormat = 'avif' | 'jpg' | 'png';
+
+function generateFrameFilename(photo: Photo, frame: Frame, index: number, format: ExportFormat = 'avif'): string {
 	const basename = photo.title?.replace(/\.[^/.]+$/, '').replace(/\s+/g, '-') || 'photo';
 	const ratio = (frame.width / frame.height).toFixed(2);
 	const orientation = frame.width > frame.height ? 'l' : frame.width < frame.height ? 'p' : 's';
-	return `${basename}.${orientation}.${index + 1}.${ratio}.jpg`;
+	return `${basename}.${orientation}.${index + 1}.${ratio}.${format}`;
 }
 
 export function getDefaultExportDir(photoPath: string): string {
@@ -29,6 +31,7 @@ export async function exportFrames(
 	photo: Photo,
 	frames: Frame[],
 	directory: string,
+	format: ExportFormat = 'avif',
 	quality: number = 0.92,
 	onProgress?: (current: number, total: number) => void
 ): Promise<string[]> {
@@ -42,7 +45,7 @@ export async function exportFrames(
 		}
 
 		const frame = frames[i];
-		const filename = generateFrameFilename(photo, frame, i);
+		const filename = generateFrameFilename(photo, frame, i, format);
 		const fullPath = `${directory}/${filename}`;
 
 		await invoke('crop_and_export', {
@@ -52,7 +55,8 @@ export async function exportFrames(
 			y: frame.y,
 			width: frame.width,
 			height: frame.height,
-			quality: qualityU8
+			quality: qualityU8,
+			format
 		});
 
 		exportedPaths.push(fullPath);

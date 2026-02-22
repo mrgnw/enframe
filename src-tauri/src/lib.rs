@@ -22,6 +22,7 @@ fn crop_and_export(
 	width: f64,
 	height: f64,
 	quality: u8,
+	format: String,
 ) -> Result<(), String> {
 	let file_bytes = fs::read(&source_path).map_err(|e| format!("Read error: {e}"))?;
 
@@ -73,13 +74,29 @@ fn crop_and_export(
 
 	let cropped = image::imageops::crop_imm(&img, crop_x, crop_y, crop_w, crop_h).to_image();
 
-	let mut jpeg_buf: Vec<u8> = Vec::new();
-	let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg_buf, quality);
-	encoder
-		.write_image(&cropped, crop_w, crop_h, image::ExtendedColorType::Rgb8)
-		.map_err(|e| format!("JPEG encode error: {e}"))?;
+	let mut buf: Vec<u8> = Vec::new();
+	match format.as_str() {
+		"png" => {
+			let encoder = image::codecs::png::PngEncoder::new(&mut buf);
+			encoder
+				.write_image(&cropped, crop_w, crop_h, image::ExtendedColorType::Rgb8)
+				.map_err(|e| format!("PNG encode error: {e}"))?;
+		}
+		"avif" => {
+			let encoder = image::codecs::avif::AvifEncoder::new_with_speed_quality(&mut buf, 6, quality);
+			encoder
+				.write_image(&cropped, crop_w, crop_h, image::ExtendedColorType::Rgb8)
+				.map_err(|e| format!("AVIF encode error: {e}"))?;
+		}
+		_ => {
+			let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, quality);
+			encoder
+				.write_image(&cropped, crop_w, crop_h, image::ExtendedColorType::Rgb8)
+				.map_err(|e| format!("JPEG encode error: {e}"))?;
+		}
+	}
 
-	fs::write(&output_path, &jpeg_buf).map_err(|e| format!("Write error: {e}"))?;
+	fs::write(&output_path, &buf).map_err(|e| format!("Write error: {e}"))?;
 	Ok(())
 }
 
@@ -90,12 +107,20 @@ pub fn run() {
 			tauri_plugin_sql::Builder::new()
 				.add_migrations(
 					"sqlite:enframe.db",
-					vec![tauri_plugin_sql::Migration {
-						version: 1,
-						description: "create tables",
-						sql: include_str!("../../database.sql"),
-						kind: tauri_plugin_sql::MigrationKind::Up,
-					}],
+					vec![
+						tauri_plugin_sql::Migration {
+							version: 1,
+							description: "create tables",
+							sql: include_str!("../../database.sql"),
+							kind: tauri_plugin_sql::MigrationKind::Up,
+						},
+						tauri_plugin_sql::Migration {
+							version: 2,
+							description: "add rotation to frames",
+							sql: "ALTER TABLE frames ADD COLUMN rotation REAL NOT NULL DEFAULT 0;",
+							kind: tauri_plugin_sql::MigrationKind::Up,
+						},
+					],
 				)
 				.build(),
 		)
