@@ -15,19 +15,134 @@ import {
 	getFocalPoints,
 	getFrames,
 	getPhoto,
-	type Photo
+	type Photo,
+	updateFocalPoint,
+	updateFrame
 } from '$lib/db';
+
+type HistoryState = {
+	frames: Frame[];
+	focalPoints: FocalPoint[];
+};
 
 let photo = $state<Photo | null>(null);
 let frames = $state<Frame[]>([]);
 let focalPoints = $state<FocalPoint[]>([]);
 let loading = $state(true);
 let showExportDialog = $state(false);
+let saveStatus = $state<'saved' | 'saving' | 'unsaved'>('saved');
 
 const photoId = Number($page.params.id);
 
+// State history for undo/redo
+let history = $state<HistoryState[]>([]);
+let historyIndex = $state(-1);
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function captureSnapshot() {
+	// Debounce snapshots (500ms delay)
+	if (debounceTimer) clearTimeout(debounceTimer);
+	debounceTimer = setTimeout(() => {
+		// Remove any history after current index (if we've undone and then made changes)
+		history = history.slice(0, historyIndex + 1);
+
+		// Add new snapshot
+		history.push({
+			frames: structuredClone(frames),
+			focalPoints: structuredClone(focalPoints)
+		});
+
+		// Limit history size
+		if (history.length > 50) {
+			history = history.slice(-50);
+		}
+
+		historyIndex = history.length - 1;
+		saveStatus = 'unsaved';
+	}, 500);
+}
+
+function undo() {
+	if (historyIndex <= 0) return;
+	historyIndex--;
+	const state = history[historyIndex];
+	frames = structuredClone(state.frames);
+	focalPoints = structuredClone(state.focalPoints);
+}
+
+function redo() {
+	if (historyIndex >= history.length - 1) return;
+	historyIndex++;
+	const state = history[historyIndex];
+	frames = structuredClone(state.frames);
+	focalPoints = structuredClone(state.focalPoints);
+}
+
+function handleKeyDown(event: KeyboardEvent) {
+	if ((event.metaKey || event.ctrlKey) && event.key === 'z') {
+		event.preventDefault();
+		if (event.shiftKey) {
+			redo();
+		} else {
+			undo();
+		}
+	} else if ((event.metaKey || event.ctrlKey) && event.key === 's') {
+		event.preventDefault();
+		saveMetadata();
+	}
+}
+
+async function saveMetadata() {
+	saveStatus = 'saving';
+	try {
+		// Save all frames
+		for (const frame of frames) {
+			await updateFrame(frame.id, {
+				x: frame.x,
+				y: frame.y,
+				width: frame.width,
+				height: frame.height,
+				label: frame.label
+			});
+		}
+
+		// Save all focal points
+		for (const point of focalPoints) {
+			await updateFocalPoint(point.id, {
+				x: point.x,
+				y: point.y,
+				label: point.label,
+				required: point.required
+			});
+		}
+
+		saveStatus = 'saved';
+	} catch (error) {
+		console.error('Failed to save metadata:', error);
+		saveStatus = 'unsaved';
+	}
+}
+
 onMount(async () => {
 	await loadPhoto();
+
+	// Capture initial snapshot after load
+	history.push({
+		frames: structuredClone(frames),
+		focalPoints: structuredClone(focalPoints)
+	});
+	historyIndex = 0;
+});
+
+// Watch for changes to frames/focal points and capture snapshots
+$effect(() => {
+	// Access frames and focalPoints to track them
+	const _ = [frames, focalPoints];
+
+	// Skip if we're still loading or if history is empty
+	if (loading || history.length === 0) return;
+
+	captureSnapshot();
 });
 
 async function loadPhoto() {
@@ -87,6 +202,8 @@ async function handleDeletePhoto() {
 }
 </script>
 
+<svelte:window onkeydown={handleKeyDown} />
+
 <div class="editor">
 	<div class="toolbar">
 		<a href="/">← Back</a>
@@ -94,6 +211,13 @@ async function handleDeletePhoto() {
 		<div class="tools">
 			<button onclick={handleAddFrame}>Add Frame</button>
 			<button onclick={handleAddFocalPoint}>Add Focal Point</button>
+			<button 
+				onclick={saveMetadata} 
+				class:save-btn-unsaved={saveStatus === 'unsaved'}
+				disabled={saveStatus === 'saving' || saveStatus === 'saved'}
+			>
+				{saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved' : 'Save'}
+			</button>
 			<button onclick={handleExport}>Export</button>
 			<button class="delete-btn" onclick={handleDeletePhoto}>Delete Photo</button>
 		</div>
@@ -158,8 +282,21 @@ async function handleDeletePhoto() {
 		font-size: 0.875rem;
 	}
 
-	button:hover {
+	button:hover:not(:disabled) {
 		background: #1d4ed8;
+	}
+
+	button:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	button.save-btn-unsaved {
+		background: #f59e0b;
+	}
+
+	button.save-btn-unsaved:hover {
+		background: #d97706;
 	}
 
 	button.delete-btn {
