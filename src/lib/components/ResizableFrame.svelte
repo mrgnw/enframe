@@ -252,6 +252,7 @@ async function handleHandlePointerUp(event: PointerEvent) {
 		box-sizing: border-box;
 		cursor: move;
 		pointer-events: auto;
+		transition: left 0.3s ease, top 0.3s ease, width 0.3s ease, height 0.3s ease;
 	}
 
 	/* Export-unchecked: grey */
@@ -281,6 +282,7 @@ async function handleHandlePointerUp(event: PointerEvent) {
 		border-color: #f59e0b;
 		z-index: 10;
 		opacity: 1;
+		transition: none;
 	}
 
 	.frame-label {

@@ -115,11 +115,17 @@ async function persistFrame(frame: Frame) {
 }
 
 const RATIOS = [
-	{ label: '16:9', w: 16, h: 9 },
-	{ label: '4:3', w: 4, h: 3 },
-	{ label: '3:2', w: 3, h: 2 },
-	{ label: '1:1', w: 1, h: 1 }
+	{ w: 16, h: 9 },
+	{ w: 4, h: 3 },
+	{ w: 3, h: 2 },
+	{ w: 1, h: 1 }
 ];
+
+function isPortrait(frame: Frame): boolean {
+	const pxW = frame.width * (imageWidth || 1);
+	const pxH = frame.height * (imageHeight || 1);
+	return pxH > pxW;
+}
 </script>
 
 {#if expanded && visible}
@@ -136,6 +142,7 @@ const RATIOS = [
 			<div class="section-label">Frames</div>
 			{#each frames as frame, i (frame.id)}
 				{@const isSelected = selectedFrameId === frame.id}
+				{@const portrait = isPortrait(frame)}
 				<div
 					class="panel-row"
 					class:selected={isSelected}
@@ -151,12 +158,16 @@ const RATIOS = [
 					</button>
 
 					<div class="ratio-presets">
-						{#each RATIOS as ratio}
-							<button
-								class="ratio-btn"
-								onclick={() => { applyRatio(frame, ratio.w, ratio.h); handleInteraction(); }}
-							>{ratio.label}</button>
-						{/each}
+						{#key portrait}
+							{#each RATIOS as ratio (ratio.w)}
+								{@const rw = portrait ? ratio.h : ratio.w}
+								{@const rh = portrait ? ratio.w : ratio.h}
+								<button
+									class="ratio-btn"
+									onclick={() => { applyRatio(frame, rw, rh); handleInteraction(); }}
+								>{rw}:{rh}</button>
+							{/each}
+						{/key}
 					</div>
 				</div>
 			{/each}
@@ -270,6 +281,7 @@ const RATIOS = [
 		display: flex;
 		gap: 2px;
 		margin-left: auto;
+		perspective: 200px;
 	}
 
 	.ratio-btn {
@@ -281,6 +293,12 @@ const RATIOS = [
 		font-size: 10px;
 		cursor: pointer;
 		transition: background 0.15s, color 0.15s, border-color 0.15s;
+		animation: flip-in 0.3s ease;
+	}
+
+	@keyframes flip-in {
+		0% { transform: rotateX(90deg); opacity: 0.3; }
+		100% { transform: rotateX(0deg); opacity: 1; }
 	}
 
 	.ratio-btn:hover {
