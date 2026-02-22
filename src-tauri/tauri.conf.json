@@ -1,0 +1,54 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"productName": "Enframe",
+	"version": "0.1.0",
+	"identifier": "com.enframe.app",
+	"build": {
+		"beforeBuildCommand": "bun run sveltekit:build",
+		"beforeDevCommand": "bun run sveltekit:dev",
+		"devUrl": "http://localhost:5173",
+		"frontendDist": "../build"
+	},
+	"app": {
+		"windows": [
+			{
+				"title": "Enframe",
+				"width": 1400,
+				"height": 900,
+				"resizable": true,
+				"fullscreen": false
+			}
+		],
+		"security": {
+			"csp": null
+		}
+	},
+	"bundle": {
+		"active": true,
+		"targets": "all",
+		"category": "DeveloperTool",
+		"copyright": "",
+		"shortDescription": "",
+		"longDescription": "",
+		"icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+		"resources": [],
+		"externalBin": [],
+		"linux": {
+			"deb": {
+				"depends": []
+			}
+		},
+		"macOS": {
+			"frameworks": [],
+			"entitlements": null,
+			"exceptionDomain": "",
+			"providerShortName": null,
+			"signingIdentity": null
+		},
+		"windows": {
+			"certificateThumbprint": null,
+			"digestAlgorithm": "sha256",
+			"timestampUrl": ""
+		}
+	}
+}

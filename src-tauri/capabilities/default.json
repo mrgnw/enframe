@@ -1,0 +1,24 @@
+{
+	"$schema": "https://schema.tauri.app/config/2/capability",
+	"identifier": "default",
+	"description": "Default permissions for Enframe",
+	"windows": ["main"],
+	"permissions": [
+		"sql:default",
+		"sql:allow-close",
+		"sql:allow-execute",
+		"sql:allow-load",
+		"sql:allow-select",
+		"fs:default",
+		"fs:allow-read",
+		"fs:allow-write",
+		"fs:allow-read-file",
+		"fs:allow-write-file",
+		"fs:allow-exists",
+		"fs:allow-read-dir",
+		"fs:scope-home-recursive",
+		"dialog:default",
+		"dialog:allow-open",
+		"dialog:allow-save"
+	]
+}
