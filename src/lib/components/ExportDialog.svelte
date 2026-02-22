@@ -1,106 +1,51 @@
 <script lang="ts">
-	import type { Photo, Frame, FocalPoint } from '$lib/db';
-	import { save } from '@tauri-apps/plugin-dialog';
-	import { writeTextFile } from '@tauri-apps/plugin-fs';
-	import { exportAllFrames } from '$lib/export';
+import type { FocalPoint, Frame, Photo } from '$lib/db';
+import { exportFramesToDirectory, exportMetadata as exportMetadataFile } from '$lib/export';
 
-	interface Props {
-		photo: Photo;
-		frames: Frame[];
-		focalPoints: FocalPoint[];
-		onClose: () => void;
-	}
+interface Props {
+	photo: Photo;
+	frames: Frame[];
+	focalPoints: FocalPoint[];
+	onClose: () => void;
+}
 
-	let { photo, frames, focalPoints, onClose }: Props = $props();
+let { photo, frames, focalPoints, onClose }: Props = $props();
 
-	let exportFormat = $state<'jpeg' | 'metadata' | 'both'>('both');
-	let jpegQuality = $state(0.92);
-	let exporting = $state(false);
-	let exportPath = $state('');
-	let exportProgress = $state({ current: 0, total: 0 });
+let exportFormat = $state<'jpeg' | 'metadata' | 'both'>('both');
+let jpegQuality = $state(0.92);
+let exporting = $state(false);
+let exportPath = $state('');
+let exportProgress = $state({ current: 0, total: 0 });
 
-	async function handleExport() {
-		exporting = true;
-		try {
-			if (exportFormat === 'metadata' || exportFormat === 'both') {
-				await exportMetadata();
-			}
-			
-			if (exportFormat === 'jpeg' || exportFormat === 'both') {
-				await exportCrops();
-			}
-			
-			alert('Export complete!');
-			onClose();
-		} catch (error) {
-			console.error('Export failed:', error);
-			alert(`Export failed: ${error}`);
-		} finally {
-			exporting = false;
-		}
-	}
-
-	async function exportMetadata() {
-		const defaultPath = photo.title?.replace(/\s+/g, '-') || 'photo';
-		const savePath = await save({
-			defaultPath: `${defaultPath}.json`,
-			filters: [{
-				name: 'JSON',
-				extensions: ['json']
-			}]
-		});
-
-		if (!savePath) return;
-
-		const metadata = {
-			photo: {
-				id: photo.id,
-				file_path: photo.file_path,
-				width: photo.width,
-				height: photo.height,
-				title: photo.title,
-				description: photo.description
-			},
-			frames: frames.map(f => ({
-				id: f.id,
-				label: f.label,
-				x: f.x,
-				y: f.y,
-				width: f.width,
-				height: f.height,
-				is_default: f.is_default
-			})),
-			focalPoints: focalPoints.map(p => ({
-				id: p.id,
-				frame_id: p.frame_id,
-				x: p.x,
-				y: p.y,
-				label: p.label,
-				required: p.required
-			}))
-		};
-
-		await writeTextFile(savePath, JSON.stringify(metadata, null, 2));
-		exportPath = savePath;
-	}
-
-	async function exportCrops() {
+async function handleExport() {
+	exporting = true;
+	try {
 		if (frames.length === 0) {
 			alert('No frames to export');
 			return;
 		}
 
-		const paths = await exportAllFrames(
-			photo,
-			frames,
-			jpegQuality,
-			(current, total) => {
-				exportProgress = { current, total };
-			}
-		);
+		const paths = await exportFramesToDirectory(photo, frames, jpegQuality, (current, total) => {
+			exportProgress = { current, total };
+		});
 
-		console.log('Exported', paths.length, 'crops');
+		if (paths.length > 0 && exportFormat !== 'jpeg') {
+			// Also export metadata to the same directory
+			const directory = paths[0].substring(0, paths[0].lastIndexOf('/'));
+			const basename = photo.title?.replace(/\.[^/.]+$/, '').replace(/\s+/g, '-') || 'photo';
+			const metadataPath = `${directory}/${basename}.metadata.json`;
+			await exportMetadataFile(photo, frames, focalPoints, metadataPath);
+		}
+
+		alert(`Exported ${paths.length} ${paths.length === 1 ? 'frame' : 'frames'}!`);
+		onClose();
+	} catch (error) {
+		console.error('Export failed:', error);
+		alert(`Export failed: ${error}`);
+	} finally {
+		exporting = false;
 	}
+}
 </script>
 
 <div class="dialog-overlay" onclick={onClose}>

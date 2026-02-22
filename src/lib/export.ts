@@ -1,27 +1,21 @@
-import { save } from '@tauri-apps/plugin-dialog';
-import { invoke } from '@tauri-apps/api/core';
-import type { Photo, Frame } from './db';
+import { open } from '@tauri-apps/plugin-dialog';
+import { writeFile } from '@tauri-apps/plugin-fs';
+import type { FocalPoint, Frame, Photo } from './db';
 import { getImageSrc } from './tauri';
 
-export async function exportFrameAsJPEG(
-	photo: Photo,
-	frame: Frame,
-	quality: number = 0.92
-): Promise<string | null> {
+async function cropFrameToBlob(photo: Photo, frame: Frame, quality: number = 0.92): Promise<Blob> {
 	const img = new Image();
 	img.src = getImageSrc(photo.file_path);
-	
+
 	await new Promise((resolve, reject) => {
 		img.onload = resolve;
 		img.onerror = reject;
 	});
 
-	// Create canvas with frame dimensions
 	const canvas = document.createElement('canvas');
 	const ctx = canvas.getContext('2d');
 	if (!ctx) throw new Error('Could not get canvas context');
 
-	// Calculate crop region in pixels
 	const cropX = frame.x * img.naturalWidth;
 	const cropY = frame.y * img.naturalHeight;
 	const cropW = frame.width * img.naturalWidth;
@@ -30,69 +24,86 @@ export async function exportFrameAsJPEG(
 	canvas.width = cropW;
 	canvas.height = cropH;
 
-	// Draw the cropped region
-	ctx.drawImage(
-		img,
-		cropX, cropY, cropW, cropH,  // source rectangle
-		0, 0, cropW, cropH            // destination rectangle
-	);
+	ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-	// Convert to blob
 	const blob = await new Promise<Blob | null>((resolve) => {
 		canvas.toBlob(resolve, 'image/jpeg', quality);
 	});
 
 	if (!blob) throw new Error('Failed to create blob');
-
-	// Convert blob to base64
-	const reader = new FileReader();
-	const base64 = await new Promise<string>((resolve, reject) => {
-		reader.onloadend = () => resolve(reader.result as string);
-		reader.onerror = reject;
-		reader.readAsDataURL(blob);
-	});
-
-	// Prompt for save location
-	const frameLabel = frame.label || `frame-${frame.id}`;
-	const photoName = photo.title?.replace(/\s+/g, '-') || 'photo';
-	const defaultPath = `${photoName}-${frameLabel}.jpg`;
-
-	const savePath = await save({
-		defaultPath,
-		filters: [{
-			name: 'JPEG',
-			extensions: ['jpg', 'jpeg']
-		}]
-	});
-
-	if (!savePath) return null;
-
-	// Remove data URL prefix
-	const base64Data = base64.split(',')[1];
-
-	// Save via Tauri command
-	await invoke('save_image', {
-		path: savePath,
-		data: base64Data
-	});
-
-	return savePath;
+	return blob;
 }
 
-export async function exportAllFrames(
+function generateFrameFilename(photo: Photo, frame: Frame, index: number): string {
+	const basename = photo.title?.replace(/\.[^/.]+$/, '').replace(/\s+/g, '-') || 'photo';
+	const ratio = (frame.width / frame.height).toFixed(2);
+	const orientation = frame.width > frame.height ? 'l' : frame.width < frame.height ? 'p' : 's';
+	return `${basename}.${orientation}.${index + 1}.${ratio}.jpg`;
+}
+
+export async function exportFramesToDirectory(
 	photo: Photo,
 	frames: Frame[],
 	quality: number = 0.92,
 	onProgress?: (current: number, total: number) => void
 ): Promise<string[]> {
-	const paths: string[] = [];
+	const directory = await open({
+		directory: true,
+		multiple: false,
+		title: 'Select export directory'
+	});
+
+	if (!directory || typeof directory !== 'string') return [];
+
+	const exportedPaths: string[] = [];
 
 	for (let i = 0; i < frames.length; i++) {
 		if (onProgress) onProgress(i + 1, frames.length);
-		
-		const path = await exportFrameAsJPEG(photo, frames[i], quality);
-		if (path) paths.push(path);
+
+		const blob = await cropFrameToBlob(photo, frames[i], quality);
+		const buffer = await blob.arrayBuffer();
+		const filename = generateFrameFilename(photo, frames[i], i);
+		const fullPath = `${directory}/${filename}`;
+
+		await writeFile(fullPath, new Uint8Array(buffer));
+		exportedPaths.push(fullPath);
 	}
 
-	return paths;
+	return exportedPaths;
+}
+
+export async function exportMetadata(
+	photo: Photo,
+	frames: Frame[],
+	focalPoints: FocalPoint[],
+	exportPath: string
+): Promise<void> {
+	const metadata = {
+		photo: {
+			title: photo.title,
+			width: photo.width,
+			height: photo.height,
+			file_path: photo.file_path
+		},
+		frames: frames.map((f) => ({
+			id: f.id,
+			label: f.label,
+			x: f.x,
+			y: f.y,
+			width: f.width,
+			height: f.height
+		})),
+		focal_points: focalPoints.map((p) => ({
+			id: p.id,
+			frame_id: p.frame_id,
+			label: p.label,
+			x: p.x,
+			y: p.y,
+			required: p.required
+		}))
+	};
+
+	const json = JSON.stringify(metadata, null, 2);
+	const encoder = new TextEncoder();
+	await writeFile(exportPath, encoder.encode(json));
 }
