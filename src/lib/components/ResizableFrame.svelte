@@ -8,10 +8,11 @@ interface Props {
 	imageHeight: number;
 	scale: number;
 	selected?: boolean;
+	aspectLocked?: boolean;
 	onSelect?: () => void;
 }
 
-let { frame, imageWidth, imageHeight, scale, selected = false, onSelect }: Props = $props();
+let { frame, imageWidth, imageHeight, scale, selected = false, aspectLocked = false, onSelect }: Props = $props();
 
 let isDragging = $state(false);
 let isResizing = $state(false);
@@ -84,29 +85,93 @@ function handleHandlePointerMove(event: PointerEvent) {
 	const deltaX = (event.clientX - dragStart.x) / scale / imageWidth;
 	const deltaY = (event.clientY - dragStart.y) / scale / imageHeight;
 
+	const isSymmetric = event.altKey; // Option/Alt for symmetric resize
+	const lockAspect = event.shiftKey || aspectLocked; // Shift for aspect lock, or persistent lock
+
 	let newX = dragStart.frameX;
 	let newY = dragStart.frameY;
 	let newW = dragStart.frameW;
 	let newH = dragStart.frameH;
 
-	if (resizeHandle.includes('w')) {
-		const change = Math.min(deltaX, dragStart.frameW - 0.05);
-		newX = dragStart.frameX + change;
-		newW = dragStart.frameW - change;
-	} else if (resizeHandle.includes('e')) {
-		newW = Math.max(0.05, Math.min(1 - newX, dragStart.frameW + deltaX));
+	if (isSymmetric) {
+		// Symmetric resize from center
+		const centerX = dragStart.frameX + dragStart.frameW / 2;
+		const centerY = dragStart.frameY + dragStart.frameH / 2;
+
+		if (resizeHandle.includes('e')) {
+			newW = dragStart.frameW + deltaX * 2;
+		} else if (resizeHandle.includes('w')) {
+			newW = dragStart.frameW - deltaX * 2;
+		}
+
+		if (resizeHandle.includes('s')) {
+			newH = dragStart.frameH + deltaY * 2;
+		} else if (resizeHandle.includes('n')) {
+			newH = dragStart.frameH - deltaY * 2;
+		}
+
+		newW = Math.max(0.05, newW);
+		newH = Math.max(0.05, newH);
+
+		newX = centerX - newW / 2;
+		newY = centerY - newH / 2;
+	} else {
+		// Standard resize from edge
+		if (resizeHandle.includes('w')) {
+			const change = Math.min(deltaX, dragStart.frameW - 0.05);
+			newX = dragStart.frameX + change;
+			newW = dragStart.frameW - change;
+		} else if (resizeHandle.includes('e')) {
+			newW = Math.max(0.05, Math.min(1 - newX, dragStart.frameW + deltaX));
+		}
+
+		if (resizeHandle.includes('n')) {
+			const change = Math.min(deltaY, dragStart.frameH - 0.05);
+			newY = dragStart.frameY + change;
+			newH = dragStart.frameH - change;
+		} else if (resizeHandle.includes('s')) {
+			newH = Math.max(0.05, Math.min(1 - newY, dragStart.frameH + deltaY));
+		}
 	}
 
-	if (resizeHandle.includes('n')) {
-		const change = Math.min(deltaY, dragStart.frameH - 0.05);
-		newY = dragStart.frameY + change;
-		newH = dragStart.frameH - change;
-	} else if (resizeHandle.includes('s')) {
-		newH = Math.max(0.05, Math.min(1 - newY, dragStart.frameH + deltaY));
+	// Apply aspect ratio lock if Shift is held
+	if (lockAspect) {
+		const originalAspect = dragStart.frameW / dragStart.frameH;
+
+		if (resizeHandle.includes('e') || resizeHandle.includes('w')) {
+			newH = newW / originalAspect;
+			if (!isSymmetric && resizeHandle.includes('n')) {
+				newY = dragStart.frameY + dragStart.frameH - newH;
+			}
+		} else if (resizeHandle.includes('n') || resizeHandle.includes('s')) {
+			newW = newH * originalAspect;
+			if (!isSymmetric && resizeHandle.includes('w')) {
+				newX = dragStart.frameX + dragStart.frameW - newW;
+			}
+		}
+
+		// For corner handles, use the dominant axis
+		if (resizeHandle.length === 2) {
+			const newAspect = newW / newH;
+			if (Math.abs(newAspect - originalAspect) > 0.1) {
+				newH = newW / originalAspect;
+				if (!isSymmetric) {
+					if (resizeHandle.includes('n')) {
+						newY = dragStart.frameY + dragStart.frameH - newH;
+					}
+				}
+			}
+		}
 	}
 
-	frame.x = Math.max(0, newX);
-	frame.y = Math.max(0, newY);
+	// Clamp to image bounds
+	newX = Math.max(0, Math.min(1 - newW, newX));
+	newY = Math.max(0, Math.min(1 - newH, newY));
+	newW = Math.max(0.05, Math.min(1 - newX, newW));
+	newH = Math.max(0.05, Math.min(1 - newY, newH));
+
+	frame.x = newX;
+	frame.y = newY;
 	frame.width = newW;
 	frame.height = newH;
 }

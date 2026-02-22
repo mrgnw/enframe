@@ -23,6 +23,16 @@ let clickStart = $state<{ x: number; y: number } | null>(null);
 let fitMode = $state<'fit' | 'fill'>('fit');
 let selectedFrameId = $state<number | null>(null);
 let showSidebar = $state(true);
+let aspectLocks = $state<Map<number, boolean>>(new Map());
+
+const commonRatios = [
+	{ label: '16:9', value: 16 / 9 },
+	{ label: '4:3', value: 4 / 3 },
+	{ label: '1:1', value: 1 },
+	{ label: '3:2', value: 3 / 2 },
+	{ label: '2:3', value: 2 / 3 },
+	{ label: '9:16', value: 9 / 16 }
+];
 
 function getFramesUnderCursor(clientX: number, clientY: number): number[] {
 	if (!containerEl || !imgEl) return [];
@@ -174,6 +184,39 @@ function selectFrame(frameId: number) {
 function toggleSidebar() {
 	showSidebar = !showSidebar;
 }
+
+function toggleAspectLock(frameId: number) {
+	const current = aspectLocks.get(frameId) || false;
+	aspectLocks.set(frameId, !current);
+	aspectLocks = new Map(aspectLocks); // Trigger reactivity
+}
+
+function applyRatio(frameId: number, ratio: number) {
+	const frame = frames.find((f) => f.id === frameId);
+	if (!frame) return;
+
+	// Keep the center position, adjust size to match ratio
+	const centerX = frame.x + frame.width / 2;
+	const centerY = frame.y + frame.height / 2;
+
+	let newW = frame.width;
+	let newH = frame.width / ratio;
+
+	// If height would exceed bounds, scale down based on height instead
+	if (newH > 1) {
+		newH = frame.height;
+		newW = frame.height * ratio;
+	}
+
+	frame.width = Math.min(1, newW);
+	frame.height = Math.min(1, newH);
+	frame.x = Math.max(0, Math.min(1 - frame.width, centerX - frame.width / 2));
+	frame.y = Math.max(0, Math.min(1 - frame.height, centerY - frame.height / 2));
+
+	// Auto-lock aspect when applying a ratio
+	aspectLocks.set(frameId, true);
+	aspectLocks = new Map(aspectLocks);
+}
 </script>
 
 <svelte:window onkeydown={handleKeyDown} />
@@ -187,15 +230,41 @@ function toggleSidebar() {
 			</div>
 			<div class="frame-list">
 				{#each frames as frame, i (frame.id)}
-					<button
-						class="frame-item"
-						class:selected={selectedFrameId === frame.id}
-						onclick={() => selectFrame(frame.id)}
-					>
-						<span class="frame-number">{i + 1}</span>
-						<span class="frame-label">{frame.label || 'Frame ' + (i + 1)}</span>
-						<span class="frame-dims">{Math.round(frame.width * 100)}% × {Math.round(frame.height * 100)}%</span>
-					</button>
+					<div class="frame-item-wrapper" class:selected={selectedFrameId === frame.id}>
+						<button
+							class="frame-item"
+							onclick={() => selectFrame(frame.id)}
+						>
+							<span class="frame-number">{i + 1}</span>
+							<span class="frame-label">{frame.label || 'Frame ' + (i + 1)}</span>
+							<span class="frame-dims">{Math.round(frame.width * 100)}% × {Math.round(frame.height * 100)}%</span>
+						</button>
+						
+						{#if selectedFrameId === frame.id}
+							<div class="frame-controls">
+								<button
+									class="aspect-lock-btn"
+									class:locked={aspectLocks.get(frame.id)}
+									onclick={(e) => { e.stopPropagation(); toggleAspectLock(frame.id); }}
+									title={aspectLocks.get(frame.id) ? 'Unlock aspect ratio' : 'Lock aspect ratio'}
+								>
+									{aspectLocks.get(frame.id) ? '🔒' : '🔓'}
+								</button>
+								
+								<div class="ratio-picker">
+									{#each commonRatios as { label, value }}
+										<button
+											class="ratio-btn"
+											onclick={(e) => { e.stopPropagation(); applyRatio(frame.id, value); }}
+											title="Set to {label} ratio"
+										>
+											{label}
+										</button>
+									{/each}
+								</div>
+							</div>
+						{/if}
+					</div>
 				{/each}
 			</div>
 		</div>
@@ -242,6 +311,7 @@ function toggleSidebar() {
 						imageHeight={imgEl.naturalHeight}
 						{scale}
 						selected={selectedFrameId === frame.id}
+						aspectLocked={aspectLocks.get(frame.id) || false}
 						onSelect={() => selectFrame(frame.id)}
 					/>
 				{/each}
@@ -400,13 +470,24 @@ function toggleSidebar() {
 		padding: 0.5rem;
 	}
 
+	.frame-item-wrapper {
+		margin-bottom: 0.5rem;
+	}
+
+	.frame-item-wrapper.selected {
+		background: #fef3c7;
+		border: 1px solid #f59e0b;
+		border-radius: 0.375rem;
+		padding: 0.5rem;
+		margin-bottom: 0.75rem;
+	}
+
 	.frame-item {
 		width: 100%;
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
 		padding: 0.75rem;
-		margin-bottom: 0.5rem;
 		background: #f9fafb;
 		border: 1px solid #e5e7eb;
 		border-radius: 0.375rem;
@@ -420,9 +501,9 @@ function toggleSidebar() {
 		border-color: #d1d5db;
 	}
 
-	.frame-item.selected {
-		background: #fef3c7;
-		border-color: #f59e0b;
+	.frame-item-wrapper.selected .frame-item {
+		background: white;
+		border-color: transparent;
 	}
 
 	.frame-number {
@@ -440,7 +521,7 @@ function toggleSidebar() {
 		color: #6b7280;
 	}
 
-	.frame-item.selected .frame-number {
+	.frame-item-wrapper.selected .frame-number {
 		background: #f59e0b;
 		border-color: #f59e0b;
 		color: white;
@@ -460,5 +541,60 @@ function toggleSidebar() {
 		flex-shrink: 0;
 		font-size: 0.75rem;
 		color: #6b7280;
+	}
+
+	.frame-controls {
+		margin-top: 0.5rem;
+		padding-top: 0.5rem;
+		border-top: 1px solid #f59e0b;
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+	}
+
+	.aspect-lock-btn {
+		flex-shrink: 0;
+		width: 2rem;
+		height: 2rem;
+		padding: 0;
+		background: white;
+		border: 1px solid #d1d5db;
+		border-radius: 0.25rem;
+		font-size: 1rem;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.aspect-lock-btn:hover {
+		background: #f9fafb;
+	}
+
+	.aspect-lock-btn.locked {
+		background: #fef3c7;
+		border-color: #f59e0b;
+	}
+
+	.ratio-picker {
+		flex: 1;
+		display: flex;
+		gap: 0.25rem;
+		flex-wrap: wrap;
+	}
+
+	.ratio-btn {
+		padding: 0.25rem 0.5rem;
+		background: white;
+		border: 1px solid #d1d5db;
+		border-radius: 0.25rem;
+		font-size: 0.75rem;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.ratio-btn:hover {
+		background: #f9fafb;
+		border-color: #9ca3af;
 	}
 </style>
