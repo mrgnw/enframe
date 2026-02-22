@@ -3,6 +3,14 @@
 mod lightroom;
 
 use tauri::Manager;
+use std::fs;
+
+#[tauri::command]
+fn save_image(path: String, data: String) -> Result<(), String> {
+	let bytes = base64::decode(&data).map_err(|e| e.to_string())?;
+	fs::write(&path, bytes).map_err(|e| e.to_string())?;
+	Ok(())
+}
 
 fn main() {
 	tauri::Builder::default()
@@ -11,7 +19,8 @@ fn main() {
 		.plugin(tauri_plugin_dialog::init())
 		.invoke_handler(tauri::generate_handler![
 			lightroom::get_lightroom_library_path,
-			lightroom::list_lightroom_photos
+			lightroom::list_lightroom_photos,
+			save_image
 		])
 		.setup(|app| {
 			// Initialize the database with schema

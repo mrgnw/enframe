@@ -2,12 +2,14 @@
 import { onMount } from 'svelte';
 import { page } from '$app/stores';
 import ImageCanvas from '$lib/components/ImageCanvas.svelte';
+import ExportDialog from '$lib/components/ExportDialog.svelte';
 import { addFocalPoint, addFrame, type FocalPoint, type Frame, getFocalPoints, getFrames, getPhoto, type Photo } from '$lib/db';
 
 let photo = $state<Photo | null>(null);
 let frames = $state<Frame[]>([]);
 let focalPoints = $state<FocalPoint[]>([]);
 let loading = $state(true);
+let showExportDialog = $state(false);
 
 const photoId = Number($page.params.id);
 
@@ -60,8 +62,7 @@ async function handleAddFocalPoint() {
 }
 
 async function handleExport() {
-	// TODO: Implement export
-	alert('Export functionality coming soon!');
+	showExportDialog = true;
 }
 </script>
 
@@ -84,6 +85,15 @@ async function handleExport() {
 		<div class="error">Photo not found</div>
 	{/if}
 </div>
+
+{#if showExportDialog && photo}
+	<ExportDialog
+		{photo}
+		{frames}
+		{focalPoints}
+		onClose={() => showExportDialog = false}
+	/>
+{/if}
 
 <style>
 	.editor {
