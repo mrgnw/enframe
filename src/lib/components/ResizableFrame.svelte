@@ -1,125 +1,122 @@
 <script lang="ts">
-	import type { Frame } from '$lib/db';
-	import { updateFrame } from '$lib/db';
+import type { Frame } from '$lib/db';
+import { updateFrame } from '$lib/db';
 
-	interface Props {
-		frame: Frame;
-		imageWidth: number;
-		imageHeight: number;
-		scale: number;
-		onUpdate?: () => void;
+interface Props {
+	frame: Frame;
+	imageWidth: number;
+	imageHeight: number;
+	scale: number;
+}
+
+let { frame, imageWidth, imageHeight, scale }: Props = $props();
+
+let isDragging = $state(false);
+let isResizing = $state(false);
+let resizeHandle = $state<string | null>(null);
+let dragStart = $state({ x: 0, y: 0, frameX: 0, frameY: 0, frameW: 0, frameH: 0 });
+
+function handleFramePointerDown(event: PointerEvent) {
+	if (event.button !== 0) return;
+	event.stopPropagation();
+
+	isDragging = true;
+	dragStart = {
+		x: event.clientX,
+		y: event.clientY,
+		frameX: frame.x,
+		frameY: frame.y,
+		frameW: frame.width,
+		frameH: frame.height
+	};
+	(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+}
+
+function handleFramePointerMove(event: PointerEvent) {
+	if (!isDragging || isResizing) return;
+	event.stopPropagation();
+
+	const deltaX = (event.clientX - dragStart.x) / scale / imageWidth;
+	const deltaY = (event.clientY - dragStart.y) / scale / imageHeight;
+
+	const newX = Math.max(0, Math.min(1 - frame.width, dragStart.frameX + deltaX));
+	const newY = Math.max(0, Math.min(1 - frame.height, dragStart.frameY + deltaY));
+
+	frame.x = newX;
+	frame.y = newY;
+}
+
+async function handleFramePointerUp(event: PointerEvent) {
+	if (!isDragging) return;
+	event.stopPropagation();
+
+	isDragging = false;
+	(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
+
+	await updateFrame(frame.id, { x: frame.x, y: frame.y });
+}
+
+function handleHandlePointerDown(event: PointerEvent, handle: string) {
+	if (event.button !== 0) return;
+	event.stopPropagation();
+
+	isResizing = true;
+	resizeHandle = handle;
+	dragStart = {
+		x: event.clientX,
+		y: event.clientY,
+		frameX: frame.x,
+		frameY: frame.y,
+		frameW: frame.width,
+		frameH: frame.height
+	};
+	(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+}
+
+function handleHandlePointerMove(event: PointerEvent) {
+	if (!isResizing || !resizeHandle) return;
+	event.stopPropagation();
+
+	const deltaX = (event.clientX - dragStart.x) / scale / imageWidth;
+	const deltaY = (event.clientY - dragStart.y) / scale / imageHeight;
+
+	let newX = dragStart.frameX;
+	let newY = dragStart.frameY;
+	let newW = dragStart.frameW;
+	let newH = dragStart.frameH;
+
+	if (resizeHandle.includes('w')) {
+		const change = Math.min(deltaX, dragStart.frameW - 0.05);
+		newX = dragStart.frameX + change;
+		newW = dragStart.frameW - change;
+	} else if (resizeHandle.includes('e')) {
+		newW = Math.max(0.05, Math.min(1 - newX, dragStart.frameW + deltaX));
 	}
 
-	let { frame, imageWidth, imageHeight, scale, onUpdate }: Props = $props();
-
-	let isDragging = $state(false);
-	let isResizing = $state(false);
-	let resizeHandle = $state<string | null>(null);
-	let dragStart = $state({ x: 0, y: 0, frameX: 0, frameY: 0, frameW: 0, frameH: 0 });
-
-	function handleFramePointerDown(event: PointerEvent) {
-		if (event.button !== 0) return;
-		event.stopPropagation();
-		
-		isDragging = true;
-		dragStart = {
-			x: event.clientX,
-			y: event.clientY,
-			frameX: frame.x,
-			frameY: frame.y,
-			frameW: frame.width,
-			frameH: frame.height
-		};
-		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+	if (resizeHandle.includes('n')) {
+		const change = Math.min(deltaY, dragStart.frameH - 0.05);
+		newY = dragStart.frameY + change;
+		newH = dragStart.frameH - change;
+	} else if (resizeHandle.includes('s')) {
+		newH = Math.max(0.05, Math.min(1 - newY, dragStart.frameH + deltaY));
 	}
 
-	function handleFramePointerMove(event: PointerEvent) {
-		if (!isDragging || isResizing) return;
-		event.stopPropagation();
+	frame.x = Math.max(0, newX);
+	frame.y = Math.max(0, newY);
+	frame.width = newW;
+	frame.height = newH;
+}
 
-		const deltaX = (event.clientX - dragStart.x) / scale / imageWidth;
-		const deltaY = (event.clientY - dragStart.y) / scale / imageHeight;
+async function handleHandlePointerUp(event: PointerEvent) {
+	if (!isResizing) return;
+	event.stopPropagation();
 
-		const newX = Math.max(0, Math.min(1 - frame.width, dragStart.frameX + deltaX));
-		const newY = Math.max(0, Math.min(1 - frame.height, dragStart.frameY + deltaY));
+	isResizing = false;
+	resizeHandle = null;
+	(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
 
-		frame.x = newX;
-		frame.y = newY;
-	}
-
-	async function handleFramePointerUp(event: PointerEvent) {
-		if (!isDragging) return;
-		event.stopPropagation();
-		
-		isDragging = false;
-		(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
-
-		await updateFrame(frame.id, { x: frame.x, y: frame.y });
-		if (onUpdate) onUpdate();
-	}
-
-	function handleHandlePointerDown(event: PointerEvent, handle: string) {
-		if (event.button !== 0) return;
-		event.stopPropagation();
-		
-		isResizing = true;
-		resizeHandle = handle;
-		dragStart = {
-			x: event.clientX,
-			y: event.clientY,
-			frameX: frame.x,
-			frameY: frame.y,
-			frameW: frame.width,
-			frameH: frame.height
-		};
-		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-	}
-
-	function handleHandlePointerMove(event: PointerEvent) {
-		if (!isResizing || !resizeHandle) return;
-		event.stopPropagation();
-
-		const deltaX = (event.clientX - dragStart.x) / scale / imageWidth;
-		const deltaY = (event.clientY - dragStart.y) / scale / imageHeight;
-
-		let newX = dragStart.frameX;
-		let newY = dragStart.frameY;
-		let newW = dragStart.frameW;
-		let newH = dragStart.frameH;
-
-		if (resizeHandle.includes('w')) {
-			const change = Math.min(deltaX, dragStart.frameW - 0.05);
-			newX = dragStart.frameX + change;
-			newW = dragStart.frameW - change;
-		} else if (resizeHandle.includes('e')) {
-			newW = Math.max(0.05, Math.min(1 - newX, dragStart.frameW + deltaX));
-		}
-
-		if (resizeHandle.includes('n')) {
-			const change = Math.min(deltaY, dragStart.frameH - 0.05);
-			newY = dragStart.frameY + change;
-			newH = dragStart.frameH - change;
-		} else if (resizeHandle.includes('s')) {
-			newH = Math.max(0.05, Math.min(1 - newY, dragStart.frameH + deltaY));
-		}
-
-		frame.x = Math.max(0, newX);
-		frame.y = Math.max(0, newY);
-		frame.width = newW;
-		frame.height = newH;
-	}
-
-	async function handleHandlePointerUp(event: PointerEvent) {
-		if (!isResizing) return;
-		event.stopPropagation();
-		
-		isResizing = false;
-		resizeHandle = null;
-		(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
-
-		await updateFrame(frame.id, { x: frame.x, y: frame.y, width: frame.width, height: frame.height });
-		if (onUpdate) onUpdate();
-	}
+	await updateFrame(frame.id, { x: frame.x, y: frame.y, width: frame.width, height: frame.height });
+}
 </script>
 
 <div

@@ -1,64 +1,117 @@
 <script lang="ts">
-	import type { Photo, Frame, FocalPoint } from '$lib/db';
-	import { getImageSrc } from '$lib/tauri';
-	import DraggableFocalPoint from './DraggableFocalPoint.svelte';
-	import ResizableFrame from './ResizableFrame.svelte';
+import type { FocalPoint, Frame, Photo } from '$lib/db';
+import { getImageSrc } from '$lib/tauri';
+import DraggableFocalPoint from './DraggableFocalPoint.svelte';
+import ResizableFrame from './ResizableFrame.svelte';
 
-	interface Props {
-		photo: Photo;
-		frames?: Frame[];
-		focalPoints?: FocalPoint[];
-		onUpdate?: () => void;
-	}
+interface Props {
+	photo: Photo;
+	frames?: Frame[];
+	focalPoints?: FocalPoint[];
+}
 
-	let { photo, frames = [], focalPoints = [], onUpdate }: Props = $props();
+let { photo, frames = $bindable([]), focalPoints = $bindable([]) }: Props = $props();
 
-	let containerEl = $state<HTMLDivElement | null>(null);
-	let imgEl = $state<HTMLImageElement | null>(null);
-	let scale = $state(1);
-	let translateX = $state(0);
-	let translateY = $state(0);
-	let isPanning = $state(false);
-	let panStart = $state({ x: 0, y: 0 });
+let containerEl = $state<HTMLDivElement | null>(null);
+let imgEl = $state<HTMLImageElement | null>(null);
+let scale = $state(1);
+let translateX = $state(0);
+let translateY = $state(0);
+let isPanning = $state(false);
+let panStart = $state({ x: 0, y: 0 });
+let fitMode = $state<'fit' | 'fill'>('fit');
 
-	function handleWheel(event: WheelEvent) {
+function handleWheel(event: WheelEvent) {
+	event.preventDefault();
+	if (!containerEl) return;
+
+	const delta = event.deltaY * -0.001;
+	const newScale = Math.max(0.1, Math.min(5, scale + delta));
+
+	// Zoom centered on cursor position
+	const rect = containerEl.getBoundingClientRect();
+	const mouseX = event.clientX - rect.left;
+	const mouseY = event.clientY - rect.top;
+
+	// Calculate the point under the cursor in the scaled coordinate space
+	const pointX = (mouseX - translateX) / scale;
+	const pointY = (mouseY - translateY) / scale;
+
+	// Adjust translation to keep the same point under the cursor
+	translateX = mouseX - pointX * newScale;
+	translateY = mouseY - pointY * newScale;
+
+	scale = newScale;
+}
+
+function handlePointerDown(event: PointerEvent) {
+	if (event.button !== 0) return;
+	isPanning = true;
+	panStart = { x: event.clientX - translateX, y: event.clientY - translateY };
+	(event.target as HTMLElement).setPointerCapture(event.pointerId);
+}
+
+function handlePointerMove(event: PointerEvent) {
+	if (!isPanning) return;
+	translateX = event.clientX - panStart.x;
+	translateY = event.clientY - panStart.y;
+}
+
+function handlePointerUp(event: PointerEvent) {
+	isPanning = false;
+	(event.target as HTMLElement).releasePointerCapture(event.pointerId);
+}
+
+function calculateFitScale(): number {
+	if (!containerEl || !imgEl) return 1;
+	const containerWidth = containerEl.clientWidth;
+	const containerHeight = containerEl.clientHeight;
+	const imgWidth = imgEl.naturalWidth;
+	const imgHeight = imgEl.naturalHeight;
+
+	if (!imgWidth || !imgHeight) return 1;
+
+	const scaleX = containerWidth / imgWidth;
+	const scaleY = containerHeight / imgHeight;
+
+	return fitMode === 'fit' ? Math.min(scaleX, scaleY) : Math.max(scaleX, scaleY);
+}
+
+function fitToView() {
+	scale = calculateFitScale();
+	translateX = 0;
+	translateY = 0;
+}
+
+function resetView() {
+	fitToView();
+}
+
+function toggleFitMode() {
+	fitMode = fitMode === 'fit' ? 'fill' : 'fit';
+	fitToView();
+}
+
+function handleImageLoad() {
+	fitToView();
+}
+
+function handleKeyDown(event: KeyboardEvent) {
+	if (event.key === '0') {
 		event.preventDefault();
-		const delta = event.deltaY * -0.001;
-		const newScale = Math.max(0.1, Math.min(5, scale + delta));
-		scale = newScale;
+		toggleFitMode();
 	}
-
-	function handlePointerDown(event: PointerEvent) {
-		if (event.button !== 0) return;
-		isPanning = true;
-		panStart = { x: event.clientX - translateX, y: event.clientY - translateY };
-		(event.target as HTMLElement).setPointerCapture(event.pointerId);
-	}
-
-	function handlePointerMove(event: PointerEvent) {
-		if (!isPanning) return;
-		translateX = event.clientX - panStart.x;
-		translateY = event.clientY - panStart.y;
-	}
-
-	function handlePointerUp(event: PointerEvent) {
-		isPanning = false;
-		(event.target as HTMLElement).releasePointerCapture(event.pointerId);
-	}
-
-	function resetView() {
-		scale = 1;
-		translateX = 0;
-		translateY = 0;
-	}
+}
 </script>
+
+<svelte:window onkeydown={handleKeyDown} />
 
 <div class="canvas-wrapper">
 	<div class="controls">
 		<button onclick={() => scale = Math.min(5, scale + 0.1)}>+</button>
 		<button onclick={() => scale = Math.max(0.1, scale - 0.1)}>−</button>
-		<button onclick={resetView}>Reset</button>
-		<span class="zoom-level">{Math.round(scale * 100)}%</span>
+		<button onclick={resetView}>Fit</button>
+		<span class="zoom-level">{Math.round(scale * 100)}% ({fitMode})</span>
 	</div>
 
 	<div
@@ -81,6 +134,7 @@
 				src={getImageSrc(photo.file_path)}
 				alt={photo.title || 'Photo'}
 				draggable={false}
+				onload={handleImageLoad}
 			/>
 
 			<!-- Frame overlays -->
@@ -91,7 +145,6 @@
 						imageWidth={imgEl.naturalWidth}
 						imageHeight={imgEl.naturalHeight}
 						{scale}
-						{onUpdate}
 					/>
 				{/each}
 			{/if}
@@ -104,7 +157,6 @@
 						imageWidth={imgEl.naturalWidth}
 						imageHeight={imgEl.naturalHeight}
 						{scale}
-						{onUpdate}
 					/>
 				{/each}
 			{/if}

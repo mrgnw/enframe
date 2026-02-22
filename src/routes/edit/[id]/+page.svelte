@@ -1,9 +1,18 @@
 <script lang="ts">
 import { onMount } from 'svelte';
 import { page } from '$app/stores';
-import ImageCanvas from '$lib/components/ImageCanvas.svelte';
 import ExportDialog from '$lib/components/ExportDialog.svelte';
-import { addFocalPoint, addFrame, type FocalPoint, type Frame, getFocalPoints, getFrames, getPhoto, type Photo } from '$lib/db';
+import ImageCanvas from '$lib/components/ImageCanvas.svelte';
+import {
+	addFocalPoint,
+	addFrame,
+	type FocalPoint,
+	type Frame,
+	getFocalPoints,
+	getFrames,
+	getPhoto,
+	type Photo
+} from '$lib/db';
 
 let photo = $state<Photo | null>(null);
 let frames = $state<Frame[]>([]);
@@ -32,7 +41,7 @@ async function loadPhoto() {
 
 async function handleAddFrame() {
 	if (!photo) return;
-	
+
 	const id = await addFrame({
 		photo_id: photoId,
 		label: `Frame ${frames.length + 1}`,
@@ -42,13 +51,13 @@ async function handleAddFrame() {
 		height: 0.6,
 		is_default: false
 	});
-	
+
 	await loadPhoto();
 }
 
 async function handleAddFocalPoint() {
 	if (!photo) return;
-	
+
 	const id = await addFocalPoint({
 		photo_id: photoId,
 		frame_id: undefined,
@@ -57,7 +66,7 @@ async function handleAddFocalPoint() {
 		label: `Point ${focalPoints.length + 1}`,
 		required: true
 	});
-	
+
 	await loadPhoto();
 }
 
@@ -80,7 +89,7 @@ async function handleExport() {
 	{#if loading}
 		<div class="loading">Loading...</div>
 	{:else if photo}
-		<ImageCanvas {photo} {frames} {focalPoints} onUpdate={loadPhoto} />
+		<ImageCanvas {photo} bind:frames bind:focalPoints />
 	{:else}
 		<div class="error">Photo not found</div>
 	{/if}

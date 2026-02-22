@@ -1,58 +1,56 @@
 <script lang="ts">
-	import type { FocalPoint } from '$lib/db';
-	import { updateFocalPoint } from '$lib/db';
+import type { FocalPoint } from '$lib/db';
+import { updateFocalPoint } from '$lib/db';
 
-	interface Props {
-		point: FocalPoint;
-		imageWidth: number;
-		imageHeight: number;
-		scale: number;
-		onUpdate?: () => void;
-	}
+interface Props {
+	point: FocalPoint;
+	imageWidth: number;
+	imageHeight: number;
+	scale: number;
+}
 
-	let { point, imageWidth, imageHeight, scale, onUpdate }: Props = $props();
+let { point, imageWidth, imageHeight, scale }: Props = $props();
 
-	let isDragging = $state(false);
-	let dragStart = $state({ x: 0, y: 0, pointX: 0, pointY: 0 });
+let isDragging = $state(false);
+let dragStart = $state({ x: 0, y: 0, pointX: 0, pointY: 0 });
 
-	function handlePointerDown(event: PointerEvent) {
-		if (event.button !== 0) return;
-		event.stopPropagation();
-		
-		isDragging = true;
-		dragStart = {
-			x: event.clientX,
-			y: event.clientY,
-			pointX: point.x,
-			pointY: point.y
-		};
-		(event.target as HTMLElement).setPointerCapture(event.pointerId);
-	}
+function handlePointerDown(event: PointerEvent) {
+	if (event.button !== 0) return;
+	event.stopPropagation();
 
-	function handlePointerMove(event: PointerEvent) {
-		if (!isDragging) return;
-		event.stopPropagation();
+	isDragging = true;
+	dragStart = {
+		x: event.clientX,
+		y: event.clientY,
+		pointX: point.x,
+		pointY: point.y
+	};
+	(event.target as HTMLElement).setPointerCapture(event.pointerId);
+}
 
-		const deltaX = (event.clientX - dragStart.x) / scale / imageWidth;
-		const deltaY = (event.clientY - dragStart.y) / scale / imageHeight;
+function handlePointerMove(event: PointerEvent) {
+	if (!isDragging) return;
+	event.stopPropagation();
 
-		const newX = Math.max(0, Math.min(1, dragStart.pointX + deltaX));
-		const newY = Math.max(0, Math.min(1, dragStart.pointY + deltaY));
+	const deltaX = (event.clientX - dragStart.x) / scale / imageWidth;
+	const deltaY = (event.clientY - dragStart.y) / scale / imageHeight;
 
-		point.x = newX;
-		point.y = newY;
-	}
+	const newX = Math.max(0, Math.min(1, dragStart.pointX + deltaX));
+	const newY = Math.max(0, Math.min(1, dragStart.pointY + deltaY));
 
-	async function handlePointerUp(event: PointerEvent) {
-		if (!isDragging) return;
-		event.stopPropagation();
-		
-		isDragging = false;
-		(event.target as HTMLElement).releasePointerCapture(event.pointerId);
+	point.x = newX;
+	point.y = newY;
+}
 
-		await updateFocalPoint(point.id, { x: point.x, y: point.y });
-		if (onUpdate) onUpdate();
-	}
+async function handlePointerUp(event: PointerEvent) {
+	if (!isDragging) return;
+	event.stopPropagation();
+
+	isDragging = false;
+	(event.target as HTMLElement).releasePointerCapture(event.pointerId);
+
+	await updateFocalPoint(point.id, { x: point.x, y: point.y });
+}
 </script>
 
 <div
