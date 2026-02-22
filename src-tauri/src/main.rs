@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod inbox;
 mod lightroom;
 
 use base64::Engine;
@@ -111,6 +112,7 @@ fn main() {
             lightroom::search_lr_assets,
             lightroom::list_lr_recent,
             lightroom::get_lr_asset_paths,
+            inbox::scan_inbox,
             save_image,
             crop_and_export
         ])

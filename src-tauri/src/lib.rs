@@ -1,3 +1,4 @@
+mod inbox;
 mod lightroom;
 
 use base64::Engine;
@@ -187,6 +188,7 @@ pub fn run() {
             lightroom::search_lr_assets,
             lightroom::list_lr_recent,
             lightroom::get_lr_asset_paths,
+            inbox::scan_inbox,
             save_image,
             crop_and_export
         ])

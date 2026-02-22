@@ -3,6 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { onMount } from 'svelte';
 import { type Frame, importFile, listAllFrames, listPhotos, type Photo } from '$lib/db';
 import { getFilePathFromDrop, getImageSrc } from '$lib/tauri';
+import InboxWatcher from './InboxWatcher.svelte';
 import LightroomBrowser from './LightroomBrowser.svelte';
 
 async function loadImageDimensions(src: string): Promise<{ width: number; height: number }> {
@@ -117,6 +118,8 @@ function handleLightroomClick() {
 			</button>
 		</div>
 	</div>
+
+	<InboxWatcher onPhotosImported={loadPhotos} />
 
 	{#if showLightroomBrowser}
 		<LightroomBrowser onPhotosImported={loadPhotos} />
