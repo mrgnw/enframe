@@ -146,13 +146,49 @@ function calculateFitScale(): number {
 }
 
 function fitToView() {
+	if (!containerEl || !imgEl) return;
+
 	scale = calculateFitScale();
-	translateX = 0;
-	translateY = 0;
+
+	// Center the image in the container
+	const containerWidth = containerEl.clientWidth;
+	const containerHeight = containerEl.clientHeight;
+	const scaledWidth = imgEl.naturalWidth * scale;
+	const scaledHeight = imgEl.naturalHeight * scale;
+
+	translateX = (containerWidth - scaledWidth) / 2;
+	translateY = (containerHeight - scaledHeight) / 2;
 }
 
 function resetView() {
 	fitToView();
+}
+
+function fitToFrame() {
+	if (!containerEl || !imgEl || !selectedFrameId) return;
+
+	const frame = frames.find((f) => f.id === selectedFrameId);
+	if (!frame) return;
+
+	const containerWidth = containerEl.clientWidth;
+	const containerHeight = containerEl.clientHeight;
+
+	// Calculate frame dimensions in pixels
+	const frameWidth = frame.width * imgEl.naturalWidth;
+	const frameHeight = frame.height * imgEl.naturalHeight;
+
+	// Calculate scale to fit frame in container
+	const scaleX = containerWidth / frameWidth;
+	const scaleY = containerHeight / frameHeight;
+	scale = Math.min(scaleX, scaleY) * 0.9; // 90% to add padding
+
+	// Calculate frame center in pixels
+	const frameCenterX = (frame.x + frame.width / 2) * imgEl.naturalWidth;
+	const frameCenterY = (frame.y + frame.height / 2) * imgEl.naturalHeight;
+
+	// Center frame in container
+	translateX = containerWidth / 2 - frameCenterX * scale;
+	translateY = containerHeight / 2 - frameCenterY * scale;
 }
 
 function toggleFitMode() {
@@ -276,6 +312,9 @@ function applyRatio(frameId: number, ratio: number) {
 		<button onclick={() => scale = Math.min(5, scale + 0.1)}>+</button>
 		<button onclick={() => scale = Math.max(0.1, scale - 0.1)}>−</button>
 		<button onclick={resetView}>Fit</button>
+		{#if selectedFrameId}
+			<button onclick={fitToFrame} title="Fit to selected frame">Frame</button>
+		{/if}
 		<span class="zoom-level">{Math.round(scale * 100)}% ({fitMode})</span>
 	</div>
 

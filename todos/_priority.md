@@ -4,4 +4,5 @@
 4. frame-selection
 5. frame-manipulation
 6. export-rework
-7. save-history
+7. canvas-viewport-enhancements
+8. save-history
