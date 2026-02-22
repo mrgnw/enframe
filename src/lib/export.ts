@@ -1,38 +1,7 @@
+import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import type { FocalPoint, Frame, Photo } from './db';
-import { getImageSrc } from './tauri';
-
-async function cropFrameToBlob(photo: Photo, frame: Frame, quality: number = 0.92): Promise<Blob> {
-	const img = new Image();
-	img.src = getImageSrc(photo.file_path);
-
-	await new Promise((resolve, reject) => {
-		img.onload = resolve;
-		img.onerror = reject;
-	});
-
-	const canvas = document.createElement('canvas');
-	const ctx = canvas.getContext('2d');
-	if (!ctx) throw new Error('Could not get canvas context');
-
-	const cropX = frame.x * img.naturalWidth;
-	const cropY = frame.y * img.naturalHeight;
-	const cropW = frame.width * img.naturalWidth;
-	const cropH = frame.height * img.naturalHeight;
-
-	canvas.width = cropW;
-	canvas.height = cropH;
-
-	ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-
-	const blob = await new Promise<Blob | null>((resolve) => {
-		canvas.toBlob(resolve, 'image/jpeg', quality);
-	});
-
-	if (!blob) throw new Error('Failed to create blob');
-	return blob;
-}
 
 function generateFrameFilename(photo: Photo, frame: Frame, index: number): string {
 	const basename = photo.title?.replace(/\.[^/.]+$/, '').replace(/\s+/g, '-') || 'photo';
@@ -64,16 +33,25 @@ export async function exportFrames(
 	onProgress?: (current: number, total: number) => void
 ): Promise<string[]> {
 	const exportedPaths: string[] = [];
+	const qualityU8 = Math.round(quality * 100);
 
 	for (let i = 0; i < frames.length; i++) {
 		if (onProgress) onProgress(i + 1, frames.length);
 
-		const blob = await cropFrameToBlob(photo, frames[i], quality);
-		const buffer = await blob.arrayBuffer();
-		const filename = generateFrameFilename(photo, frames[i], i);
+		const frame = frames[i];
+		const filename = generateFrameFilename(photo, frame, i);
 		const fullPath = `${directory}/${filename}`;
 
-		await writeFile(fullPath, new Uint8Array(buffer));
+		await invoke('crop_and_export', {
+			sourcePath: photo.file_path,
+			outputPath: fullPath,
+			x: frame.x,
+			y: frame.y,
+			width: frame.width,
+			height: frame.height,
+			quality: qualityU8
+		});
+
 		exportedPaths.push(fullPath);
 	}
 

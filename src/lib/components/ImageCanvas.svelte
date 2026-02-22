@@ -9,9 +9,11 @@ interface Props {
 	photo: Photo;
 	frames?: Frame[];
 	focalPoints?: FocalPoint[];
+	onchange?: () => void;
+	ondeleteframe?: (frameId: number) => void;
 }
 
-let { photo, frames = $bindable([]), focalPoints = $bindable([]) }: Props = $props();
+let { photo, frames = $bindable([]), focalPoints = $bindable([]), onchange, ondeleteframe }: Props = $props();
 
 let containerEl = $state<HTMLDivElement | null>(null);
 let imgEl = $state<HTMLImageElement | null>(null);
@@ -26,24 +28,21 @@ let selectedFrameId = $state<number | null>(null);
 let showSidebar = $state(true);
 let aspectLocks = $state<Map<number, boolean>>(new Map());
 
-// Export state
-let exportChecked = $state<Set<number>>(new Set());
+// Export state: track unchecked IDs (all frames checked by default)
+let exportUnchecked = $state<Set<number>>(new Set());
 let exportDir = $state(getDefaultExportDir(photo.file_path));
 let isSourceDir = $state(true);
 let exporting = $state(false);
 let exportProgress = $state({ current: 0, total: 0 });
+let exportStatus = $state<{ type: 'success' | 'error'; message: string } | null>(null);
 
-// Initialize exportChecked with all frame IDs when frames change
-$effect(() => {
-	const currentIds = new Set(frames.map((f) => f.id));
-	// Add any new frame IDs
-	for (const id of currentIds) {
-		if (!exportChecked.has(id)) {
-			exportChecked.add(id);
-			exportChecked = new Set(exportChecked);
-		}
-	}
-});
+function isExportChecked(frameId: number): boolean {
+	return !exportUnchecked.has(frameId);
+}
+
+function checkedCount(): number {
+	return frames.filter((f) => !exportUnchecked.has(f.id)).length;
+}
 
 const commonRatios = [
 	{ label: '16:9', value: 16 / 9 },
@@ -131,7 +130,7 @@ function handlePointerUp(event: PointerEvent) {
 		const dy = Math.abs(event.clientY - clickStart.y);
 
 		if (dx < 5 && dy < 5) {
-			// This was a click - cycle frames under cursor
+			// This was a click - cycle frames under cursor or deselect
 			const framesUnder = getFramesUnderCursor(event.clientX, event.clientY);
 			if (framesUnder.length > 1) {
 				const currentIndex = selectedFrameId
@@ -141,6 +140,8 @@ function handlePointerUp(event: PointerEvent) {
 				selectedFrameId = frames[framesUnder[nextIndex]].id;
 			} else if (framesUnder.length === 1) {
 				selectedFrameId = frames[framesUnder[0]].id;
+			} else {
+				selectedFrameId = null;
 			}
 		}
 	}
@@ -150,17 +151,31 @@ function handlePointerUp(event: PointerEvent) {
 	(event.target as HTMLElement).releasePointerCapture(event.pointerId);
 }
 
-function calculateFitScale(): number {
-	if (!containerEl || !imgEl) return 1;
+const SIDEBAR_WIDTH = 272; // 240px sidebar + 1rem left + 1rem gap
+
+function getVisibleArea(): { width: number; height: number; offsetX: number } {
+	if (!containerEl) return { width: 0, height: 0, offsetX: 0 };
 	const containerWidth = containerEl.clientWidth;
 	const containerHeight = containerEl.clientHeight;
+	const sidebarVisible = showSidebar && frames.length > 0;
+	const offsetX = sidebarVisible ? SIDEBAR_WIDTH : 0;
+	return {
+		width: containerWidth - offsetX,
+		height: containerHeight,
+		offsetX
+	};
+}
+
+function calculateFitScale(): number {
+	if (!imgEl) return 1;
+	const { width, height } = getVisibleArea();
 	const imgWidth = imgEl.naturalWidth;
 	const imgHeight = imgEl.naturalHeight;
 
-	if (!imgWidth || !imgHeight) return 1;
+	if (!imgWidth || !imgHeight || !width || !height) return 1;
 
-	const scaleX = containerWidth / imgWidth;
-	const scaleY = containerHeight / imgHeight;
+	const scaleX = width / imgWidth;
+	const scaleY = height / imgHeight;
 
 	return fitMode === 'fit' ? Math.min(scaleX, scaleY) : Math.max(scaleX, scaleY);
 }
@@ -170,14 +185,12 @@ function fitToView() {
 
 	scale = calculateFitScale();
 
-	// Center the image in the container
-	const containerWidth = containerEl.clientWidth;
-	const containerHeight = containerEl.clientHeight;
+	const { width, height, offsetX } = getVisibleArea();
 	const scaledWidth = imgEl.naturalWidth * scale;
 	const scaledHeight = imgEl.naturalHeight * scale;
 
-	translateX = (containerWidth - scaledWidth) / 2;
-	translateY = (containerHeight - scaledHeight) / 2;
+	translateX = offsetX + (width - scaledWidth) / 2;
+	translateY = (height - scaledHeight) / 2;
 }
 
 function resetView() {
@@ -190,25 +203,24 @@ function fitToFrame() {
 	const frame = frames.find((f) => f.id === selectedFrameId);
 	if (!frame) return;
 
-	const containerWidth = containerEl.clientWidth;
-	const containerHeight = containerEl.clientHeight;
+	const { width, height, offsetX } = getVisibleArea();
 
 	// Calculate frame dimensions in pixels
 	const frameWidth = frame.width * imgEl.naturalWidth;
 	const frameHeight = frame.height * imgEl.naturalHeight;
 
-	// Calculate scale to fit frame in container
-	const scaleX = containerWidth / frameWidth;
-	const scaleY = containerHeight / frameHeight;
+	// Calculate scale to fit frame in visible area
+	const scaleX = width / frameWidth;
+	const scaleY = height / frameHeight;
 	scale = Math.min(scaleX, scaleY) * 0.9; // 90% to add padding
 
 	// Calculate frame center in pixels
 	const frameCenterX = (frame.x + frame.width / 2) * imgEl.naturalWidth;
 	const frameCenterY = (frame.y + frame.height / 2) * imgEl.naturalHeight;
 
-	// Center frame in container
-	translateX = containerWidth / 2 - frameCenterX * scale;
-	translateY = containerHeight / 2 - frameCenterY * scale;
+	// Center frame in visible area
+	translateX = offsetX + width / 2 - frameCenterX * scale;
+	translateY = height / 2 - frameCenterY * scale;
 }
 
 function toggleFitMode() {
@@ -272,23 +284,26 @@ function applyRatio(frameId: number, ratio: number) {
 	// Auto-lock aspect when applying a ratio
 	aspectLocks.set(frameId, true);
 	aspectLocks = new Map(aspectLocks);
+	onchange?.();
 }
 
 // Export functions
 function toggleExportCheck(frameId: number) {
-	if (exportChecked.has(frameId)) {
-		exportChecked.delete(frameId);
+	if (exportUnchecked.has(frameId)) {
+		exportUnchecked.delete(frameId);
 	} else {
-		exportChecked.add(frameId);
+		exportUnchecked.add(frameId);
 	}
-	exportChecked = new Set(exportChecked);
+	exportUnchecked = new Set(exportUnchecked);
 }
 
 function toggleAllExport() {
-	if (exportChecked.size === frames.length) {
-		exportChecked = new Set();
+	if (checkedCount() === frames.length) {
+		// Uncheck all
+		exportUnchecked = new Set(frames.map((f) => f.id));
 	} else {
-		exportChecked = new Set(frames.map((f) => f.id));
+		// Check all
+		exportUnchecked = new Set();
 	}
 }
 
@@ -301,21 +316,31 @@ async function handlePickDir() {
 }
 
 async function handleExport() {
-	const framesToExport = frames.filter((f) => exportChecked.has(f.id));
+	const framesToExport = frames.filter((f) => isExportChecked(f.id));
 	if (framesToExport.length === 0) return;
 
 	exporting = true;
+	exportStatus = null;
 	exportProgress = { current: 0, total: framesToExport.length };
 
 	try {
-		const paths = await exportFrames(photo, framesToExport, exportDir, 0.92, (current, total) => {
+		await exportFrames(photo, framesToExport, exportDir, 0.92, (current: number, total: number) => {
 			exportProgress = { current, total };
 		});
 
-		// Also export metadata
 		const basename = photo.title?.replace(/\.[^/.]+$/, '').replace(/\s+/g, '-') || 'photo';
 		await exportMetadata(photo, framesToExport, focalPoints, `${exportDir}/${basename}.metadata.json`);
+
+		exportStatus = {
+			type: 'success',
+			message: `Exported ${framesToExport.length} frame${framesToExport.length === 1 ? '' : 's'}`
+		};
+		setTimeout(() => {
+			exportStatus = null;
+		}, 4000);
 	} catch (error) {
+		const msg = error instanceof Error ? error.message : String(error);
+		exportStatus = { type: 'error', message: `Export failed: ${msg}` };
 		console.error('Export failed:', error);
 	} finally {
 		exporting = false;
@@ -329,11 +354,11 @@ async function handleExport() {
 	{#if showSidebar && frames.length > 0}
 		<div class="sidebar">
 			<div class="sidebar-header">
-				<label class="export-all-check" title={exportChecked.size === frames.length ? 'Deselect all for export' : 'Select all for export'}>
+				<label class="export-all-check" title={checkedCount() === frames.length ? 'Deselect all for export' : 'Select all for export'}>
 					<input
 						type="checkbox"
-						checked={exportChecked.size === frames.length}
-						indeterminate={exportChecked.size > 0 && exportChecked.size < frames.length}
+						checked={checkedCount() === frames.length}
+						indeterminate={checkedCount() > 0 && checkedCount() < frames.length}
 						onchange={toggleAllExport}
 					/>
 				</label>
@@ -345,14 +370,14 @@ async function handleExport() {
 					<div
 						class="frame-item-wrapper"
 						class:editing={selectedFrameId === frame.id}
-						class:export-checked={exportChecked.has(frame.id)}
-						class:export-unchecked={!exportChecked.has(frame.id)}
+						class:export-checked={isExportChecked(frame.id)}
+						class:export-unchecked={!isExportChecked(frame.id)}
 					>
 						<div class="frame-item-row">
 							<label class="export-check" onclick={(e: MouseEvent) => e.stopPropagation()}>
 								<input
 									type="checkbox"
-									checked={exportChecked.has(frame.id)}
+									checked={isExportChecked(frame.id)}
 									onchange={() => toggleExportCheck(frame.id)}
 								/>
 							</label>
@@ -366,30 +391,38 @@ async function handleExport() {
 							</button>
 						</div>
 						
-						{#if selectedFrameId === frame.id}
-							<div class="frame-controls">
-								<button
-									class="aspect-lock-btn"
-									class:locked={aspectLocks.get(frame.id)}
-									onclick={(e) => { e.stopPropagation(); toggleAspectLock(frame.id); }}
-									title={aspectLocks.get(frame.id) ? 'Unlock aspect ratio' : 'Lock aspect ratio'}
-								>
-									{aspectLocks.get(frame.id) ? '🔒' : '🔓'}
-								</button>
-								
-								<div class="ratio-picker">
-									{#each commonRatios as { label, value }}
-										<button
-											class="ratio-btn"
-											onclick={(e) => { e.stopPropagation(); applyRatio(frame.id, value); }}
-											title="Set to {label} ratio"
-										>
-											{label}
-										</button>
-									{/each}
-								</div>
+					{#if selectedFrameId === frame.id}
+						<div class="frame-controls">
+							<button
+								class="aspect-lock-btn"
+								class:locked={aspectLocks.get(frame.id)}
+								onclick={(e) => { e.stopPropagation(); toggleAspectLock(frame.id); }}
+								title={aspectLocks.get(frame.id) ? 'Unlock aspect ratio' : 'Lock aspect ratio'}
+							>
+								{aspectLocks.get(frame.id) ? '🔒' : '🔓'}
+							</button>
+							
+							<div class="ratio-picker">
+								{#each commonRatios as { label, value }}
+									<button
+										class="ratio-btn"
+										onclick={(e) => { e.stopPropagation(); applyRatio(frame.id, value); }}
+										title="Set to {label} ratio"
+									>
+										{label}
+									</button>
+								{/each}
 							</div>
-						{/if}
+
+							<button
+								class="delete-frame-btn"
+								onclick={(e) => { e.stopPropagation(); ondeleteframe?.(frame.id); }}
+								title="Delete frame"
+							>
+								✕
+							</button>
+						</div>
+					{/if}
 					</div>
 				{/each}
 			</div>
@@ -398,15 +431,20 @@ async function handleExport() {
 					<span class="dir-icon">{isSourceDir ? '📁' : '📂'}</span>
 					<span class="dir-path">{exportDir.split('/').slice(-2).join('/')}</span>
 				</button>
+				{#if exportStatus}
+					<div class="export-status" class:success={exportStatus.type === 'success'} class:error={exportStatus.type === 'error'}>
+						{exportStatus.message}
+					</div>
+				{/if}
 				<button
 					class="export-btn"
 					onclick={handleExport}
-					disabled={exporting || exportChecked.size === 0}
+					disabled={exporting || checkedCount() === 0}
 				>
 					{#if exporting}
 						Exporting {exportProgress.current}/{exportProgress.total}...
 					{:else}
-						Export {exportChecked.size} frame{exportChecked.size === 1 ? '' : 's'}
+						Export {checkedCount()} frame{checkedCount() === 1 ? '' : 's'}
 					{/if}
 				</button>
 			</div>
@@ -451,28 +489,30 @@ async function handleExport() {
 			<!-- Frame overlays -->
 			{#if imgEl && frames.length > 0}
 				{#each frames as frame (frame.id)}
-					<ResizableFrame
-						{frame}
-						imageWidth={imgEl.naturalWidth}
-						imageHeight={imgEl.naturalHeight}
-						{scale}
-						selected={selectedFrameId === frame.id}
-						exportChecked={exportChecked.has(frame.id)}
-						aspectLocked={aspectLocks.get(frame.id) || false}
-						onSelect={() => selectFrame(frame.id)}
-					/>
+				<ResizableFrame
+					{frame}
+					imageWidth={imgEl.naturalWidth}
+					imageHeight={imgEl.naturalHeight}
+					{scale}
+					selected={selectedFrameId === frame.id}
+					exportChecked={isExportChecked(frame.id)}
+					aspectLocked={aspectLocks.get(frame.id) || false}
+					onSelect={() => selectFrame(frame.id)}
+					{onchange}
+				/>
 				{/each}
 			{/if}
 
 			<!-- Focal point overlays -->
 			{#if imgEl && focalPoints.length > 0}
 				{#each focalPoints as point (point.id)}
-					<DraggableFocalPoint
-						{point}
-						imageWidth={imgEl.naturalWidth}
-						imageHeight={imgEl.naturalHeight}
-						{scale}
-					/>
+				<DraggableFocalPoint
+					{point}
+					imageWidth={imgEl.naturalWidth}
+					imageHeight={imgEl.naturalHeight}
+					{scale}
+					{onchange}
+				/>
 				{/each}
 			{/if}
 		</div>
@@ -535,15 +575,12 @@ async function handleExport() {
 
 	.canvas-content {
 		position: relative;
-		transform-origin: center center;
-		transition: transform 0.05s ease-out;
+		transform-origin: 0 0;
 		will-change: transform;
 	}
 
 	.canvas-content img {
 		display: block;
-		max-width: 100%;
-		height: auto;
 		user-select: none;
 	}
 
@@ -794,6 +831,28 @@ async function handleExport() {
 		border-color: #9ca3af;
 	}
 
+	.delete-frame-btn {
+		flex-shrink: 0;
+		width: 2rem;
+		height: 2rem;
+		padding: 0;
+		background: white;
+		border: 1px solid #fca5a5;
+		border-radius: 0.25rem;
+		font-size: 0.875rem;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: #dc2626;
+		margin-left: auto;
+	}
+
+	.delete-frame-btn:hover {
+		background: #fef2f2;
+		border-color: #dc2626;
+	}
+
 	.sidebar-footer {
 		padding: 0.75rem;
 		border-top: 1px solid #e5e7eb;
@@ -855,5 +914,22 @@ async function handleExport() {
 	.export-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	.export-status {
+		padding: 0.5rem;
+		border-radius: 0.25rem;
+		font-size: 0.75rem;
+		text-align: center;
+	}
+
+	.export-status.success {
+		background: #dcfce7;
+		color: #166534;
+	}
+
+	.export-status.error {
+		background: #fef2f2;
+		color: #dc2626;
 	}
 </style>

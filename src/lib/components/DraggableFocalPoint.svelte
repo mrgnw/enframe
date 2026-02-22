@@ -7,9 +7,10 @@ interface Props {
 	imageWidth: number;
 	imageHeight: number;
 	scale: number;
+	onchange?: () => void;
 }
 
-let { point, imageWidth, imageHeight, scale }: Props = $props();
+let { point, imageWidth, imageHeight, scale, onchange }: Props = $props();
 
 let isDragging = $state(false);
 let dragStart = $state({ x: 0, y: 0, pointX: 0, pointY: 0 });
@@ -50,6 +51,7 @@ async function handlePointerUp(event: PointerEvent) {
 	(event.target as HTMLElement).releasePointerCapture(event.pointerId);
 
 	await updateFocalPoint(point.id, { x: point.x, y: point.y });
+	onchange?.();
 }
 </script>
 

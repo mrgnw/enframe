@@ -150,16 +150,10 @@ onMount(async () => {
 	historyIndex = 0;
 });
 
-// Watch for changes to frames/focal points and capture snapshots
-$effect(() => {
-	// Access frames and focalPoints to track them
-	const _ = [frames, focalPoints];
-
-	// Skip if we're still loading or if history is empty
+function handleChange() {
 	if (loading || history.length === 0) return;
-
 	captureSnapshot();
-});
+}
 
 async function loadPhoto() {
 	loading = true;
@@ -205,6 +199,12 @@ async function handleAddFocalPoint() {
 	await loadPhoto();
 }
 
+async function handleDeleteFrame(frameId: number) {
+	await deleteFrame(frameId);
+	await loadPhoto();
+	saveStatus = 'unsaved';
+}
+
 async function handleDeletePhoto() {
 	if (!photo) return;
 	if (confirm(`Delete "${photo.title}"? This will also delete all frames and focal points.`)) {
@@ -237,7 +237,7 @@ async function handleDeletePhoto() {
 	{#if loading}
 		<div class="loading">Loading...</div>
 	{:else if photo}
-		<ImageCanvas {photo} bind:frames bind:focalPoints />
+		<ImageCanvas {photo} bind:frames bind:focalPoints onchange={handleChange} ondeleteframe={handleDeleteFrame} />
 	{:else}
 		<div class="error">Photo not found</div>
 	{/if}

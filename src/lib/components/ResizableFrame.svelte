@@ -11,6 +11,7 @@ interface Props {
 	exportChecked?: boolean;
 	aspectLocked?: boolean;
 	onSelect?: () => void;
+	onchange?: () => void;
 }
 
 let {
@@ -21,8 +22,15 @@ let {
 	selected = false,
 	exportChecked = true,
 	aspectLocked = false,
-	onSelect
+	onSelect,
+	onchange
 }: Props = $props();
+
+let handleSize = $derived(Math.max(6, 10 / scale));
+let borderWidth = $derived(Math.max(1, 2 / scale));
+let handleOffset = $derived(-handleSize / 2);
+let labelScale = $derived(1 / scale);
+let hs = $derived(`width:${handleSize}px;height:${handleSize}px;border-width:${borderWidth}px;`);
 
 let isDragging = $state(false);
 let isResizing = $state(false);
@@ -69,6 +77,7 @@ async function handleFramePointerUp(event: PointerEvent) {
 	(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
 
 	await updateFrame(frame.id, { x: frame.x, y: frame.y });
+	onchange?.();
 }
 
 function handleHandlePointerDown(event: PointerEvent, handle: string) {
@@ -195,6 +204,7 @@ async function handleHandlePointerUp(event: PointerEvent) {
 	(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
 
 	await updateFrame(frame.id, { x: frame.x, y: frame.y, width: frame.width, height: frame.height });
+	onchange?.();
 }
 </script>
 
@@ -210,6 +220,7 @@ async function handleHandlePointerUp(event: PointerEvent) {
 		top: {frame.y * 100}%;
 		width: {frame.width * 100}%;
 		height: {frame.height * 100}%;
+		border-width: {borderWidth}px;
 	"
 	role="button"
 	tabindex="0"
@@ -218,24 +229,25 @@ async function handleHandlePointerUp(event: PointerEvent) {
 	onpointerup={handleFramePointerUp}
 >
 	{#if frame.label}
-		<div class="frame-label">{frame.label}</div>
+		<div class="frame-label" style="transform: scale({labelScale}); transform-origin: bottom left;">{frame.label}</div>
 	{/if}
 
 	<!-- Resize handles -->
-	<div class="handle nw" role="button" tabindex="-1" aria-label="Resize northwest" onpointerdown={(e) => handleHandlePointerDown(e, 'nw')} onpointermove={handleHandlePointerMove} onpointerup={handleHandlePointerUp}></div>
-	<div class="handle ne" role="button" tabindex="-1" aria-label="Resize northeast" onpointerdown={(e) => handleHandlePointerDown(e, 'ne')} onpointermove={handleHandlePointerMove} onpointerup={handleHandlePointerUp}></div>
-	<div class="handle sw" role="button" tabindex="-1" aria-label="Resize southwest" onpointerdown={(e) => handleHandlePointerDown(e, 'sw')} onpointermove={handleHandlePointerMove} onpointerup={handleHandlePointerUp}></div>
-	<div class="handle se" role="button" tabindex="-1" aria-label="Resize southeast" onpointerdown={(e) => handleHandlePointerDown(e, 'se')} onpointermove={handleHandlePointerMove} onpointerup={handleHandlePointerUp}></div>
-	<div class="handle n" role="button" tabindex="-1" aria-label="Resize north" onpointerdown={(e) => handleHandlePointerDown(e, 'n')} onpointermove={handleHandlePointerMove} onpointerup={handleHandlePointerUp}></div>
-	<div class="handle s" role="button" tabindex="-1" aria-label="Resize south" onpointerdown={(e) => handleHandlePointerDown(e, 's')} onpointermove={handleHandlePointerMove} onpointerup={handleHandlePointerUp}></div>
-	<div class="handle w" role="button" tabindex="-1" aria-label="Resize west" onpointerdown={(e) => handleHandlePointerDown(e, 'w')} onpointermove={handleHandlePointerMove} onpointerup={handleHandlePointerUp}></div>
-	<div class="handle e" role="button" tabindex="-1" aria-label="Resize east" onpointerdown={(e) => handleHandlePointerDown(e, 'e')} onpointermove={handleHandlePointerMove} onpointerup={handleHandlePointerUp}></div>
+	<div class="handle nw" style="{hs}top:{handleOffset}px;left:{handleOffset}px;" role="button" tabindex="-1" aria-label="Resize northwest" onpointerdown={(e) => handleHandlePointerDown(e, 'nw')} onpointermove={handleHandlePointerMove} onpointerup={handleHandlePointerUp}></div>
+	<div class="handle ne" style="{hs}top:{handleOffset}px;right:{handleOffset}px;" role="button" tabindex="-1" aria-label="Resize northeast" onpointerdown={(e) => handleHandlePointerDown(e, 'ne')} onpointermove={handleHandlePointerMove} onpointerup={handleHandlePointerUp}></div>
+	<div class="handle sw" style="{hs}bottom:{handleOffset}px;left:{handleOffset}px;" role="button" tabindex="-1" aria-label="Resize southwest" onpointerdown={(e) => handleHandlePointerDown(e, 'sw')} onpointermove={handleHandlePointerMove} onpointerup={handleHandlePointerUp}></div>
+	<div class="handle se" style="{hs}bottom:{handleOffset}px;right:{handleOffset}px;" role="button" tabindex="-1" aria-label="Resize southeast" onpointerdown={(e) => handleHandlePointerDown(e, 'se')} onpointermove={handleHandlePointerMove} onpointerup={handleHandlePointerUp}></div>
+	<div class="handle n" style="{hs}top:{handleOffset}px;left:50%;transform:translateX(-50%);" role="button" tabindex="-1" aria-label="Resize north" onpointerdown={(e) => handleHandlePointerDown(e, 'n')} onpointermove={handleHandlePointerMove} onpointerup={handleHandlePointerUp}></div>
+	<div class="handle s" style="{hs}bottom:{handleOffset}px;left:50%;transform:translateX(-50%);" role="button" tabindex="-1" aria-label="Resize south" onpointerdown={(e) => handleHandlePointerDown(e, 's')} onpointermove={handleHandlePointerMove} onpointerup={handleHandlePointerUp}></div>
+	<div class="handle w" style="{hs}top:50%;left:{handleOffset}px;transform:translateY(-50%);" role="button" tabindex="-1" aria-label="Resize west" onpointerdown={(e) => handleHandlePointerDown(e, 'w')} onpointermove={handleHandlePointerMove} onpointerup={handleHandlePointerUp}></div>
+	<div class="handle e" style="{hs}top:50%;right:{handleOffset}px;transform:translateY(-50%);" role="button" tabindex="-1" aria-label="Resize east" onpointerdown={(e) => handleHandlePointerDown(e, 'e')} onpointermove={handleHandlePointerMove} onpointerup={handleHandlePointerUp}></div>
 </div>
 
 <style>
 	.frame-overlay {
 		position: absolute;
-		border: 2px solid #3b82f6;
+		border-style: solid;
+		border-color: #3b82f6;
 		box-sizing: border-box;
 		cursor: move;
 		pointer-events: auto;
@@ -253,14 +265,12 @@ async function handleHandlePointerUp(event: PointerEvent) {
 	}
 
 	.frame-overlay:hover {
-		border-width: 3px;
 		z-index: 5;
 	}
 
 	/* Selected for editing: orange (overrides blue/grey) */
 	.frame-overlay.selected {
 		border-color: #f59e0b;
-		border-width: 3px;
 		z-index: 10;
 		opacity: 1;
 	}
@@ -268,7 +278,6 @@ async function handleHandlePointerUp(event: PointerEvent) {
 	.frame-overlay.dragging,
 	.frame-overlay.resizing {
 		border-color: #f59e0b;
-		border-width: 3px;
 		z-index: 10;
 		opacity: 1;
 	}
@@ -296,10 +305,9 @@ async function handleHandlePointerUp(event: PointerEvent) {
 
 	.handle {
 		position: absolute;
-		width: 10px;
-		height: 10px;
 		background: white;
-		border: 2px solid #3b82f6;
+		border-style: solid;
+		border-color: #3b82f6;
 		box-sizing: border-box;
 	}
 
@@ -319,12 +327,12 @@ async function handleHandlePointerUp(event: PointerEvent) {
 		background: #f59e0b;
 	}
 
-	.handle.nw { top: -5px; left: -5px; cursor: nw-resize; }
-	.handle.ne { top: -5px; right: -5px; cursor: ne-resize; }
-	.handle.sw { bottom: -5px; left: -5px; cursor: sw-resize; }
-	.handle.se { bottom: -5px; right: -5px; cursor: se-resize; }
-	.handle.n { top: -5px; left: 50%; transform: translateX(-50%); cursor: n-resize; }
-	.handle.s { bottom: -5px; left: 50%; transform: translateX(-50%); cursor: s-resize; }
-	.handle.w { top: 50%; left: -5px; transform: translateY(-50%); cursor: w-resize; }
-	.handle.e { top: 50%; right: -5px; transform: translateY(-50%); cursor: e-resize; }
+	.handle.nw { cursor: nw-resize; }
+	.handle.ne { cursor: ne-resize; }
+	.handle.sw { cursor: sw-resize; }
+	.handle.se { cursor: se-resize; }
+	.handle.n { cursor: n-resize; }
+	.handle.s { cursor: s-resize; }
+	.handle.w { cursor: w-resize; }
+	.handle.e { cursor: e-resize; }
 </style>
