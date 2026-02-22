@@ -45,6 +45,7 @@ function run(fn?: () => void) {
 			</Command.Item>
 			<Command.Item onSelect={() => run(onexport)}>
 				<span>Export</span>
+				<Command.Shortcut>&#8984;E</Command.Shortcut>
 			</Command.Item>
 			<Command.Item onSelect={() => run(onsetoutputdir)}>
 				<span>Set Output Directory</span>

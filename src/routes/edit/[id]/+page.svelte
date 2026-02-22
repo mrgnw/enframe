@@ -42,6 +42,9 @@ let historyIndex = $state(-1);
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 let exportDir = $state('');
+let exporting = $state(false);
+let exportProgress = $state(0);
+let exportTotal = $state(0);
 
 function captureSnapshot() {
 	if (debounceTimer) clearTimeout(debounceTimer);
@@ -86,6 +89,9 @@ function handleKeyDown(event: KeyboardEvent) {
 	} else if ((event.metaKey || event.ctrlKey) && event.key === 's') {
 		event.preventDefault();
 		saveMetadata();
+	} else if ((event.metaKey || event.ctrlKey) && event.key === 'e') {
+		event.preventDefault();
+		handleExport();
 	}
 }
 
@@ -187,12 +193,22 @@ async function handleDeleteFrame(frameId: number) {
 
 async function handleExport() {
 	if (!photo || frames.length === 0) return;
+	exporting = true;
+	exportProgress = 0;
+	exportTotal = frames.length + 1;
 	try {
-		await exportFrames(photo, frames, exportDir, 0.92);
+		await exportFrames(photo, frames, exportDir, 0.92, (current: number, _total: number) => {
+			exportProgress = current;
+		});
 		const basename = photo.title?.replace(/\.[^/.]+$/, '').replace(/\s+/g, '-') || 'photo';
 		await exportMetadata(photo, frames, focalPoints, `${exportDir}/${basename}.metadata.json`);
+		exportProgress = exportTotal;
+		toast.success(`Exported ${frames.length} frame${frames.length === 1 ? '' : 's'}`);
 	} catch (error) {
 		console.error('Export failed:', error);
+		toast.error('Export failed');
+	} finally {
+		exporting = false;
 	}
 }
 
@@ -208,8 +224,13 @@ async function handleSetOutputDir() {
 
 <div class="editor">
 	{#if saveStatus === 'saving' && saveTotal > 0}
-		<div class="save-progress">
-			<div class="save-progress-bar" style="width:{(saveProgress / saveTotal) * 100}%"></div>
+		<div class="progress-track">
+			<div class="progress-bar save" style="width:{(saveProgress / saveTotal) * 100}%"></div>
+		</div>
+	{/if}
+	{#if exporting && exportTotal > 0}
+		<div class="progress-track">
+			<div class="progress-bar export" style="width:{(exportProgress / exportTotal) * 100}%"></div>
 		</div>
 	{/if}
 
@@ -276,7 +297,7 @@ async function handleSetOutputDir() {
 		color: #6b7280;
 	}
 
-	.save-progress {
+	.progress-track {
 		position: fixed;
 		top: 0;
 		left: 0;
@@ -286,9 +307,16 @@ async function handleSetOutputDir() {
 		background: rgba(255, 255, 255, 0.1);
 	}
 
-	.save-progress-bar {
+	.progress-bar {
 		height: 100%;
-		background: #3b82f6;
 		transition: width 0.15s ease;
+	}
+
+	.progress-bar.save {
+		background: #3b82f6;
+	}
+
+	.progress-bar.export {
+		background: #22c55e;
 	}
 </style>
