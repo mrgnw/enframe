@@ -13,7 +13,7 @@
 		"windows": [
 			{
 				"title": "Enframe",
-				"titleBarStyle": "overlay",
+				"titleBarStyle": "Overlay",
 				"hiddenTitle": true,
 				"width": 1400,
 				"height": 900,

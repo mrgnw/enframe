@@ -41,13 +41,13 @@ let {
 	<div class="toolbar-divider"></div>
 
 	<div class="toolbar-group">
-		<button class="tb-btn" onclick={onaddframe} title="Add Frame">
+		<button class="tb-btn" onclick={onaddframe} title="Add Frame (F)">
 			<span class="btn-icon-combo">
 				<span class="plus">+</span>
 				<Crop size={14} />
 			</span>
 		</button>
-		<button class="tb-btn" onclick={onaddpoint} title="Add Focus Point">
+		<button class="tb-btn" onclick={onaddpoint} title="Add Focal Point (P)">
 			<span class="btn-icon-combo">
 				<span class="plus">+</span>
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -79,7 +79,7 @@ let {
 
 	<div class="toolbar-divider"></div>
 
-	<button class="tb-btn toggle-btn" onclick={ontoggle} title={panelExpanded ? 'Collapse panel' : 'Expand panel'}>
+	<button class="tb-btn toggle-btn" onclick={ontoggle} title={panelExpanded ? 'Collapse Panel (T)' : 'Expand Panel (T)'}>
 		{#if panelExpanded}
 			<ChevronUp size={16} />
 		{:else}

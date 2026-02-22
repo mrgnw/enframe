@@ -116,6 +116,18 @@ function redo() {
 	focalPoints = structuredClone(state.focalPoints);
 }
 
+function isInputFocused(): boolean {
+	const el = document.activeElement;
+	if (!el) return false;
+	const tag = el.tagName.toLowerCase();
+	return tag === 'input' || tag === 'textarea' || (el as HTMLElement).isContentEditable;
+}
+
+function handleDeselect() {
+	selectedFrameId = null;
+	selectedPointId = null;
+}
+
 function handleKeyDown(event: KeyboardEvent) {
 	if ((event.metaKey || event.ctrlKey) && event.key === 'z') {
 		event.preventDefault();
@@ -130,21 +142,38 @@ function handleKeyDown(event: KeyboardEvent) {
 	} else if ((event.metaKey || event.ctrlKey) && event.key === 'e') {
 		event.preventDefault();
 		handleExport();
-	} else if (event.key === ',') {
+	} else if (event.key === 'Escape') {
 		event.preventDefault();
-		selectPrevFrame();
-	} else if (event.key === '.') {
-		event.preventDefault();
-		selectNextFrame();
-	} else if (event.key === 'Backspace' || event.key === 'Delete') {
-		if (!event.metaKey && !event.ctrlKey) {
-			if (selectedFrameId != null) {
-				event.preventDefault();
-				handleDeleteFrame(selectedFrameId);
-			} else if (selectedPointId != null) {
-				event.preventDefault();
-				handleDeletePoint(selectedPointId);
+		handleDeselect();
+	} else if (!isInputFocused()) {
+		if (event.key === ',') {
+			event.preventDefault();
+			selectPrevFrame();
+		} else if (event.key === '.') {
+			event.preventDefault();
+			selectNextFrame();
+		} else if (event.key === 'Backspace' || event.key === 'Delete') {
+			if (!event.metaKey && !event.ctrlKey) {
+				if (selectedFrameId != null) {
+					event.preventDefault();
+					handleDeleteFrame(selectedFrameId);
+				} else if (selectedPointId != null) {
+					event.preventDefault();
+					handleDeletePoint(selectedPointId);
+				}
 			}
+		} else if (event.key === 'f') {
+			event.preventDefault();
+			handleAddFrame();
+		} else if (event.key === 'p') {
+			event.preventDefault();
+			handleAddFocalPoint();
+		} else if (event.key === 'o') {
+			event.preventDefault();
+			handleSetOutputDir();
+		} else if (event.key === 't') {
+			event.preventDefault();
+			panelExpanded = !panelExpanded;
 		}
 	}
 }
@@ -399,6 +428,10 @@ async function handleSetOutputDir() {
 		onprevframe={selectPrevFrame}
 		ondeleteframe={() => { if (selectedFrameId != null) handleDeleteFrame(selectedFrameId); }}
 		onsetformat={setExportFormat}
+		onundo={undo}
+		onredo={redo}
+		ontoggle={() => panelExpanded = !panelExpanded}
+		ondeselect={handleDeselect}
 	/>
 </div>
 
