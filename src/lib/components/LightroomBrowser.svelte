@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { listLightroomPreviews, type LightroomPhoto } from '$lib/lightroom';
 	import { importFile } from '$lib/db';
+	import { getImageSrc } from '$lib/tauri';
 
 	let photos = $state<LightroomPhoto[]>([]);
 	let loading = $state(false);
@@ -68,7 +69,7 @@
 				<div class="photo-item">
 					<div class="thumbnail">
 						{#if photo.previewPath}
-							<img src={`file://${photo.previewPath}`} alt="Photo {photo.assetId}" />
+							<img src={getImageSrc(photo.previewPath)} alt="Photo {photo.assetId}" />
 						{:else}
 							<div class="no-preview">No preview</div>
 						{/if}

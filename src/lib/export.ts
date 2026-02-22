@@ -1,15 +1,15 @@
 import { save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import type { Photo, Frame } from './db';
+import { getImageSrc } from './tauri';
 
 export async function exportFrameAsJPEG(
 	photo: Photo,
 	frame: Frame,
 	quality: number = 0.92
 ): Promise<string | null> {
-	// Load the image
 	const img = new Image();
-	img.src = `file://${photo.file_path}`;
+	img.src = getImageSrc(photo.file_path);
 	
 	await new Promise((resolve, reject) => {
 		img.onload = resolve;

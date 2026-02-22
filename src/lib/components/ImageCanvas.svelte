@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Photo, Frame, FocalPoint } from '$lib/db';
+	import { getImageSrc } from '$lib/tauri';
 	import DraggableFocalPoint from './DraggableFocalPoint.svelte';
 	import ResizableFrame from './ResizableFrame.svelte';
 
@@ -77,7 +78,7 @@
 		>
 			<img
 				bind:this={imgEl}
-				src={`file://${photo.file_path}`}
+				src={getImageSrc(photo.file_path)}
 				alt={photo.title || 'Photo'}
 				draggable={false}
 			/>

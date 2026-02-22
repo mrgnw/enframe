@@ -3,6 +3,7 @@ import { onMount } from 'svelte';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listPhotos, importFile, type Photo } from '$lib/db';
 import LightroomBrowser from './LightroomBrowser.svelte';
+import { getImageSrc, getFilePathFromDrop } from '$lib/tauri';
 
 let photos = $state<Photo[]>([]);
 let loading = $state(true);
@@ -32,9 +33,11 @@ async function handleFileDrop(event: DragEvent) {
 	importing = true;
 	try {
 		for (const file of Array.from(files)) {
-			const path = (file as any).path;
+			const path = await getFilePathFromDrop(file);
 			if (path) {
 				await importFile(path);
+			} else {
+				console.warn('No file path available for dropped file:', file.name);
 			}
 		}
 		await loadPhotos();
@@ -110,7 +113,7 @@ function handleLightroomClick() {
 			{#each photos as photo}
 				<a href="/edit/{photo.id}" class="photo-card">
 					<div class="thumbnail">
-						<img src={`file://${photo.file_path}`} alt={photo.title || 'Photo'} />
+						<img src={getImageSrc(photo.file_path)} alt={photo.title || 'Photo'} />
 					</div>
 					{#if photo.title}
 						<div class="title">{photo.title}</div>
