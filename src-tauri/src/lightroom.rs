@@ -139,8 +139,8 @@ pub fn list_lr_album_assets(
                 capture_date: row.get(5)?,
                 rating: row.get(6)?,
                 flag: row.get(7)?,
-                has_local_original: row.get::<_, i64>(8).unwrap_or(0) != 0,
-                has_local_proxy: row.get::<_, i64>(9).unwrap_or(0) != 0,
+                has_local_original: row.get::<_, f64>(8).unwrap_or(0.0) != 0.0,
+                has_local_proxy: row.get::<_, f64>(9).unwrap_or(0.0) != 0.0,
             })
         })
         .map_err(|e| format!("query_map: {e}"))?;
@@ -182,8 +182,8 @@ pub fn search_lr_assets(query: String, limit: Option<i64>) -> Result<Vec<LrAsset
                 capture_date: row.get(5)?,
                 rating: row.get(6)?,
                 flag: row.get(7)?,
-                has_local_original: row.get::<_, i64>(8).unwrap_or(0) != 0,
-                has_local_proxy: row.get::<_, i64>(9).unwrap_or(0) != 0,
+                has_local_original: row.get::<_, f64>(8).unwrap_or(0.0) != 0.0,
+                has_local_proxy: row.get::<_, f64>(9).unwrap_or(0.0) != 0.0,
             })
         })
         .map_err(|e| format!("query_map: {e}"))?;
@@ -224,8 +224,8 @@ pub fn list_lr_recent(limit: Option<i64>) -> Result<Vec<LrAsset>, String> {
                 capture_date: row.get(5)?,
                 rating: row.get(6)?,
                 flag: row.get(7)?,
-                has_local_original: row.get::<_, i64>(8).unwrap_or(0) != 0,
-                has_local_proxy: row.get::<_, i64>(9).unwrap_or(0) != 0,
+                has_local_original: row.get::<_, f64>(8).unwrap_or(0.0) != 0.0,
+                has_local_proxy: row.get::<_, f64>(9).unwrap_or(0.0) != 0.0,
             })
         })
         .map_err(|e| format!("query_map: {e}"))?;

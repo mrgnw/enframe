@@ -1,12 +1,13 @@
 <script lang="ts">
+import { Aperture, ChevronDown, ChevronUp, FolderPlus } from '@lucide/svelte';
 import { open } from '@tauri-apps/plugin-dialog';
 import { onMount } from 'svelte';
 import { type Frame, importFile, listAllFrames, listPhotos, type Photo } from '$lib/db';
 import { getFilePathFromDrop, getImageSrc } from '$lib/tauri';
-import InboxWatcher from './InboxWatcher.svelte';
 import LightroomBrowser from './LightroomBrowser.svelte';
+import WatchDir from './WatchDir.svelte';
 
-async function loadImageDimensions(src: string): Promise<{ width: number; height: number }> {
+function loadImageDimensions(src: string): Promise<{ width: number; height: number }> {
 	return new Promise((resolve, reject) => {
 		const img = new Image();
 		img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
@@ -19,7 +20,8 @@ let photos = $state<Photo[]>([]);
 let framesByPhoto = $state<Record<number, Frame[]>>({});
 let loading = $state(true);
 let importing = $state(false);
-let showLightroomBrowser = $state(false);
+let showLightroom = $state(false);
+let openDragOver = $state(false);
 
 onMount(async () => {
 	await loadPhotos();
@@ -43,52 +45,10 @@ async function loadPhotos() {
 	}
 }
 
-async function handleFileDrop(event: DragEvent) {
-	event.preventDefault();
-	const files = event.dataTransfer?.files;
-	if (!files || files.length === 0) return;
-
+async function importFiles(paths: string[]) {
 	importing = true;
 	try {
-		for (const file of Array.from(files)) {
-			const path = await getFilePathFromDrop(file);
-			if (path) {
-				const src = getImageSrc(path);
-				const dims = await loadImageDimensions(src);
-				await importFile(path, dims);
-			} else {
-				console.warn('No file path available for dropped file:', file.name);
-			}
-		}
-		await loadPhotos();
-	} catch (error) {
-		console.error('Failed to import files:', error);
-	} finally {
-		importing = false;
-	}
-}
-
-function handleDragOver(event: DragEvent) {
-	event.preventDefault();
-}
-
-async function handleImportClick() {
-	const selected = await open({
-		multiple: true,
-		filters: [
-			{
-				name: 'Images',
-				extensions: ['jpg', 'jpeg', 'png', 'jxl', 'tiff', 'tif', 'webp', 'heic']
-			}
-		]
-	});
-
-	if (!selected) return;
-
-	importing = true;
-	try {
-		const files = Array.isArray(selected) ? selected : [selected];
-		for (const path of files) {
+		for (const path of paths) {
 			const src = getImageSrc(path);
 			const dims = await loadImageDimensions(src);
 			await importFile(path, dims);
@@ -101,27 +61,119 @@ async function handleImportClick() {
 	}
 }
 
-function handleLightroomClick() {
-	showLightroomBrowser = !showLightroomBrowser;
+async function handleOpenClick() {
+	const selected = await open({
+		multiple: true,
+		filters: [
+			{
+				name: 'Images',
+				extensions: ['jpg', 'jpeg', 'png', 'jxl', 'tiff', 'tif', 'webp', 'heic', 'dng', 'arw']
+			}
+		]
+	});
+	if (!selected) return;
+	const files = Array.isArray(selected) ? selected : [selected];
+	await importFiles(files);
+}
+
+async function handleOpenDrop(e: DragEvent) {
+	e.preventDefault();
+	e.stopPropagation();
+	openDragOver = false;
+	const files = e.dataTransfer?.files;
+	if (!files || files.length === 0) return;
+
+	const paths: string[] = [];
+	for (const file of Array.from(files)) {
+		const path = await getFilePathFromDrop(file);
+		if (path) paths.push(path);
+	}
+	if (paths.length > 0) await importFiles(paths);
+}
+
+function handleOpenDragOver(e: DragEvent) {
+	e.preventDefault();
+	e.stopPropagation();
+	openDragOver = true;
+}
+
+function handleOpenDragLeave(e: DragEvent) {
+	e.preventDefault();
+	openDragOver = false;
+}
+
+let bodyDragOver = $state(false);
+
+async function handleBodyDrop(e: DragEvent) {
+	e.preventDefault();
+	bodyDragOver = false;
+	const files = e.dataTransfer?.files;
+	if (!files || files.length === 0) return;
+
+	const paths: string[] = [];
+	for (const file of Array.from(files)) {
+		const path = await getFilePathFromDrop(file);
+		if (path) paths.push(path);
+	}
+	if (paths.length > 0) await importFiles(paths);
+}
+
+function handleBodyDragOver(e: DragEvent) {
+	e.preventDefault();
+	bodyDragOver = true;
+}
+
+function handleBodyDragLeave(e: DragEvent) {
+	if (e.currentTarget === e.target) {
+		bodyDragOver = false;
+	}
 }
 </script>
 
-<div class="photo-browser" role="application" ondrop={handleFileDrop} ondragover={handleDragOver}>
+<div
+	class="photo-browser"
+	class:body-drag-over={bodyDragOver}
+	role="application"
+	ondrop={handleBodyDrop}
+	ondragover={handleBodyDragOver}
+	ondragleave={handleBodyDragLeave}
+>
 	<div class="header" data-tauri-drag-region>
 		<h1>Enframe</h1>
 		<div class="actions">
-			<button onclick={handleImportClick} disabled={importing}>
-				{importing ? 'Importing...' : 'Import from Files'}
+			<WatchDir onPhotosImported={loadPhotos} />
+
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<button
+				class="action-pill open-pill"
+				class:drag-over={openDragOver}
+				onclick={handleOpenClick}
+				disabled={importing}
+				ondrop={handleOpenDrop}
+				ondragover={handleOpenDragOver}
+				ondragleave={handleOpenDragLeave}
+			>
+				<FolderPlus size={14} />
+				{importing ? 'Importing...' : 'Open'}
 			</button>
-			<button onclick={handleLightroomClick}>
-				{showLightroomBrowser ? 'Hide Lightroom' : 'Browse Lightroom'}
+
+			<button
+				class="action-pill lr-pill"
+				class:active={showLightroom}
+				onclick={() => (showLightroom = !showLightroom)}
+			>
+				<Aperture size={14} />
+				Lightroom
+				{#if showLightroom}
+					<ChevronUp size={12} />
+				{:else}
+					<ChevronDown size={12} />
+				{/if}
 			</button>
 		</div>
 	</div>
 
-	<InboxWatcher onPhotosImported={loadPhotos} />
-
-	{#if showLightroomBrowser}
+	{#if showLightroom}
 		<LightroomBrowser onPhotosImported={loadPhotos} />
 	{/if}
 
@@ -132,7 +184,7 @@ function handleLightroomClick() {
 	{:else if photos.length === 0}
 		<div class="empty">
 			<p>No photos yet</p>
-			<p class="hint">Drop images here or import from Lightroom</p>
+			<p class="hint">Drop images onto Open, or browse Lightroom</p>
 		</div>
 	{:else}
 		<div class="grid">
@@ -179,37 +231,65 @@ function handleLightroomClick() {
 		padding: 2rem;
 		padding-top: 3.5rem;
 		min-height: 100vh;
+		transition: outline-color 0.15s;
+		outline: 2px dashed transparent;
+		outline-offset: -2px;
+	}
+
+	.photo-browser.body-drag-over {
+		outline-color: #2563eb;
 	}
 
 	.header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 2rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.header h1 {
+		margin: 0;
 	}
 
 	.actions {
 		display: flex;
-		gap: 1rem;
+		align-items: center;
+		gap: 0.5rem;
 	}
 
-	button {
-		padding: 0.5rem 1rem;
-		background: #2563eb;
-		color: white;
-		border: none;
+	.action-pill {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.35rem 0.65rem;
+		background: #1a1a1a;
+		border: 1px solid #333;
 		border-radius: 0.375rem;
+		color: #ccc;
+		font-size: 0.75rem;
 		cursor: pointer;
-		font-size: 0.875rem;
+		white-space: nowrap;
+		transition: border-color 0.15s, background 0.15s;
 	}
 
-	button:hover {
-		background: #1d4ed8;
+	.action-pill:hover {
+		border-color: #555;
+		background: #222;
 	}
 
-	button:disabled {
+	.action-pill:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	.open-pill.drag-over {
+		border-color: #2563eb;
+		background: #1a1a2e;
+	}
+
+	.lr-pill.active {
+		border-color: #2563eb;
+		color: white;
 	}
 
 	.loading,
