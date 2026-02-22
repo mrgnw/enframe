@@ -92,6 +92,23 @@ function handleKeyDown(event: KeyboardEvent) {
 	}
 }
 
+function handleWheel(event: WheelEvent) {
+	// Option/Alt + scroll to scrub through history
+	if (event.altKey && history.length > 0) {
+		event.preventDefault();
+
+		const direction = event.deltaY > 0 ? 1 : -1;
+		const newIndex = Math.max(0, Math.min(history.length - 1, historyIndex + direction));
+
+		if (newIndex !== historyIndex) {
+			historyIndex = newIndex;
+			const state = history[historyIndex];
+			frames = structuredClone(state.frames);
+			focalPoints = structuredClone(state.focalPoints);
+		}
+	}
+}
+
 async function saveMetadata() {
 	saveStatus = 'saving';
 	try {
@@ -202,7 +219,7 @@ async function handleDeletePhoto() {
 }
 </script>
 
-<svelte:window onkeydown={handleKeyDown} />
+<svelte:window onkeydown={handleKeyDown} onwheel={handleWheel} />
 
 <div class="editor">
 	<div class="toolbar">
