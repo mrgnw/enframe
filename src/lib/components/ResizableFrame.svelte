@@ -7,9 +7,11 @@ interface Props {
 	imageWidth: number;
 	imageHeight: number;
 	scale: number;
+	selected?: boolean;
+	onSelect?: () => void;
 }
 
-let { frame, imageWidth, imageHeight, scale }: Props = $props();
+let { frame, imageWidth, imageHeight, scale, selected = false, onSelect }: Props = $props();
 
 let isDragging = $state(false);
 let isResizing = $state(false);
@@ -19,6 +21,8 @@ let dragStart = $state({ x: 0, y: 0, frameX: 0, frameY: 0, frameW: 0, frameH: 0 
 function handleFramePointerDown(event: PointerEvent) {
 	if (event.button !== 0) return;
 	event.stopPropagation();
+
+	if (onSelect) onSelect();
 
 	isDragging = true;
 	dragStart = {
@@ -121,6 +125,7 @@ async function handleHandlePointerUp(event: PointerEvent) {
 
 <div
 	class="frame-overlay"
+	class:selected
 	class:dragging={isDragging}
 	class:resizing={isResizing}
 	style="
@@ -163,6 +168,12 @@ async function handleHandlePointerUp(event: PointerEvent) {
 		border-color: #2563eb;
 		border-width: 3px;
 		z-index: 5;
+	}
+
+	.frame-overlay.selected {
+		border-color: #f59e0b;
+		border-width: 3px;
+		z-index: 10;
 	}
 
 	.frame-overlay.dragging,
