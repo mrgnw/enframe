@@ -1,82 +1,67 @@
 import { invoke } from '@tauri-apps/api/core';
-import Database from '@tauri-apps/plugin-sql';
 
-export interface LightroomPhoto {
-	assetId: string;
-	filePath?: string;
-	previewPath?: string;
-	width?: number;
-	height?: number;
-	title?: string;
-	rating?: number;
+export interface LrAlbum {
+	album_id: string;
+	name: string;
+	parent_id: string | null;
+	subtype: string | null;
+	asset_count: number;
 }
 
-export async function getLightroomLibraryPath(): Promise<string> {
+export interface LrAsset {
+	asset_id: string;
+	filename: string | null;
+	width: number | null;
+	height: number | null;
+	orientation: number | null;
+	capture_date: string | null;
+	rating: number | null;
+	flag: number | null;
+	has_local_original: boolean;
+	has_local_proxy: boolean;
+}
+
+export interface LrAssetPaths {
+	asset_id: string;
+	original_path: string | null;
+	proxy_path: string | null;
+	xmp_path: string | null;
+	preview_path: string | null;
+}
+
+export function getLightroomLibraryPath(): Promise<string> {
 	return invoke<string>('get_lightroom_library_path');
 }
 
-async function findCatalogGuid(libraryPath: string): Promise<string | null> {
-	try {
-		const { readDir } = await import('@tauri-apps/plugin-fs');
-		const entries = await readDir(libraryPath);
-
-		// Look for a directory with a GUID-like name (hex-only, ~32 chars)
-		for (const entry of entries) {
-			if (entry.isDirectory && entry.name.match(/^[a-f0-9]{32}$/)) {
-				return entry.name;
-			}
-		}
-		return null;
-	} catch (error) {
-		console.error('Failed to find catalog GUID:', error);
-		return null;
-	}
+export function listLrAlbums(): Promise<LrAlbum[]> {
+	return invoke<LrAlbum[]>('list_lr_albums');
 }
 
-export async function listLightroomPreviews(): Promise<LightroomPhoto[]> {
-	try {
-		const libraryPath = await getLightroomLibraryPath();
+export function listLrAlbumAssets(albumId: string, limit?: number, offset?: number): Promise<LrAsset[]> {
+	return invoke<LrAsset[]>('list_lr_album_assets', {
+		albumId,
+		limit: limit ?? null,
+		offset: offset ?? null
+	});
+}
 
-		// Find the catalog GUID directory dynamically
-		const catalogGuid = await findCatalogGuid(libraryPath);
-		if (!catalogGuid) {
-			throw new Error('Could not find Lightroom catalog directory');
-		}
+export function searchLrAssets(query: string, limit?: number): Promise<LrAsset[]> {
+	return invoke<LrAsset[]>('search_lr_assets', {
+		query,
+		limit: limit ?? null
+	});
+}
 
-		const catalogPath = `${libraryPath}/${catalogGuid}`;
-		const previewsDbPath = `sqlite:${catalogPath}/previews.db`;
+export function listLrRecent(limit?: number): Promise<LrAsset[]> {
+	return invoke<LrAsset[]>('list_lr_recent', {
+		limit: limit ?? null
+	});
+}
 
-		const db = await Database.load(previewsDbPath);
+export function getLrAssetPaths(assetIds: string[]): Promise<LrAssetPaths[]> {
+	return invoke<LrAssetPaths[]>('get_lr_asset_paths', { assetIds });
+}
 
-		// Query previews - get the largest preview for each asset
-		const rows = await db.select<
-			{
-				localAssetId: string;
-				longSide: number;
-				path: string;
-			}[]
-		>(`
-			SELECT localAssetId, longSide, path
-			FROM previews
-			WHERE longSide IN (
-				SELECT MAX(longSide)
-				FROM previews
-				GROUP BY localAssetId
-			)
-			ORDER BY localAssetId
-			LIMIT 100
-		`);
-
-		await db.close();
-
-		return rows.map((row) => ({
-			assetId: row.localAssetId,
-			previewPath: row.path,
-			width: row.longSide,
-			height: row.longSide
-		}));
-	} catch (error) {
-		console.error('Failed to read Lightroom previews:', error);
-		return [];
-	}
+export function bestLocalPath(paths: LrAssetPaths): string | null {
+	return paths.original_path ?? paths.proxy_path ?? paths.preview_path ?? null;
 }

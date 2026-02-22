@@ -197,7 +197,7 @@ export async function deletePhoto(id: number): Promise<void> {
 
 export async function importFile(
 	filePath: string,
-	metadata?: { width?: number; height?: number; title?: string }
+	metadata?: { width?: number; height?: number; title?: string; lr_asset_id?: string }
 ): Promise<number> {
 	return addPhoto({
 		file_path: filePath,
@@ -205,6 +205,6 @@ export async function importFile(
 		height: metadata?.height,
 		title: metadata?.title || filePath.split('/').pop() || 'Untitled',
 		description: undefined,
-		lr_asset_id: undefined
+		lr_asset_id: metadata?.lr_asset_id
 	});
 }
