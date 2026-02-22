@@ -1,6 +1,11 @@
 <script lang="ts">
 import { onMount } from 'svelte';
 import { toast } from 'svelte-sonner';
+
+function yieldFrame(): Promise<void> {
+	return new Promise((r) => requestAnimationFrame(() => r()));
+}
+
 import { goto } from '$app/navigation';
 import { page } from '$app/stores';
 import CommandBar from '$lib/components/CommandBar.svelte';
@@ -122,6 +127,7 @@ async function saveMetadata() {
 	saveStatus = 'saving';
 	saveProgress = 0;
 	saveTotal = frames.length + focalPoints.length;
+	await yieldFrame();
 	try {
 		for (const frame of frames) {
 			await updateFrame(frame.id, {
@@ -132,6 +138,7 @@ async function saveMetadata() {
 				label: frame.label
 			});
 			saveProgress++;
+			await yieldFrame();
 		}
 		for (const point of focalPoints) {
 			await updateFocalPoint(point.id, {
@@ -141,6 +148,7 @@ async function saveMetadata() {
 				required: point.required
 			});
 			saveProgress++;
+			await yieldFrame();
 		}
 		saveStatus = 'saved';
 		toast.success('Saved');
@@ -219,10 +227,13 @@ async function handleExport() {
 	exporting = true;
 	exportProgress = 0;
 	exportTotal = frames.length + 1;
+	await yieldFrame();
 	try {
 		await exportFrames(photo, frames, exportDir, 0.92, (current: number, _total: number) => {
 			exportProgress = current;
 		});
+		exportProgress = frames.length;
+		await yieldFrame();
 		const basename = photo.title?.replace(/\.[^/.]+$/, '').replace(/\s+/g, '-') || 'photo';
 		await exportMetadata(photo, frames, focalPoints, `${exportDir}/${basename}.metadata.json`);
 		exportProgress = exportTotal;

@@ -36,7 +36,10 @@ export async function exportFrames(
 	const qualityU8 = Math.round(quality * 100);
 
 	for (let i = 0; i < frames.length; i++) {
-		if (onProgress) onProgress(i + 1, frames.length);
+		if (onProgress) {
+			onProgress(i, frames.length);
+			await new Promise((r) => requestAnimationFrame(r));
+		}
 
 		const frame = frames[i];
 		const filename = generateFrameFilename(photo, frame, i);
