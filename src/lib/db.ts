@@ -4,7 +4,18 @@ let dbPromise: Promise<Database> | null = null;
 
 export function getDb(): Promise<Database> {
 	if (!dbPromise) {
-		dbPromise = Database.load('sqlite:enframe.db');
+		console.log('[db] Database.load() starting...');
+		dbPromise = Database.load('sqlite:enframe.db').then(
+			(db) => {
+				console.log('[db] Database.load() succeeded');
+				return db;
+			},
+			(err) => {
+				console.error('[db] Database.load() FAILED:', err);
+				dbPromise = null; // clear cache so next call retries
+				throw err;
+			}
+		);
 	}
 	return dbPromise;
 }
@@ -45,8 +56,12 @@ export interface FocalPoint {
 }
 
 export async function listPhotos(): Promise<Photo[]> {
+	console.log('[db] listPhotos() calling getDb()...');
 	const db = await getDb();
-	return db.select<Photo[]>('SELECT * FROM photos ORDER BY created_at DESC');
+	console.log('[db] listPhotos() got db, running SELECT...');
+	const result = await db.select<Photo[]>('SELECT * FROM photos ORDER BY created_at DESC');
+	console.log('[db] listPhotos() returned', result.length, 'photos');
+	return result;
 }
 
 export async function getPhoto(id: number): Promise<Photo | null> {

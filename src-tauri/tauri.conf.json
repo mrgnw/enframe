@@ -6,7 +6,7 @@
 	"build": {
 		"beforeBuildCommand": "bun run sveltekit:build",
 		"beforeDevCommand": "bun run sveltekit:dev",
-		"devUrl": "http://localhost:5173",
+		"devUrl": "http://localhost:5910",
 		"frontendDist": "../build"
 	},
 	"app": {
@@ -27,6 +27,11 @@
 				"enable": true,
 				"scope": ["**"]
 			}
+		}
+	},
+	"plugins": {
+		"sql": {
+			"preload": ["sqlite:enframe.db"]
 		}
 	},
 	"bundle": {

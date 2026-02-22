@@ -16,6 +16,7 @@
 		"fs:allow-read-file",
 		"fs:allow-write-file",
 		"fs:allow-exists",
+		"fs:allow-stat",
 		"fs:allow-read-dir",
 		"fs:scope-home-recursive",
 		"dialog:default",
@@ -23,9 +24,7 @@
 		"dialog:allow-save",
 		{
 			"identifier": "fs:scope",
-			"allow": [
-				{ "path": "**" }
-			]
+			"allow": [{ "path": "**" }]
 		}
 	]
 }
