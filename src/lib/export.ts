@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import type { FocalPoint, Frame, Photo } from './db';
+import { getLrAssetPaths } from './lightroom';
 
 export type ExportFormat = 'avif' | 'jpg' | 'png';
 
@@ -27,6 +28,15 @@ export async function pickDirectory(title = 'Select export directory'): Promise<
 	return result;
 }
 
+async function resolveExportSource(photo: Photo): Promise<string> {
+	if (!photo.lr_asset_id) return photo.file_path;
+	try {
+		const [paths] = await getLrAssetPaths([photo.lr_asset_id]);
+		if (paths?.proxy_path) return paths.proxy_path;
+	} catch {}
+	return photo.file_path;
+}
+
 export async function exportFrames(
 	photo: Photo,
 	frames: Frame[],
@@ -37,6 +47,7 @@ export async function exportFrames(
 ): Promise<string[]> {
 	const exportedPaths: string[] = [];
 	const qualityU8 = Math.round(quality * 100);
+	const sourcePath = await resolveExportSource(photo);
 
 	for (let i = 0; i < frames.length; i++) {
 		if (onProgress) {
@@ -49,7 +60,7 @@ export async function exportFrames(
 		const fullPath = `${directory}/${filename}`;
 
 		await invoke('crop_and_export', {
-			sourcePath: photo.file_path,
+			sourcePath,
 			outputPath: fullPath,
 			x: frame.x,
 			y: frame.y,

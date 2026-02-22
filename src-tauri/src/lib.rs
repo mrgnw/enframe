@@ -3,6 +3,45 @@ mod lightroom;
 use base64::Engine;
 use image::ImageEncoder;
 use std::fs;
+use std::process::Command;
+
+fn sips_convert_to_tiff(source: &str) -> Result<String, String> {
+    let tmp = std::env::temp_dir().join(format!("enframe_sips_{}.tiff", std::process::id()));
+    let tmp_str = tmp.to_string_lossy().to_string();
+    let output = Command::new("sips")
+        .args(["-s", "format", "tiff", source, "--out", &tmp_str])
+        .output()
+        .map_err(|e| format!("sips launch: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "sips failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(tmp_str)
+}
+
+fn needs_sips(path: &str, file_bytes: &[u8]) -> bool {
+    let lower = path.to_lowercase();
+    if lower.ends_with(".dng")
+        || lower.ends_with(".arw")
+        || lower.ends_with(".cr2")
+        || lower.ends_with(".cr3")
+        || lower.ends_with(".nef")
+        || lower.ends_with(".heic")
+        || lower.ends_with(".heif")
+    {
+        return true;
+    }
+    // DNG/TIFF magic with lossy JPEG compression (LR CC proxies have no extension)
+    if file_bytes.len() >= 4 {
+        let is_tiff = &file_bytes[0..4] == b"II\x2a\x00" || &file_bytes[0..4] == b"MM\x00\x2a";
+        if is_tiff && image::open(path).is_err() {
+            return true;
+        }
+    }
+    false
+}
 
 #[tauri::command]
 fn save_image(path: String, data: String) -> Result<(), String> {
@@ -31,6 +70,12 @@ fn crop_and_export(
             && (file_bytes[0..2] == [0xFF, 0x0A]
                 || file_bytes.starts_with(b"\x00\x00\x00\x0CJXL ")));
 
+    let sips_tmp: Option<String> = if !is_jxl && needs_sips(&source_path, &file_bytes) {
+        Some(sips_convert_to_tiff(&source_path)?)
+    } else {
+        None
+    };
+
     let img = if is_jxl {
         let decoder = jxl_oxide::JxlImage::builder()
             .read(&file_bytes[..])
@@ -57,9 +102,15 @@ fn crop_and_export(
         image::RgbImage::from_raw(w, h, rgb_buf)
             .ok_or_else(|| "Failed to create image from JXL data".to_string())?
     } else {
-        let dyn_img = image::open(&source_path).map_err(|e| format!("Image open error: {e}"))?;
+        let open_path = sips_tmp.as_deref().unwrap_or(&source_path);
+        let dyn_img = image::open(open_path).map_err(|e| format!("Image open error: {e}"))?;
         dyn_img.to_rgb8()
     };
+
+    // Clean up temp file
+    if let Some(ref tmp) = sips_tmp {
+        let _ = fs::remove_file(tmp);
+    }
 
     let img_w = img.width();
     let img_h = img.height();
