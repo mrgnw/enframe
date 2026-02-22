@@ -1,7 +1,7 @@
 <script lang="ts">
 import { open } from '@tauri-apps/plugin-dialog';
 import { onMount } from 'svelte';
-import { importFile, listPhotos, type Photo } from '$lib/db';
+import { type Frame, importFile, listAllFrames, listPhotos, type Photo } from '$lib/db';
 import { getFilePathFromDrop, getImageSrc } from '$lib/tauri';
 import LightroomBrowser from './LightroomBrowser.svelte';
 
@@ -15,6 +15,7 @@ async function loadImageDimensions(src: string): Promise<{ width: number; height
 }
 
 let photos = $state<Photo[]>([]);
+let framesByPhoto = $state<Record<number, Frame[]>>({});
 let loading = $state(true);
 let importing = $state(false);
 let showLightroomBrowser = $state(false);
@@ -27,6 +28,13 @@ async function loadPhotos() {
 	loading = true;
 	try {
 		photos = await listPhotos();
+		const allFrames = await listAllFrames();
+		const grouped: Record<number, Frame[]> = {};
+		for (const f of allFrames) {
+			if (!grouped[f.photo_id]) grouped[f.photo_id] = [];
+			grouped[f.photo_id].push(f);
+		}
+		framesByPhoto = grouped;
 	} catch (error) {
 		console.error('Failed to load photos:', error);
 	} finally {
@@ -129,6 +137,30 @@ function handleLightroomClick() {
 				<a href="/edit/{photo.id}" class="photo-card">
 					<div class="thumbnail">
 						<img src={getImageSrc(photo.file_path)} alt={photo.title || 'Photo'} />
+						{#if framesByPhoto[photo.id]?.length}
+							{@const pframes = framesByPhoto[photo.id]}
+							<div class="frame-overlays">
+								<svg class="frame-dimming" viewBox="0 0 1 1" preserveAspectRatio="none">
+									<defs>
+										<mask id="mask-{photo.id}">
+											<rect x="0" y="0" width="1" height="1" fill="white" />
+											{#each pframes as frame}
+												<rect x={frame.x} y={frame.y} width={frame.width} height={frame.height} fill="black" />
+											{/each}
+										</mask>
+									</defs>
+									<rect x="0" y="0" width="1" height="1" fill="rgba(0,0,0,0.5)" mask="url(#mask-{photo.id})" />
+								</svg>
+								{#each pframes as frame, i}
+									<div
+										class="frame-preview"
+										style="left:{frame.x * 100}%;top:{frame.y * 100}%;width:{frame.width * 100}%;height:{frame.height * 100}%;"
+									>
+										<span class="frame-preview-label">{i + 1}</span>
+									</div>
+								{/each}
+							</div>
+						{/if}
 					</div>
 					{#if photo.title}
 						<div class="title">{photo.title}</div>
@@ -192,14 +224,16 @@ function handleLightroomClick() {
 	.grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+		align-items: start;
 		gap: 1.5rem;
 	}
 
 	.photo-card {
 		display: block;
+		position: relative;
 		border-radius: 0.5rem;
 		overflow: hidden;
-		background: #f9fafb;
+		background: #1a1a1a;
 		transition: transform 0.2s;
 		text-decoration: none;
 		color: inherit;
@@ -210,6 +244,7 @@ function handleLightroomClick() {
 	}
 
 	.thumbnail {
+		position: relative;
 		aspect-ratio: 3/2;
 		overflow: hidden;
 		background: #e5e7eb;
@@ -221,9 +256,53 @@ function handleLightroomClick() {
 		object-fit: cover;
 	}
 
+	.frame-overlays {
+		position: absolute;
+		inset: 0;
+		opacity: 0;
+		transition: opacity 0.2s;
+		pointer-events: none;
+	}
+
+	.photo-card:hover .frame-overlays {
+		opacity: 1;
+	}
+
+	.frame-dimming {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+	}
+
+	.frame-preview {
+		position: absolute;
+		border: 1.5px solid rgba(59, 130, 246, 0.8);
+		box-sizing: border-box;
+	}
+
+	.frame-preview-label {
+		position: absolute;
+		top: 2px;
+		left: 2px;
+		background: rgba(59, 130, 246, 0.8);
+		color: white;
+		font-size: 9px;
+		font-weight: 600;
+		padding: 0 3px;
+		border-radius: 2px;
+		line-height: 14px;
+	}
+
 	.title {
-		padding: 0.75rem;
-		font-size: 0.875rem;
+		display: none;
+		padding: 0.5rem 0.6rem;
+		font-size: 0.75rem;
 		font-weight: 500;
+		color: #ccc;
+	}
+
+	.photo-card:hover .title {
+		display: block;
 	}
 </style>

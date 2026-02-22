@@ -69,6 +69,11 @@ export async function getFrames(photoId: number): Promise<Frame[]> {
 	return db.select<Frame[]>('SELECT * FROM frames WHERE photo_id = $1', [photoId]);
 }
 
+export async function listAllFrames(): Promise<Frame[]> {
+	const db = await getDb();
+	return db.select<Frame[]>('SELECT * FROM frames');
+}
+
 export async function addFrame(frame: Omit<Frame, 'id' | 'created_at'>): Promise<number> {
 	const db = await getDb();
 	const result = await db.execute(
