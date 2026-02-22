@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { FocalPoint, Frame, Photo } from '$lib/db';
+import { exportFrames, exportMetadata, getDefaultExportDir, pickDirectory } from '$lib/export';
 import { getImageSrc } from '$lib/tauri';
 import DraggableFocalPoint from './DraggableFocalPoint.svelte';
 import ResizableFrame from './ResizableFrame.svelte';
@@ -24,6 +25,25 @@ let fitMode = $state<'fit' | 'fill'>('fit');
 let selectedFrameId = $state<number | null>(null);
 let showSidebar = $state(true);
 let aspectLocks = $state<Map<number, boolean>>(new Map());
+
+// Export state
+let exportChecked = $state<Set<number>>(new Set());
+let exportDir = $state(getDefaultExportDir(photo.file_path));
+let isSourceDir = $state(true);
+let exporting = $state(false);
+let exportProgress = $state({ current: 0, total: 0 });
+
+// Initialize exportChecked with all frame IDs when frames change
+$effect(() => {
+	const currentIds = new Set(frames.map((f) => f.id));
+	// Add any new frame IDs
+	for (const id of currentIds) {
+		if (!exportChecked.has(id)) {
+			exportChecked.add(id);
+			exportChecked = new Set(exportChecked);
+		}
+	}
+});
 
 const commonRatios = [
 	{ label: '16:9', value: 16 / 9 },
@@ -253,6 +273,54 @@ function applyRatio(frameId: number, ratio: number) {
 	aspectLocks.set(frameId, true);
 	aspectLocks = new Map(aspectLocks);
 }
+
+// Export functions
+function toggleExportCheck(frameId: number) {
+	if (exportChecked.has(frameId)) {
+		exportChecked.delete(frameId);
+	} else {
+		exportChecked.add(frameId);
+	}
+	exportChecked = new Set(exportChecked);
+}
+
+function toggleAllExport() {
+	if (exportChecked.size === frames.length) {
+		exportChecked = new Set();
+	} else {
+		exportChecked = new Set(frames.map((f) => f.id));
+	}
+}
+
+async function handlePickDir() {
+	const dir = await pickDirectory();
+	if (dir) {
+		exportDir = dir;
+		isSourceDir = false;
+	}
+}
+
+async function handleExport() {
+	const framesToExport = frames.filter((f) => exportChecked.has(f.id));
+	if (framesToExport.length === 0) return;
+
+	exporting = true;
+	exportProgress = { current: 0, total: framesToExport.length };
+
+	try {
+		const paths = await exportFrames(photo, framesToExport, exportDir, 0.92, (current, total) => {
+			exportProgress = { current, total };
+		});
+
+		// Also export metadata
+		const basename = photo.title?.replace(/\.[^/.]+$/, '').replace(/\s+/g, '-') || 'photo';
+		await exportMetadata(photo, framesToExport, focalPoints, `${exportDir}/${basename}.metadata.json`);
+	} catch (error) {
+		console.error('Export failed:', error);
+	} finally {
+		exporting = false;
+	}
+}
 </script>
 
 <svelte:window onkeydown={handleKeyDown} />
@@ -261,20 +329,42 @@ function applyRatio(frameId: number, ratio: number) {
 	{#if showSidebar && frames.length > 0}
 		<div class="sidebar">
 			<div class="sidebar-header">
+				<label class="export-all-check" title={exportChecked.size === frames.length ? 'Deselect all for export' : 'Select all for export'}>
+					<input
+						type="checkbox"
+						checked={exportChecked.size === frames.length}
+						indeterminate={exportChecked.size > 0 && exportChecked.size < frames.length}
+						onchange={toggleAllExport}
+					/>
+				</label>
 				<h3>Frames</h3>
 				<button class="sidebar-toggle" onclick={toggleSidebar}>×</button>
 			</div>
 			<div class="frame-list">
 				{#each frames as frame, i (frame.id)}
-					<div class="frame-item-wrapper" class:selected={selectedFrameId === frame.id}>
-						<button
-							class="frame-item"
-							onclick={() => selectFrame(frame.id)}
-						>
-							<span class="frame-number">{i + 1}</span>
-							<span class="frame-label">{frame.label || 'Frame ' + (i + 1)}</span>
-							<span class="frame-dims">{Math.round(frame.width * 100)}% × {Math.round(frame.height * 100)}%</span>
-						</button>
+					<div
+						class="frame-item-wrapper"
+						class:editing={selectedFrameId === frame.id}
+						class:export-checked={exportChecked.has(frame.id)}
+						class:export-unchecked={!exportChecked.has(frame.id)}
+					>
+						<div class="frame-item-row">
+							<label class="export-check" onclick={(e: MouseEvent) => e.stopPropagation()}>
+								<input
+									type="checkbox"
+									checked={exportChecked.has(frame.id)}
+									onchange={() => toggleExportCheck(frame.id)}
+								/>
+							</label>
+							<button
+								class="frame-item"
+								onclick={() => selectFrame(frame.id)}
+							>
+								<span class="frame-number">{i + 1}</span>
+								<span class="frame-label">{frame.label || 'Frame ' + (i + 1)}</span>
+								<span class="frame-dims">{Math.round(frame.width * 100)}% × {Math.round(frame.height * 100)}%</span>
+							</button>
+						</div>
 						
 						{#if selectedFrameId === frame.id}
 							<div class="frame-controls">
@@ -302,6 +392,23 @@ function applyRatio(frameId: number, ratio: number) {
 						{/if}
 					</div>
 				{/each}
+			</div>
+			<div class="sidebar-footer">
+				<button class="dir-picker" onclick={handlePickDir} title="Change export directory">
+					<span class="dir-icon">{isSourceDir ? '📁' : '📂'}</span>
+					<span class="dir-path">{exportDir.split('/').slice(-2).join('/')}</span>
+				</button>
+				<button
+					class="export-btn"
+					onclick={handleExport}
+					disabled={exporting || exportChecked.size === 0}
+				>
+					{#if exporting}
+						Exporting {exportProgress.current}/{exportProgress.total}...
+					{:else}
+						Export {exportChecked.size} frame{exportChecked.size === 1 ? '' : 's'}
+					{/if}
+				</button>
 			</div>
 		</div>
 	{:else if frames.length > 0}
@@ -350,6 +457,7 @@ function applyRatio(frameId: number, ratio: number) {
 						imageHeight={imgEl.naturalHeight}
 						{scale}
 						selected={selectedFrameId === frame.id}
+						exportChecked={exportChecked.has(frame.id)}
 						aspectLocked={aspectLocks.get(frame.id) || false}
 						onSelect={() => selectFrame(frame.id)}
 					/>
@@ -457,8 +565,8 @@ function applyRatio(frameId: number, ratio: number) {
 	.sidebar-header {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		padding: 1rem;
+		gap: 0.5rem;
+		padding: 0.75rem 1rem;
 		border-bottom: 1px solid #e5e7eb;
 	}
 
@@ -467,6 +575,20 @@ function applyRatio(frameId: number, ratio: number) {
 		font-size: 1rem;
 		font-weight: 600;
 		color: #111827;
+		flex: 1;
+	}
+
+	.export-all-check {
+		display: flex;
+		align-items: center;
+		cursor: pointer;
+	}
+
+	.export-all-check input {
+		width: 1rem;
+		height: 1rem;
+		cursor: pointer;
+		accent-color: #3b82f6;
 	}
 
 	.sidebar-toggle {
@@ -511,18 +633,53 @@ function applyRatio(frameId: number, ratio: number) {
 
 	.frame-item-wrapper {
 		margin-bottom: 0.5rem;
+		border-radius: 0.375rem;
+		border: 1px solid transparent;
+		transition: all 0.15s;
 	}
 
-	.frame-item-wrapper.selected {
+	/* Export-checked: blue left border accent */
+	.frame-item-wrapper.export-checked {
+		border-left: 3px solid #3b82f6;
+	}
+
+	/* Export-unchecked: muted */
+	.frame-item-wrapper.export-unchecked {
+		opacity: 0.5;
+	}
+
+	/* Editing: orange background */
+	.frame-item-wrapper.editing {
 		background: #fef3c7;
-		border: 1px solid #f59e0b;
-		border-radius: 0.375rem;
+		border-color: #f59e0b;
+		border-left: 3px solid #f59e0b;
 		padding: 0.5rem;
 		margin-bottom: 0.75rem;
+		opacity: 1;
+	}
+
+	.frame-item-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.export-check {
+		display: flex;
+		align-items: center;
+		cursor: pointer;
+		flex-shrink: 0;
+	}
+
+	.export-check input {
+		width: 0.875rem;
+		height: 0.875rem;
+		cursor: pointer;
+		accent-color: #3b82f6;
 	}
 
 	.frame-item {
-		width: 100%;
+		flex: 1;
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
@@ -540,7 +697,7 @@ function applyRatio(frameId: number, ratio: number) {
 		border-color: #d1d5db;
 	}
 
-	.frame-item-wrapper.selected .frame-item {
+	.frame-item-wrapper.editing .frame-item {
 		background: white;
 		border-color: transparent;
 	}
@@ -560,7 +717,7 @@ function applyRatio(frameId: number, ratio: number) {
 		color: #6b7280;
 	}
 
-	.frame-item-wrapper.selected .frame-number {
+	.frame-item-wrapper.editing .frame-number {
 		background: #f59e0b;
 		border-color: #f59e0b;
 		color: white;
@@ -635,5 +792,68 @@ function applyRatio(frameId: number, ratio: number) {
 	.ratio-btn:hover {
 		background: #f9fafb;
 		border-color: #9ca3af;
+	}
+
+	.sidebar-footer {
+		padding: 0.75rem;
+		border-top: 1px solid #e5e7eb;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.dir-picker {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem;
+		background: #f9fafb;
+		border: 1px solid #e5e7eb;
+		border-radius: 0.375rem;
+		cursor: pointer;
+		text-align: left;
+		width: 100%;
+		transition: all 0.15s;
+	}
+
+	.dir-picker:hover {
+		background: #f3f4f6;
+		border-color: #d1d5db;
+	}
+
+	.dir-icon {
+		flex-shrink: 0;
+		font-size: 1rem;
+	}
+
+	.dir-path {
+		flex: 1;
+		font-size: 0.75rem;
+		color: #6b7280;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.export-btn {
+		width: 100%;
+		padding: 0.625rem 1rem;
+		background: #3b82f6;
+		color: white;
+		border: none;
+		border-radius: 0.375rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+
+	.export-btn:hover:not(:disabled) {
+		background: #2563eb;
+	}
+
+	.export-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 </style>

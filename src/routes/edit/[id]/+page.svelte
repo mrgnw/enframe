@@ -2,7 +2,6 @@
 import { onMount } from 'svelte';
 import { goto } from '$app/navigation';
 import { page } from '$app/stores';
-import ExportDialog from '$lib/components/ExportDialog.svelte';
 import ImageCanvas from '$lib/components/ImageCanvas.svelte';
 import {
 	addFocalPoint,
@@ -29,7 +28,7 @@ let photo = $state<Photo | null>(null);
 let frames = $state<Frame[]>([]);
 let focalPoints = $state<FocalPoint[]>([]);
 let loading = $state(true);
-let showExportDialog = $state(false);
+
 let saveStatus = $state<'saved' | 'saving' | 'unsaved'>('saved');
 
 const photoId = Number($page.params.id);
@@ -206,10 +205,6 @@ async function handleAddFocalPoint() {
 	await loadPhoto();
 }
 
-async function handleExport() {
-	showExportDialog = true;
-}
-
 async function handleDeletePhoto() {
 	if (!photo) return;
 	if (confirm(`Delete "${photo.title}"? This will also delete all frames and focal points.`)) {
@@ -235,7 +230,6 @@ async function handleDeletePhoto() {
 			>
 				{saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved' : 'Save'}
 			</button>
-			<button onclick={handleExport}>Export</button>
 			<button class="delete-btn" onclick={handleDeletePhoto}>Delete Photo</button>
 		</div>
 	</div>
@@ -248,15 +242,6 @@ async function handleDeletePhoto() {
 		<div class="error">Photo not found</div>
 	{/if}
 </div>
-
-{#if showExportDialog && photo}
-	<ExportDialog
-		{photo}
-		{frames}
-		{focalPoints}
-		onClose={() => showExportDialog = false}
-	/>
-{/if}
 
 <style>
 	.editor {

@@ -8,11 +8,21 @@ interface Props {
 	imageHeight: number;
 	scale: number;
 	selected?: boolean;
+	exportChecked?: boolean;
 	aspectLocked?: boolean;
 	onSelect?: () => void;
 }
 
-let { frame, imageWidth, imageHeight, scale, selected = false, aspectLocked = false, onSelect }: Props = $props();
+let {
+	frame,
+	imageWidth,
+	imageHeight,
+	scale,
+	selected = false,
+	exportChecked = true,
+	aspectLocked = false,
+	onSelect
+}: Props = $props();
 
 let isDragging = $state(false);
 let isResizing = $state(false);
@@ -191,6 +201,8 @@ async function handleHandlePointerUp(event: PointerEvent) {
 <div
 	class="frame-overlay"
 	class:selected
+	class:export-checked={exportChecked}
+	class:export-unchecked={!exportChecked}
 	class:dragging={isDragging}
 	class:resizing={isResizing}
 	style="
@@ -229,23 +241,36 @@ async function handleHandlePointerUp(event: PointerEvent) {
 		pointer-events: auto;
 	}
 
+	/* Export-unchecked: grey */
+	.frame-overlay.export-unchecked {
+		border-color: #9ca3af;
+		opacity: 0.5;
+	}
+
+	/* Export-checked: blue */
+	.frame-overlay.export-checked {
+		border-color: #3b82f6;
+	}
+
 	.frame-overlay:hover {
-		border-color: #2563eb;
 		border-width: 3px;
 		z-index: 5;
 	}
 
+	/* Selected for editing: orange (overrides blue/grey) */
 	.frame-overlay.selected {
 		border-color: #f59e0b;
 		border-width: 3px;
 		z-index: 10;
+		opacity: 1;
 	}
 
 	.frame-overlay.dragging,
 	.frame-overlay.resizing {
-		border-color: #1d4ed8;
+		border-color: #f59e0b;
 		border-width: 3px;
 		z-index: 10;
+		opacity: 1;
 	}
 
 	.frame-label {
@@ -261,6 +286,14 @@ async function handleHandlePointerUp(event: PointerEvent) {
 		pointer-events: none;
 	}
 
+	.frame-overlay.export-unchecked .frame-label {
+		background: #9ca3af;
+	}
+
+	.frame-overlay.selected .frame-label {
+		background: #f59e0b;
+	}
+
 	.handle {
 		position: absolute;
 		width: 10px;
@@ -270,8 +303,20 @@ async function handleHandlePointerUp(event: PointerEvent) {
 		box-sizing: border-box;
 	}
 
+	.frame-overlay.export-unchecked .handle {
+		border-color: #9ca3af;
+	}
+
+	.frame-overlay.selected .handle {
+		border-color: #f59e0b;
+	}
+
 	.handle:hover {
 		background: #3b82f6;
+	}
+
+	.frame-overlay.selected .handle:hover {
+		background: #f59e0b;
 	}
 
 	.handle.nw { top: -5px; left: -5px; cursor: nw-resize; }

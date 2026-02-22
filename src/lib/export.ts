@@ -41,20 +41,28 @@ function generateFrameFilename(photo: Photo, frame: Frame, index: number): strin
 	return `${basename}.${orientation}.${index + 1}.${ratio}.jpg`;
 }
 
-export async function exportFramesToDirectory(
+export function getDefaultExportDir(photoPath: string): string {
+	const lastSlash = photoPath.lastIndexOf('/');
+	return lastSlash > 0 ? photoPath.substring(0, lastSlash) : '/';
+}
+
+export async function pickDirectory(title = 'Select export directory'): Promise<string | null> {
+	const result = await open({
+		directory: true,
+		multiple: false,
+		title
+	});
+	if (!result || typeof result !== 'string') return null;
+	return result;
+}
+
+export async function exportFrames(
 	photo: Photo,
 	frames: Frame[],
+	directory: string,
 	quality: number = 0.92,
 	onProgress?: (current: number, total: number) => void
 ): Promise<string[]> {
-	const directory = await open({
-		directory: true,
-		multiple: false,
-		title: 'Select export directory'
-	});
-
-	if (!directory || typeof directory !== 'string') return [];
-
 	const exportedPaths: string[] = [];
 
 	for (let i = 0; i < frames.length; i++) {
