@@ -2,19 +2,33 @@
 
 mod lightroom;
 
-use tauri::Manager;
+use base64::Engine;
 use std::fs;
 
 #[tauri::command]
 fn save_image(path: String, data: String) -> Result<(), String> {
-	let bytes = base64::decode(&data).map_err(|e| e.to_string())?;
+	let bytes = base64::engine::general_purpose::STANDARD
+		.decode(&data)
+		.map_err(|e| e.to_string())?;
 	fs::write(&path, bytes).map_err(|e| e.to_string())?;
 	Ok(())
 }
 
 fn main() {
 	tauri::Builder::default()
-		.plugin(tauri_plugin_sql::Builder::new().build())
+		.plugin(
+			tauri_plugin_sql::Builder::new()
+				.add_migrations(
+					"sqlite:enframe.db",
+					vec![tauri_plugin_sql::Migration {
+						version: 1,
+						description: "create tables",
+						sql: include_str!("../../database.sql"),
+						kind: tauri_plugin_sql::MigrationKind::Up,
+					}],
+				)
+				.build(),
+		)
 		.plugin(tauri_plugin_fs::init())
 		.plugin(tauri_plugin_dialog::init())
 		.invoke_handler(tauri::generate_handler![
@@ -22,27 +36,6 @@ fn main() {
 			lightroom::list_lightroom_photos,
 			save_image
 		])
-		.setup(|app| {
-			// Initialize the database with schema
-			let app_handle = app.handle().clone();
-			tauri::async_runtime::spawn(async move {
-				if let Err(e) = init_database(&app_handle).await {
-					eprintln!("Failed to initialize database: {}", e);
-				}
-			});
-			Ok(())
-		})
 		.run(tauri::generate_context!())
 		.expect("error while running tauri application")
-}
-
-async fn init_database(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-	use tauri_plugin_sql::SqlExt;
-	
-	let db = app.sql("sqlite:enframe.db")?;
-	
-	let schema = include_str!("../../database.sql");
-	db.execute(schema).await?;
-	
-	Ok(())
 }
