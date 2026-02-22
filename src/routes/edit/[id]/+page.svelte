@@ -16,6 +16,7 @@ import ImageCanvas from '$lib/components/ImageCanvas.svelte';
 import {
 	addFocalPoint,
 	addFrame,
+	deleteFocalPoint,
 	deleteFrame,
 	deletePhoto,
 	type FocalPoint,
@@ -136,9 +137,14 @@ function handleKeyDown(event: KeyboardEvent) {
 		event.preventDefault();
 		selectNextFrame();
 	} else if (event.key === 'Backspace' || event.key === 'Delete') {
-		if (selectedFrameId != null && !event.metaKey && !event.ctrlKey) {
-			event.preventDefault();
-			handleDeleteFrame(selectedFrameId);
+		if (!event.metaKey && !event.ctrlKey) {
+			if (selectedFrameId != null) {
+				event.preventDefault();
+				handleDeleteFrame(selectedFrameId);
+			} else if (selectedPointId != null) {
+				event.preventDefault();
+				handleDeletePoint(selectedPointId);
+			}
 		}
 	}
 }
@@ -268,6 +274,16 @@ async function handleDeleteFrame(frameId: number) {
 	await deleteFrame(frameId);
 	if (selectedFrameId === frameId) {
 		selectedFrameId = null;
+	}
+	await loadPhoto();
+	saveStatus = 'unsaved';
+	captureSnapshot();
+}
+
+async function handleDeletePoint(pointId: number) {
+	await deleteFocalPoint(pointId);
+	if (selectedPointId === pointId) {
+		selectedPointId = null;
 	}
 	await loadPhoto();
 	saveStatus = 'unsaved';

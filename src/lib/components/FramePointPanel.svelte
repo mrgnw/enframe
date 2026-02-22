@@ -55,12 +55,25 @@ function handleInteraction() {
 }
 
 function rotateFrame(frame: Frame) {
-	const oldW = frame.width;
-	const oldH = frame.height;
-	const cx = frame.x + oldW / 2;
-	const cy = frame.y + oldH / 2;
-	frame.width = oldH;
-	frame.height = oldW;
+	const imgW = imageWidth || 1;
+	const imgH = imageHeight || 1;
+
+	const pxW = frame.width * imgW;
+	const pxH = frame.height * imgH;
+
+	// Swap pixel dimensions
+	let newNormW = pxH / imgW;
+	let newNormH = pxW / imgH;
+
+	// Scale down proportionally if it overflows the image
+	const scale = Math.min(1, 1 / newNormW, 1 / newNormH);
+	newNormW *= scale;
+	newNormH *= scale;
+
+	const cx = frame.x + frame.width / 2;
+	const cy = frame.y + frame.height / 2;
+	frame.width = newNormW;
+	frame.height = newNormH;
 	frame.x = Math.max(0, Math.min(1 - frame.width, cx - frame.width / 2));
 	frame.y = Math.max(0, Math.min(1 - frame.height, cy - frame.height / 2));
 	persistFrame(frame);
