@@ -4,6 +4,7 @@ import { toast } from 'svelte-sonner';
 import { goto } from '$app/navigation';
 import { page } from '$app/stores';
 import CommandBar from '$lib/components/CommandBar.svelte';
+import CursorProgress from '$lib/components/CursorProgress.svelte';
 import ImageCanvas from '$lib/components/ImageCanvas.svelte';
 import {
 	addFocalPoint,
@@ -45,6 +46,28 @@ let exportDir = $state('');
 let exporting = $state(false);
 let exportProgress = $state(0);
 let exportTotal = $state(0);
+
+let mouseX = $state(0);
+let mouseY = $state(0);
+let mouseKnown = $state(false);
+
+function handlePointerMove(event: PointerEvent) {
+	mouseX = event.clientX;
+	mouseY = event.clientY;
+	mouseKnown = true;
+}
+
+let isBusy = $derived(saveStatus === 'saving' || exporting);
+let busyProgress = $derived(
+	exporting && exportTotal > 0
+		? exportProgress / exportTotal
+		: saveStatus === 'saving' && saveTotal > 0
+			? saveProgress / saveTotal
+			: 0
+);
+let busyColor = $derived(exporting ? '#22c55e' : '#3b82f6');
+let progressX = $derived(mouseKnown ? mouseX : typeof window !== 'undefined' ? window.innerWidth / 2 : 0);
+let progressY = $derived(mouseKnown ? mouseY : typeof window !== 'undefined' ? window.innerHeight / 2 : 0);
 
 function captureSnapshot() {
 	if (debounceTimer) clearTimeout(debounceTimer);
@@ -220,19 +243,16 @@ async function handleSetOutputDir() {
 }
 </script>
 
-<svelte:window onkeydown={handleKeyDown} />
+<svelte:window onkeydown={handleKeyDown} onpointermove={handlePointerMove} />
 
 <div class="editor">
-	{#if saveStatus === 'saving' && saveTotal > 0}
-		<div class="progress-track">
-			<div class="progress-bar save" style="width:{(saveProgress / saveTotal) * 100}%"></div>
-		</div>
-	{/if}
-	{#if exporting && exportTotal > 0}
-		<div class="progress-track">
-			<div class="progress-bar export" style="width:{(exportProgress / exportTotal) * 100}%"></div>
-		</div>
-	{/if}
+	<CursorProgress
+		progress={busyProgress}
+		visible={isBusy}
+		x={progressX}
+		y={progressY}
+		color={busyColor}
+	/>
 
 	<a href="/" class="back-btn" aria-label="Back">
 		<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -297,26 +317,4 @@ async function handleSetOutputDir() {
 		color: #6b7280;
 	}
 
-	.progress-track {
-		position: fixed;
-		top: 0;
-		left: 0;
-		right: 0;
-		height: 3px;
-		z-index: 100;
-		background: rgba(255, 255, 255, 0.1);
-	}
-
-	.progress-bar {
-		height: 100%;
-		transition: width 0.15s ease;
-	}
-
-	.progress-bar.save {
-		background: #3b82f6;
-	}
-
-	.progress-bar.export {
-		background: #22c55e;
-	}
 </style>
