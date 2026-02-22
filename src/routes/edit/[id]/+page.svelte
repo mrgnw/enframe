@@ -324,7 +324,7 @@ async function handleSetOutputDir() {
 
 <svelte:window onkeydown={handleKeyDown} onpointermove={handlePointerMove} />
 
-<div class="editor">
+<div class="editor" data-tauri-drag-region>
 	<CursorProgress
 		progress={busyProgress}
 		visible={isBusy}
@@ -333,11 +333,15 @@ async function handleSetOutputDir() {
 		color={busyColor}
 	/>
 
-	<a href="/" class="back-btn" aria-label="Back">
-		<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-			<path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-		</svg>
-	</a>
+	<div class="stoplight-area">
+		<div class="stoplight-shadow"></div>
+		<a href="/" class="back-btn" aria-label="Back">
+			<svg class="back-chevron" width="14" height="14" viewBox="0 0 20 20" fill="none">
+				<path d="M12 15L7 10L12 5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+			</svg>
+			<span class="back-label">Back</span>
+		</a>
+	</div>
 
 	{#if loading}
 		<div class="loading">Loading...</div>
@@ -406,27 +410,61 @@ async function handleSetOutputDir() {
 		background: #1a1a1a;
 	}
 
-	.back-btn {
+	.stoplight-area {
 		position: fixed;
-		top: 1rem;
-		left: 1rem;
+		top: 0;
+		left: 0;
 		z-index: 50;
 		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+	}
+
+	.stoplight-shadow {
+		width: 86px;
+		height: 40px;
+		background: radial-gradient(ellipse at 40px 16px, rgba(0, 0, 0, 0.4) 0%, transparent 70%);
+		pointer-events: none;
+	}
+
+	.back-btn {
+		display: flex;
 		align-items: center;
-		justify-content: center;
-		width: 2.5rem;
-		height: 2.5rem;
-		border-radius: 0.5rem;
-		background: rgba(0, 0, 0, 0.5);
-		color: rgba(255, 255, 255, 0.8);
+		gap: 0;
+		width: 26px;
+		height: 26px;
+		margin-left: 10px;
+		padding: 0 6px;
+		color: rgba(255, 255, 255, 0.85);
 		text-decoration: none;
+		font-size: 12px;
+		font-weight: 500;
+		background: rgba(0, 0, 0, 0.45);
 		backdrop-filter: blur(8px);
-		transition: background 0.15s, color 0.15s;
+		border-radius: 999px;
+		overflow: hidden;
+		transition: width 0.2s ease, color 0.15s, background 0.15s;
 	}
 
 	.back-btn:hover {
-		background: rgba(0, 0, 0, 0.7);
+		width: 72px;
 		color: white;
+		background: rgba(0, 0, 0, 0.6);
+	}
+
+	.back-chevron {
+		flex-shrink: 0;
+	}
+
+	.back-label {
+		opacity: 0;
+		margin-left: 3px;
+		white-space: nowrap;
+		transition: opacity 0.15s 0.05s;
+	}
+
+	.back-btn:hover .back-label {
+		opacity: 1;
 	}
 
 	.loading {

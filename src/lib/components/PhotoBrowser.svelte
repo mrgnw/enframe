@@ -98,7 +98,7 @@ function handleLightroomClick() {
 </script>
 
 <div class="photo-browser" role="application" ondrop={handleFileDrop} ondragover={handleDragOver}>
-	<div class="header">
+	<div class="header" data-tauri-drag-region>
 		<h1>Enframe</h1>
 		<div class="actions">
 			<button onclick={handleImportClick} disabled={importing}>
@@ -142,6 +142,7 @@ function handleLightroomClick() {
 <style>
 	.photo-browser {
 		padding: 2rem;
+		padding-top: 3.5rem;
 		min-height: 100vh;
 	}
 
