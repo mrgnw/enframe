@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { FocalPoint, Frame, Photo } from '$lib/db';
 import { getImageSrc } from '$lib/tauri';
+import CompositionGuide from './CompositionGuide.svelte';
 import DraggableFocalPoint from './DraggableFocalPoint.svelte';
 import ResizableFrame from './ResizableFrame.svelte';
 
@@ -15,6 +16,9 @@ interface Props {
 	onselectframe?: (frameId: number | null) => void;
 	onselectpoint?: (pointId: number | null) => void;
 	onimageload?: (width: number, height: number) => void;
+	oncanvasclick?: (normX: number, normY: number, altKey: boolean) => void;
+	compositionLabels?: Map<number, string>;
+	activeGuide?: 'off' | 'thirds' | 'phi' | 'spiral' | 'triangle' | 'diagonal';
 }
 
 let {
@@ -27,7 +31,10 @@ let {
 	ondeleteframe,
 	onselectframe,
 	onselectpoint,
-	onimageload
+	onimageload,
+	oncanvasclick,
+	compositionLabels = new Map(),
+	activeGuide = 'off'
 }: Props = $props();
 
 let containerEl = $state<HTMLDivElement | null>(null);
@@ -75,6 +82,18 @@ function selectPoint(pointId: number) {
 	onselectpoint?.(pointId);
 }
 
+function handleOverlayClick(event: PointerEvent) {
+	// Only handle clicks directly on the overlay container (blank canvas area)
+	if (event.target !== event.currentTarget) return;
+	if (renderRect.w === 0 || renderRect.h === 0) return;
+
+	const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+	const normX = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+	const normY = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+
+	oncanvasclick?.(normX, normY, event.altKey);
+}
+
 function handleKeyDown(event: KeyboardEvent) {
 	if (event.key >= '1' && event.key <= '9') {
 		const index = parseInt(event.key) - 1;
@@ -99,22 +118,37 @@ function handleKeyDown(event: KeyboardEvent) {
 	/>
 
 	{#if renderRect.w > 0}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="overlay-container"
 			style="left:{renderRect.x}px;top:{renderRect.y}px;width:{renderRect.w}px;height:{renderRect.h}px;"
+			onpointerdown={handleOverlayClick}
 		>
-			{#each frames as frame, i (frame.id)}
-				<ResizableFrame
-					{frame}
-					index={i}
-					imageWidth={renderRect.w}
-					imageHeight={renderRect.h}
-					scale={1}
-					selected={selectedFrameId === frame.id}
-					onSelect={() => selectFrame(frame.id)}
-					{onchange}
-				/>
-			{/each}
+		{#each frames as frame, i (frame.id)}
+			<ResizableFrame
+				{frame}
+				index={i}
+				imageWidth={renderRect.w}
+				imageHeight={renderRect.h}
+				scale={1}
+				selected={selectedFrameId === frame.id}
+				compositionLabel={compositionLabels.get(frame.id) ?? ''}
+				onSelect={() => selectFrame(frame.id)}
+				{onchange}
+			/>
+			{#if selectedFrameId === frame.id && activeGuide !== 'off'}
+				<div
+					class="guide-container"
+					style="left:{frame.x * 100}%;top:{frame.y * 100}%;width:{frame.width * 100}%;height:{frame.height * 100}%;"
+				>
+					<CompositionGuide
+						guide={activeGuide}
+						width={frame.width * renderRect.w}
+						height={frame.height * renderRect.h}
+					/>
+				</div>
+			{/if}
+		{/each}
 
 			{#each focalPoints as point, i (point.id)}
 				<DraggableFocalPoint
@@ -152,6 +186,12 @@ function handleKeyDown(event: KeyboardEvent) {
 
 	.overlay-container {
 		position: absolute;
+		pointer-events: auto;
+	}
+
+	.guide-container {
+		position: absolute;
 		pointer-events: none;
+		z-index: 15;
 	}
 </style>

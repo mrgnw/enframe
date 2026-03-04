@@ -13,6 +13,14 @@ import CursorProgress from '$lib/components/CursorProgress.svelte';
 import FloatingToolbar from '$lib/components/FloatingToolbar.svelte';
 import FramePointPanel from '$lib/components/FramePointPanel.svelte';
 import ImageCanvas from '$lib/components/ImageCanvas.svelte';
+import PreviewPanel from '$lib/components/PreviewPanel.svelte';
+import {
+	AUTO_LANDSCAPE_LABEL,
+	AUTO_PORTRAIT_LABEL,
+	computeAutoFrame,
+	computeFrameLabel,
+	isAutoFrame
+} from '$lib/composition';
 import {
 	addFocalPoint,
 	addFrame,
@@ -59,12 +67,19 @@ let exportTotal = $state(0);
 let selectedFrameId = $state<number | null>(null);
 let selectedPointId = $state<number | null>(null);
 let panelExpanded = $state(false);
+let previewOpen = $state(false);
+let previewMode = $state<'single' | 'all'>('all');
 let imageWidth = $state(0);
 let imageHeight = $state(0);
 
 let mouseX = $state(0);
 let mouseY = $state(0);
 let mouseKnown = $state(false);
+let compositionLabels = $state<Map<number, string>>(new Map());
+
+const GUIDE_TYPES = ['off', 'thirds', 'phi', 'spiral', 'triangle', 'diagonal'] as const;
+type GuideType = (typeof GUIDE_TYPES)[number];
+let activeGuide = $state<GuideType>('off');
 
 function handlePointerMove(event: PointerEvent) {
 	mouseX = event.clientX;
@@ -174,6 +189,13 @@ function handleKeyDown(event: KeyboardEvent) {
 		} else if (event.key === 't') {
 			event.preventDefault();
 			panelExpanded = !panelExpanded;
+		} else if (event.key === 'v') {
+			event.preventDefault();
+			previewOpen = !previewOpen;
+		} else if (event.key === 'g') {
+			event.preventDefault();
+			const idx = GUIDE_TYPES.indexOf(activeGuide);
+			activeGuide = GUIDE_TYPES[(idx + 1) % GUIDE_TYPES.length];
 		}
 	}
 }
@@ -250,6 +272,7 @@ onMount(async () => {
 
 function handleChange() {
 	if (loading || history.length === 0) return;
+	recomputeAutoFrames();
 	captureSnapshot();
 }
 
@@ -315,8 +338,134 @@ async function handleDeletePoint(pointId: number) {
 		selectedPointId = null;
 	}
 	await loadPhoto();
+	await recomputeAutoFrames();
 	saveStatus = 'unsaved';
 	captureSnapshot();
+}
+
+async function handleCanvasClick(normX: number, normY: number, altKey: boolean) {
+	if (!photo) return;
+
+	// Add a global focal point at the clicked position
+	await addFocalPoint({
+		photo_id: photoId,
+		frame_id: undefined,
+		x: normX,
+		y: normY,
+		label: `Point ${focalPoints.length + 1}`,
+		required: true
+	});
+	await loadPhoto();
+
+	if (altKey) {
+		// Ensure auto frame pair exists, then recompute
+		await ensureAutoFrames();
+	}
+
+	await recomputeAutoFrames();
+	handleChange();
+}
+
+async function ensureAutoFrames() {
+	if (!photo) return;
+	const hasAutoL = frames.some((f) => f.label === AUTO_LANDSCAPE_LABEL);
+	const hasAutoP = frames.some((f) => f.label === AUTO_PORTRAIT_LABEL);
+
+	if (!hasAutoL) {
+		await addFrame({
+			photo_id: photoId,
+			label: AUTO_LANDSCAPE_LABEL,
+			x: 0.1,
+			y: 0.1,
+			width: 0.8,
+			height: 0.45,
+			rotation: 0,
+			is_default: false
+		});
+	}
+	if (!hasAutoP) {
+		await addFrame({
+			photo_id: photoId,
+			label: AUTO_PORTRAIT_LABEL,
+			x: 0.3,
+			y: 0.05,
+			width: 0.4,
+			height: 0.9,
+			rotation: 0,
+			is_default: false
+		});
+	}
+	if (!hasAutoL || !hasAutoP) {
+		await loadPhoto();
+	}
+}
+
+async function recomputeAutoFrames() {
+	if (!photo || imageWidth === 0 || imageHeight === 0) return;
+
+	// Use all global focal points (frame_id is null/undefined)
+	const globalPoints = focalPoints.filter((fp) => !fp.frame_id).map((fp) => ({ x: fp.x, y: fp.y }));
+
+	const imgAspect = imageWidth / imageHeight;
+
+	const autoL = frames.find((f) => f.label === AUTO_LANDSCAPE_LABEL);
+	const autoP = frames.find((f) => f.label === AUTO_PORTRAIT_LABEL);
+
+	if (globalPoints.length > 0) {
+		if (autoL) {
+			const result = computeAutoFrame(globalPoints, 16 / 9, imgAspect);
+			if (result) {
+				autoL.x = result.rect.x;
+				autoL.y = result.rect.y;
+				autoL.width = result.rect.width;
+				autoL.height = result.rect.height;
+				await updateFrame(autoL.id, {
+					x: result.rect.x,
+					y: result.rect.y,
+					width: result.rect.width,
+					height: result.rect.height
+				});
+			}
+		}
+
+		if (autoP) {
+			const result = computeAutoFrame(globalPoints, 9 / 16, imgAspect);
+			if (result) {
+				autoP.x = result.rect.x;
+				autoP.y = result.rect.y;
+				autoP.width = result.rect.width;
+				autoP.height = result.rect.height;
+				await updateFrame(autoP.id, {
+					x: result.rect.x,
+					y: result.rect.y,
+					width: result.rect.width,
+					height: result.rect.height
+				});
+			}
+		}
+	}
+
+	// Update composition labels for all frames
+	const newLabels = new Map<number, string>();
+	for (const frame of frames) {
+		// For each frame, compute which focal points are relevant
+		const relevantPoints = isAutoFrame(frame.label)
+			? globalPoints
+			: focalPoints.filter((fp) => !fp.frame_id || fp.frame_id === frame.id).map((fp) => ({ x: fp.x, y: fp.y }));
+		if (relevantPoints.length > 0) {
+			const pxW = frame.width * imageWidth;
+			const pxH = frame.height * imageHeight;
+			const frameAspect = pxW / pxH;
+			const label = computeFrameLabel(
+				{ x: frame.x, y: frame.y, width: frame.width, height: frame.height },
+				relevantPoints,
+				frameAspect,
+				imgAspect
+			);
+			if (label) newLabels.set(frame.id, label);
+		}
+	}
+	compositionLabels = newLabels;
 }
 
 async function handleExport() {
@@ -375,18 +524,39 @@ async function handleSetOutputDir() {
 	{#if loading}
 		<div class="loading">Loading...</div>
 	{:else if photo}
-		<ImageCanvas
-			{photo}
-			bind:frames
-			bind:focalPoints
-			{selectedFrameId}
-			{selectedPointId}
-			onchange={handleChange}
-			ondeleteframe={handleDeleteFrame}
-			onselectframe={(id) => { selectedFrameId = id; selectedPointId = null; }}
-			onselectpoint={(id) => { selectedPointId = id; selectedFrameId = null; }}
-			onimageload={(w, h) => { imageWidth = w; imageHeight = h; }}
-		/>
+		<div class="editor-body">
+			<div class="canvas-area">
+				<ImageCanvas
+					{photo}
+					bind:frames
+					bind:focalPoints
+					{selectedFrameId}
+					{selectedPointId}
+					{compositionLabels}
+					{activeGuide}
+					onchange={handleChange}
+					ondeleteframe={handleDeleteFrame}
+					onselectframe={(id) => { selectedFrameId = id; selectedPointId = null; }}
+					onselectpoint={(id) => { selectedPointId = id; selectedFrameId = null; }}
+					onimageload={(w, h) => { imageWidth = w; imageHeight = h; }}
+					oncanvasclick={handleCanvasClick}
+				/>
+			</div>
+
+			{#if previewOpen}
+				<PreviewPanel
+					{photo}
+					{frames}
+					{selectedFrameId}
+					mode={previewMode}
+					{imageWidth}
+					{imageHeight}
+					onselectframe={(id) => { selectedFrameId = id; selectedPointId = null; }}
+					onmodechange={(m) => previewMode = m}
+					onclose={() => previewOpen = false}
+				/>
+			{/if}
+		</div>
 
 		<div class="floating-ui">
 			<FloatingToolbar
@@ -394,12 +564,14 @@ async function handleSetOutputDir() {
 				canRedo={historyIndex < history.length - 1}
 				{saveStatus}
 				{panelExpanded}
+				{previewOpen}
 				onundo={undo}
 				onredo={redo}
 				onaddframe={handleAddFrame}
 				onaddpoint={handleAddFocalPoint}
 				onsave={saveMetadata}
 				ontoggle={() => panelExpanded = !panelExpanded}
+				onpreview={() => previewOpen = !previewOpen}
 			/>
 			<FramePointPanel
 				{frames}
@@ -408,6 +580,7 @@ async function handleSetOutputDir() {
 				{imageHeight}
 				{selectedFrameId}
 				{selectedPointId}
+				{compositionLabels}
 				expanded={panelExpanded}
 				onselectframe={(id) => { selectedFrameId = id; selectedPointId = null; }}
 				onselectpoint={(id) => { selectedPointId = id; selectedFrameId = null; }}
@@ -432,6 +605,7 @@ async function handleSetOutputDir() {
 		onredo={redo}
 		ontoggle={() => panelExpanded = !panelExpanded}
 		ondeselect={handleDeselect}
+		onpreview={() => previewOpen = !previewOpen}
 	/>
 </div>
 
@@ -498,6 +672,18 @@ async function handleSetOutputDir() {
 
 	.back-btn:hover .back-label {
 		opacity: 1;
+	}
+
+	.editor-body {
+		display: flex;
+		width: 100%;
+		height: 100%;
+	}
+
+	.canvas-area {
+		flex: 1;
+		min-width: 0;
+		height: 100%;
 	}
 
 	.loading {

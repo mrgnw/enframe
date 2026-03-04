@@ -1,5 +1,6 @@
 <script lang="ts">
 import { RotateCw } from '@lucide/svelte';
+import { isAutoFrame } from '$lib/composition';
 import type { FocalPoint, Frame } from '$lib/db';
 import { updateFrame } from '$lib/db';
 
@@ -10,6 +11,7 @@ interface Props {
 	imageHeight: number;
 	selectedFrameId?: number | null;
 	selectedPointId?: number | null;
+	compositionLabels?: Map<number, string>;
 	expanded?: boolean;
 	onselectframe?: (frameId: number | null) => void;
 	onselectpoint?: (pointId: number | null) => void;
@@ -23,6 +25,7 @@ let {
 	imageHeight,
 	selectedFrameId = null,
 	selectedPointId = null,
+	compositionLabels = new Map(),
 	expanded = false,
 	onselectframe,
 	onselectpoint,
@@ -141,35 +144,40 @@ function isPortrait(frame: Frame): boolean {
 		{#if frames.length > 0}
 			<div class="section-label">Frames</div>
 			{#each frames as frame, i (frame.id)}
-				{@const isSelected = selectedFrameId === frame.id}
-				{@const portrait = isPortrait(frame)}
-				<div
-					class="panel-row"
-					class:selected={isSelected}
-					onclick={() => onselectframe?.(frame.id)}
-					onkeydown={() => {}}
-					role="button"
-					tabindex="0"
-				>
-					<span class="row-label">{i + 1}</span>
+			{@const isSelected = selectedFrameId === frame.id}
+			{@const portrait = isPortrait(frame)}
+			{@const isAuto = isAutoFrame(frame.label)}
+			<div
+				class="panel-row"
+				class:selected={isSelected}
+				class:auto-frame={isAuto}
+				onclick={() => onselectframe?.(frame.id)}
+				onkeydown={() => {}}
+				role="button"
+				tabindex="0"
+			>
+				<span class="row-label" class:auto-label={isAuto}>{isAuto ? frame.label : i + 1}</span>
 
 					<button class="icon-btn" title="Rotate frame (swap W/H)" onclick={() => { rotateFrame(frame); handleInteraction(); }}>
 						<RotateCw size={12} />
 					</button>
 
-					<div class="ratio-presets">
-						{#key portrait}
-							{#each RATIOS as ratio (ratio.w)}
-								{@const rw = portrait ? ratio.h : ratio.w}
-								{@const rh = portrait ? ratio.w : ratio.h}
-								<button
-									class="ratio-btn"
-									onclick={() => { applyRatio(frame, rw, rh); handleInteraction(); }}
-								>{rw}:{rh}</button>
-							{/each}
-						{/key}
-					</div>
+				<div class="ratio-presets">
+					{#key portrait}
+						{#each RATIOS as ratio (ratio.w)}
+							{@const rw = portrait ? ratio.h : ratio.w}
+							{@const rh = portrait ? ratio.w : ratio.h}
+							<button
+								class="ratio-btn"
+								onclick={() => { applyRatio(frame, rw, rh); handleInteraction(); }}
+							>{rw}:{rh}</button>
+						{/each}
+					{/key}
 				</div>
+				{#if compositionLabels.has(frame.id)}
+					<span class="comp-label">{compositionLabels.get(frame.id)}</span>
+				{/if}
+			</div>
 			{/each}
 		{/if}
 
@@ -256,6 +264,23 @@ function isPortrait(frame: Frame): boolean {
 
 	.point-label {
 		color: #ef4444;
+	}
+
+	.auto-label {
+		color: #22d3ee;
+		font-size: 10px;
+		letter-spacing: 0.02em;
+	}
+
+	.auto-frame {
+		border-color: rgba(34, 211, 238, 0.2);
+	}
+
+	.comp-label {
+		font-size: 9px;
+		color: rgba(255, 255, 255, 0.35);
+		white-space: nowrap;
+		margin-left: 4px;
 	}
 
 	.icon-btn {

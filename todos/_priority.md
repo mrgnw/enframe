@@ -6,3 +6,6 @@
 6. export-rework
 7. canvas-viewport-enhancements
 8. save-history
+9. floating-toolbar-ui
+10. selective-frame-export
+11. auto-dual-frame

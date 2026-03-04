@@ -1,4 +1,5 @@
 <script lang="ts">
+import { isAutoFrame } from '$lib/composition';
 import type { Frame } from '$lib/db';
 import { updateFrame } from '$lib/db';
 
@@ -11,6 +12,7 @@ interface Props {
 	selected?: boolean;
 	exportChecked?: boolean;
 	aspectLocked?: boolean;
+	compositionLabel?: string;
 	onSelect?: () => void;
 	onchange?: () => void;
 }
@@ -24,9 +26,12 @@ let {
 	selected = false,
 	exportChecked = true,
 	aspectLocked = false,
+	compositionLabel = '',
 	onSelect,
 	onchange
 }: Props = $props();
+
+let isAuto = $derived(isAutoFrame(frame.label));
 
 let handleSize = $derived(Math.max(6, 10 / scale));
 let borderWidth = $derived(Math.max(1, 2 / scale));
@@ -231,7 +236,9 @@ async function handleHandlePointerUp(event: PointerEvent) {
 	onpointermove={handleFramePointerMove}
 	onpointerup={handleFramePointerUp}
 >
-	<div class="frame-label" style="transform: scale({labelScale}); transform-origin: bottom left;">{index + 1}</div>
+	<div class="frame-label" class:auto-label={isAuto} style="transform: scale({labelScale}); transform-origin: bottom left;">
+		{isAuto ? frame.label : index + 1}{#if compositionLabel}<span class="comp-hint">{compositionLabel}</span>{/if}
+	</div>
 
 	<!-- Resize handles -->
 	<div class="handle nw" style="{hs}top:{handleOffset}px;left:{handleOffset}px;" role="button" tabindex="-1" aria-label="Resize northwest" onpointerdown={(e) => handleHandlePointerDown(e, 'nw')} onpointermove={handleHandlePointerMove} onpointerup={handleHandlePointerUp}></div>
@@ -304,6 +311,21 @@ async function handleHandlePointerUp(event: PointerEvent) {
 
 	.frame-overlay.selected .frame-label {
 		background: #f59e0b;
+	}
+
+	.frame-label.auto-label {
+		background: #0891b2;
+	}
+
+	.frame-overlay.selected .frame-label.auto-label {
+		background: #f59e0b;
+	}
+
+	.comp-hint {
+		margin-left: 0.4em;
+		opacity: 0.7;
+		font-size: 0.65rem;
+		font-weight: 400;
 	}
 
 	.handle {

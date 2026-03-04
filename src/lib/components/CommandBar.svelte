@@ -17,6 +17,7 @@ interface Props {
 	onredo?: () => void;
 	ontoggle?: () => void;
 	ondeselect?: () => void;
+	onpreview?: () => void;
 }
 
 let {
@@ -32,7 +33,8 @@ let {
 	onundo,
 	onredo,
 	ontoggle,
-	ondeselect
+	ondeselect,
+	onpreview
 }: Props = $props();
 
 let open = $state(false);
@@ -81,7 +83,8 @@ const shortcuts = [
 			{ key: '\u2318S', label: 'Save' },
 			{ key: '\u2318E', label: 'Export' },
 			{ key: 'O', label: 'Set output dir' },
-			{ key: 'T', label: 'Toggle panel' }
+			{ key: 'T', label: 'Toggle panel' },
+			{ key: 'V', label: 'Toggle preview' }
 		]
 	},
 	{
@@ -158,6 +161,10 @@ const shortcuts = [
 						<Command.Item onSelect={() => run(ontoggle)}>
 							<span>Toggle Panel</span>
 							<Command.Shortcut>T</Command.Shortcut>
+						</Command.Item>
+						<Command.Item onSelect={() => run(onpreview)}>
+							<span>Toggle Preview</span>
+							<Command.Shortcut>V</Command.Shortcut>
 						</Command.Item>
 					</Command.Group>
 					<Command.Group heading="Edit">

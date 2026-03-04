@@ -114,11 +114,10 @@ let dirName = $derived(watchDir?.split('/').pop() ?? '');
 >
 	{#if watchDir}
 		<Eye size={14} class="icon-watch" />
-		<span class="dir-name" title={watchDir}>{dirName}</span>
 		{#if importing}
-			<span class="status importing">IMPORTING</span>
+			<span class="status importing">Importing {dirName}</span>
 		{:else}
-			<span class="status watching">WATCHING</span>
+			<span class="dir-name" title={watchDir}>Watching {dirName}</span>
 		{/if}
 		<button class="clear-btn" onclick={(e) => { e.stopPropagation(); clearWatch(); }} title="Stop watching">
 			<X size={12} />

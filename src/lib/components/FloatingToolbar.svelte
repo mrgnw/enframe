@@ -1,17 +1,19 @@
 <script lang="ts">
-import { Check, ChevronDown, ChevronUp, Circle, Crop, Redo2, Undo2 } from '@lucide/svelte';
+import { Check, ChevronDown, ChevronUp, Circle, Crop, Eye, EyeOff, Redo2, Undo2 } from '@lucide/svelte';
 
 interface Props {
 	canUndo?: boolean;
 	canRedo?: boolean;
 	saveStatus?: 'saved' | 'saving' | 'unsaved';
 	panelExpanded?: boolean;
+	previewOpen?: boolean;
 	onundo?: () => void;
 	onredo?: () => void;
 	onaddframe?: () => void;
 	onaddpoint?: () => void;
 	onsave?: () => void;
 	ontoggle?: () => void;
+	onpreview?: () => void;
 }
 
 let {
@@ -19,12 +21,14 @@ let {
 	canRedo = false,
 	saveStatus = 'saved',
 	panelExpanded = false,
+	previewOpen = false,
 	onundo,
 	onredo,
 	onaddframe,
 	onaddpoint,
 	onsave,
-	ontoggle
+	ontoggle,
+	onpreview
 }: Props = $props();
 </script>
 
@@ -78,6 +82,14 @@ let {
 	</button>
 
 	<div class="toolbar-divider"></div>
+
+	<button class="tb-btn" class:preview-active={previewOpen} onclick={onpreview} title="Toggle Preview (V)">
+		{#if previewOpen}
+			<EyeOff size={16} />
+		{:else}
+			<Eye size={16} />
+		{/if}
+	</button>
 
 	<button class="tb-btn toggle-btn" onclick={ontoggle} title={panelExpanded ? 'Collapse Panel (T)' : 'Expand Panel (T)'}>
 		{#if panelExpanded}
@@ -164,6 +176,14 @@ let {
 
 	.save-unsaved:hover {
 		color: #fbbf24;
+	}
+
+	.preview-active {
+		color: rgba(147, 197, 253, 0.9);
+	}
+
+	.preview-active:hover {
+		color: #93c5fd;
 	}
 
 	.save-saving {
