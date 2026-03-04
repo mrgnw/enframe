@@ -6,10 +6,12 @@ interface Props {
 	photo: Photo;
 	frames: Frame[];
 	selectedFrameId?: number | null;
+	exportSelection?: Set<number>;
 	mode?: 'single' | 'all';
 	imageWidth?: number;
 	imageHeight?: number;
 	onselectframe?: (id: number) => void;
+	ontoggleexport?: (id: number) => void;
 	onmodechange?: (mode: 'single' | 'all') => void;
 	onclose?: () => void;
 }
@@ -18,16 +20,25 @@ let {
 	photo,
 	frames,
 	selectedFrameId = null,
+	exportSelection = new Set(),
 	mode = 'all',
 	imageWidth = 0,
 	imageHeight = 0,
 	onselectframe,
+	ontoggleexport,
 	onmodechange,
 	onclose
 }: Props = $props();
 
+let hasExportSelection = $derived(exportSelection.size > 0);
 let selectedFrame = $derived(frames.find((f) => f.id === selectedFrameId));
-let displayFrames = $derived(mode === 'single' && selectedFrame ? [selectedFrame] : frames);
+let displayFrames = $derived(
+	mode === 'single' && selectedFrame
+		? [selectedFrame]
+		: hasExportSelection
+			? frames.filter((f) => exportSelection.has(f.id))
+			: frames
+);
 
 function framePx(frame: Frame) {
 	const w = Math.round(imageWidth * frame.width);
@@ -64,7 +75,7 @@ function frameIndex(frame: Frame) {
 				class="mode-tab"
 				class:active={mode === 'all'}
 				onclick={() => onmodechange?.('all')}
-			>All</button>
+			>{hasExportSelection ? `Export (${exportSelection.size})` : 'All'}</button>
 		</div>
 		<button class="close-btn" onclick={onclose} title="Close Preview (V)">
 			<svg width="14" height="14" viewBox="0 0 20 20" fill="none">
@@ -86,7 +97,13 @@ function frameIndex(frame: Frame) {
 					<button
 						class="preview-card"
 						class:selected={selectedFrameId === frame.id}
-						onclick={() => onselectframe?.(frame.id)}
+						onclick={(e: MouseEvent) => {
+							if (e.shiftKey || e.metaKey) {
+								ontoggleexport?.(frame.id);
+							} else {
+								onselectframe?.(frame.id);
+							}
+						}}
 					>
 						<div
 							class="crop-wrapper"

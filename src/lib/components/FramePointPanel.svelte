@@ -11,10 +11,12 @@ interface Props {
 	imageHeight: number;
 	selectedFrameId?: number | null;
 	selectedPointId?: number | null;
+	exportSelection?: Set<number>;
 	compositionLabels?: Map<number, string>;
 	expanded?: boolean;
 	onselectframe?: (frameId: number | null) => void;
 	onselectpoint?: (pointId: number | null) => void;
+	ontoggleexport?: (frameId: number) => void;
 	onchange?: () => void;
 }
 
@@ -25,12 +27,16 @@ let {
 	imageHeight,
 	selectedFrameId = null,
 	selectedPointId = null,
+	exportSelection = new Set(),
 	compositionLabels = new Map(),
 	expanded = false,
 	onselectframe,
 	onselectpoint,
+	ontoggleexport,
 	onchange
 }: Props = $props();
+
+let hasExportSelection = $derived(exportSelection.size > 0);
 
 let panelEl = $state<HTMLDivElement | null>(null);
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
@@ -147,15 +153,28 @@ function isPortrait(frame: Frame): boolean {
 			{@const isSelected = selectedFrameId === frame.id}
 			{@const portrait = isPortrait(frame)}
 			{@const isAuto = isAutoFrame(frame.label)}
+			{@const isExportChecked = !hasExportSelection || exportSelection.has(frame.id)}
 			<div
 				class="panel-row"
 				class:selected={isSelected}
 				class:auto-frame={isAuto}
+				class:export-dimmed={hasExportSelection && !exportSelection.has(frame.id)}
 				onclick={() => onselectframe?.(frame.id)}
 				onkeydown={() => {}}
 				role="button"
 				tabindex="0"
 			>
+				<button
+					class="export-check"
+					class:checked={isExportChecked}
+					class:has-selection={hasExportSelection}
+					title={isExportChecked ? 'Exclude from export' : 'Include in export'}
+					onclick={(e: MouseEvent) => { e.stopPropagation(); ontoggleexport?.(frame.id); }}
+				>
+					{#if hasExportSelection && exportSelection.has(frame.id)}
+						<svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+					{/if}
+				</button>
 				<span class="row-label" class:auto-label={isAuto}>{isAuto ? frame.label : i + 1}</span>
 
 					<button class="icon-btn" title="Rotate frame (swap W/H)" onclick={() => { rotateFrame(frame); handleInteraction(); }}>
@@ -253,6 +272,36 @@ function isPortrait(frame: Frame): boolean {
 	.point-row.selected {
 		border-color: #ef4444;
 		background: rgba(239, 68, 68, 0.1);
+	}
+
+	.export-check {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 14px;
+		height: 14px;
+		border: 1.5px solid rgba(255, 255, 255, 0.25);
+		border-radius: 3px;
+		background: transparent;
+		color: transparent;
+		cursor: pointer;
+		padding: 0;
+		flex-shrink: 0;
+		transition: border-color 0.15s, background 0.15s, color 0.15s;
+	}
+
+	.export-check:hover {
+		border-color: rgba(255, 255, 255, 0.5);
+	}
+
+	.export-check.has-selection.checked {
+		border-color: #22c55e;
+		background: #22c55e;
+		color: white;
+	}
+
+	.panel-row.export-dimmed {
+		opacity: 0.45;
 	}
 
 	.row-label {

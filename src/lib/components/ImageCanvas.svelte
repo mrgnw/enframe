@@ -11,10 +11,12 @@ interface Props {
 	focalPoints?: FocalPoint[];
 	selectedFrameId?: number | null;
 	selectedPointId?: number | null;
+	exportSelection?: Set<number>;
 	onchange?: () => void;
 	ondeleteframe?: (frameId: number) => void;
 	onselectframe?: (frameId: number | null) => void;
 	onselectpoint?: (pointId: number | null) => void;
+	ontoggleexport?: (frameId: number) => void;
 	onimageload?: (width: number, height: number) => void;
 	oncanvasclick?: (normX: number, normY: number, altKey: boolean) => void;
 	compositionLabels?: Map<number, string>;
@@ -27,15 +29,19 @@ let {
 	focalPoints = $bindable([]),
 	selectedFrameId = null,
 	selectedPointId = null,
+	exportSelection = new Set(),
 	onchange,
 	ondeleteframe,
 	onselectframe,
 	onselectpoint,
+	ontoggleexport,
 	onimageload,
 	oncanvasclick,
 	compositionLabels = new Map(),
 	activeGuide = 'off'
 }: Props = $props();
+
+let hasExportSelection = $derived(exportSelection.size > 0);
 
 let containerEl = $state<HTMLDivElement | null>(null);
 let imgEl = $state<HTMLImageElement | null>(null);
@@ -74,7 +80,11 @@ function handleImageLoad() {
 
 let resizeObserver: ResizeObserver | undefined;
 
-function selectFrame(frameId: number) {
+function handleFrameClick(frameId: number, event?: PointerEvent) {
+	if (event && (event.shiftKey || event.metaKey)) {
+		ontoggleexport?.(frameId);
+		return;
+	}
 	onselectframe?.(frameId);
 }
 
@@ -132,8 +142,9 @@ function handleKeyDown(event: KeyboardEvent) {
 				imageHeight={renderRect.h}
 				scale={1}
 				selected={selectedFrameId === frame.id}
+				exportChecked={!hasExportSelection || exportSelection.has(frame.id)}
 				compositionLabel={compositionLabels.get(frame.id) ?? ''}
-				onSelect={() => selectFrame(frame.id)}
+				onSelect={(e) => handleFrameClick(frame.id, e)}
 				{onchange}
 			/>
 			{#if selectedFrameId === frame.id && activeGuide !== 'off'}

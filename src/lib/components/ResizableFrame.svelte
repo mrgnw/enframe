@@ -13,7 +13,7 @@ interface Props {
 	exportChecked?: boolean;
 	aspectLocked?: boolean;
 	compositionLabel?: string;
-	onSelect?: () => void;
+	onSelect?: (event?: PointerEvent) => void;
 	onchange?: () => void;
 }
 
@@ -48,7 +48,9 @@ function handleFramePointerDown(event: PointerEvent) {
 	if (event.button !== 0) return;
 	event.stopPropagation();
 
-	if (onSelect) onSelect();
+	if (onSelect) onSelect(event);
+
+	if (event.shiftKey || event.metaKey) return;
 
 	isDragging = true;
 	dragStart = {

@@ -69,6 +69,7 @@ let selectedPointId = $state<number | null>(null);
 let panelExpanded = $state(false);
 let previewOpen = $state(false);
 let previewMode = $state<'single' | 'all'>('all');
+let exportSelection = $state<Set<number>>(new Set());
 let imageWidth = $state(0);
 let imageHeight = $state(0);
 
@@ -85,6 +86,26 @@ function handlePointerMove(event: PointerEvent) {
 	mouseX = event.clientX;
 	mouseY = event.clientY;
 	mouseKnown = true;
+}
+
+let framesToExport = $derived(exportSelection.size > 0 ? frames.filter((f) => exportSelection.has(f.id)) : frames);
+
+function toggleExportSelection(frameId: number) {
+	const next = new Set(exportSelection);
+	if (next.has(frameId)) {
+		next.delete(frameId);
+	} else {
+		next.add(frameId);
+	}
+	exportSelection = next;
+}
+
+function selectAllForExport() {
+	exportSelection = new Set();
+}
+
+function clearExportSelection() {
+	exportSelection = new Set();
 }
 
 let isBusy = $derived(saveStatus === 'saving' || exporting);
@@ -327,6 +348,11 @@ async function handleDeleteFrame(frameId: number) {
 	if (selectedFrameId === frameId) {
 		selectedFrameId = null;
 	}
+	if (exportSelection.has(frameId)) {
+		const next = new Set(exportSelection);
+		next.delete(frameId);
+		exportSelection = next;
+	}
 	await loadPhoto();
 	saveStatus = 'unsaved';
 	captureSnapshot();
@@ -469,21 +495,22 @@ async function recomputeAutoFrames() {
 }
 
 async function handleExport() {
-	if (!photo || frames.length === 0) return;
+	if (!photo || framesToExport.length === 0) return;
+	const toExport = framesToExport;
 	exporting = true;
 	exportProgress = 0;
-	exportTotal = frames.length + 1;
+	exportTotal = toExport.length + 1;
 	await yieldFrame();
 	try {
-		await exportFrames(photo, frames, exportDir, exportFormat, 0.92, (current: number, _total: number) => {
+		await exportFrames(photo, toExport, exportDir, exportFormat, 0.92, (current: number, _total: number) => {
 			exportProgress = current;
 		});
-		exportProgress = frames.length;
+		exportProgress = toExport.length;
 		await yieldFrame();
 		const basename = photo.title?.replace(/\.[^/.]+$/, '').replace(/\s+/g, '-') || 'photo';
-		await exportMetadata(photo, frames, focalPoints, `${exportDir}/${basename}.metadata.json`);
+		await exportMetadata(photo, toExport, focalPoints, `${exportDir}/${basename}.metadata.json`);
 		exportProgress = exportTotal;
-		toast.success(`Exported ${frames.length} frame${frames.length === 1 ? '' : 's'}`);
+		toast.success(`Exported ${toExport.length} frame${toExport.length === 1 ? '' : 's'}`);
 	} catch (error) {
 		console.error('Export failed:', error);
 		toast.error('Export failed');
@@ -532,12 +559,14 @@ async function handleSetOutputDir() {
 					bind:focalPoints
 					{selectedFrameId}
 					{selectedPointId}
+					{exportSelection}
 					{compositionLabels}
 					{activeGuide}
 					onchange={handleChange}
 					ondeleteframe={handleDeleteFrame}
 					onselectframe={(id) => { selectedFrameId = id; selectedPointId = null; }}
 					onselectpoint={(id) => { selectedPointId = id; selectedFrameId = null; }}
+					ontoggleexport={toggleExportSelection}
 					onimageload={(w, h) => { imageWidth = w; imageHeight = h; }}
 					oncanvasclick={handleCanvasClick}
 				/>
@@ -548,10 +577,12 @@ async function handleSetOutputDir() {
 					{photo}
 					{frames}
 					{selectedFrameId}
+					{exportSelection}
 					mode={previewMode}
 					{imageWidth}
 					{imageHeight}
 					onselectframe={(id) => { selectedFrameId = id; selectedPointId = null; }}
+					ontoggleexport={toggleExportSelection}
 					onmodechange={(m) => previewMode = m}
 					onclose={() => previewOpen = false}
 				/>
@@ -565,11 +596,13 @@ async function handleSetOutputDir() {
 				{saveStatus}
 				{panelExpanded}
 				{previewOpen}
+				exportCount={framesToExport.length}
 				onundo={undo}
 				onredo={redo}
 				onaddframe={handleAddFrame}
 				onaddpoint={handleAddFocalPoint}
 				onsave={saveMetadata}
+				onexport={handleExport}
 				ontoggle={() => panelExpanded = !panelExpanded}
 				onpreview={() => previewOpen = !previewOpen}
 			/>
@@ -580,10 +613,12 @@ async function handleSetOutputDir() {
 				{imageHeight}
 				{selectedFrameId}
 				{selectedPointId}
+				{exportSelection}
 				{compositionLabels}
 				expanded={panelExpanded}
 				onselectframe={(id) => { selectedFrameId = id; selectedPointId = null; }}
 				onselectpoint={(id) => { selectedPointId = id; selectedFrameId = null; }}
+				ontoggleexport={toggleExportSelection}
 				onchange={handleChange}
 			/>
 		</div>
@@ -606,6 +641,8 @@ async function handleSetOutputDir() {
 		ontoggle={() => panelExpanded = !panelExpanded}
 		ondeselect={handleDeselect}
 		onpreview={() => previewOpen = !previewOpen}
+		onselectallexport={selectAllForExport}
+		onclearexport={clearExportSelection}
 	/>
 </div>
 

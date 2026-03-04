@@ -18,6 +18,8 @@ interface Props {
 	ontoggle?: () => void;
 	ondeselect?: () => void;
 	onpreview?: () => void;
+	onselectallexport?: () => void;
+	onclearexport?: () => void;
 }
 
 let {
@@ -34,7 +36,9 @@ let {
 	onredo,
 	ontoggle,
 	ondeselect,
-	onpreview
+	onpreview,
+	onselectallexport,
+	onclearexport
 }: Props = $props();
 
 let open = $state(false);
@@ -193,6 +197,14 @@ const shortcuts = [
 						<Command.Item onSelect={() => run(ondeleteframe)}>
 							<span>Delete Frame</span>
 							<Command.Shortcut>&#9003;</Command.Shortcut>
+						</Command.Item>
+					</Command.Group>
+					<Command.Group heading="Export Selection">
+						<Command.Item onSelect={() => run(onselectallexport)}>
+							<span>Export All Frames</span>
+						</Command.Item>
+						<Command.Item onSelect={() => run(onclearexport)}>
+							<span>Clear Export Selection</span>
 						</Command.Item>
 					</Command.Group>
 					<Command.Group heading="Export Format">

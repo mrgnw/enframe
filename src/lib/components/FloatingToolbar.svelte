@@ -1,5 +1,16 @@
 <script lang="ts">
-import { Check, ChevronDown, ChevronUp, Circle, Crop, Eye, EyeOff, Redo2, Undo2 } from '@lucide/svelte';
+import {
+	ArrowUpFromLine,
+	Check,
+	ChevronDown,
+	ChevronUp,
+	Circle,
+	Crop,
+	Eye,
+	EyeOff,
+	Redo2,
+	Undo2
+} from '@lucide/svelte';
 
 interface Props {
 	canUndo?: boolean;
@@ -7,11 +18,13 @@ interface Props {
 	saveStatus?: 'saved' | 'saving' | 'unsaved';
 	panelExpanded?: boolean;
 	previewOpen?: boolean;
+	exportCount?: number;
 	onundo?: () => void;
 	onredo?: () => void;
 	onaddframe?: () => void;
 	onaddpoint?: () => void;
 	onsave?: () => void;
+	onexport?: () => void;
 	ontoggle?: () => void;
 	onpreview?: () => void;
 }
@@ -22,11 +35,13 @@ let {
 	saveStatus = 'saved',
 	panelExpanded = false,
 	previewOpen = false,
+	exportCount = 0,
 	onundo,
 	onredo,
 	onaddframe,
 	onaddpoint,
 	onsave,
+	onexport,
 	ontoggle,
 	onpreview
 }: Props = $props();
@@ -79,6 +94,16 @@ let {
 		{:else}
 			<Circle size={8} />
 		{/if}
+	</button>
+
+	<button
+		class="tb-btn export-btn"
+		disabled={exportCount === 0}
+		onclick={onexport}
+		title="Export (⌘E)"
+	>
+		<ArrowUpFromLine size={14} />
+		<span class="export-count">{exportCount}</span>
 	</button>
 
 	<div class="toolbar-divider"></div>
@@ -176,6 +201,23 @@ let {
 
 	.save-unsaved:hover {
 		color: #fbbf24;
+	}
+
+	.export-btn {
+		width: auto;
+		gap: 4px;
+		padding: 0 10px;
+		font-size: 12px;
+		font-weight: 600;
+		color: rgba(74, 222, 128, 0.9);
+	}
+
+	.export-btn:hover:not(:disabled) {
+		color: #4ade80;
+	}
+
+	.export-count {
+		line-height: 1;
 	}
 
 	.preview-active {
