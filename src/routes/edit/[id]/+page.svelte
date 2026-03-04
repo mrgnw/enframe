@@ -641,6 +641,7 @@ async function handleSetOutputDir() {
 		ontoggle={() => panelExpanded = !panelExpanded}
 		ondeselect={handleDeselect}
 		onpreview={() => previewOpen = !previewOpen}
+		oncycleguide={() => { const idx = GUIDE_TYPES.indexOf(activeGuide); activeGuide = GUIDE_TYPES[(idx + 1) % GUIDE_TYPES.length]; }}
 		onselectallexport={selectAllForExport}
 		onclearexport={clearExportSelection}
 	/>

@@ -18,6 +18,7 @@ interface Props {
 	ontoggle?: () => void;
 	ondeselect?: () => void;
 	onpreview?: () => void;
+	oncycleguide?: () => void;
 	onselectallexport?: () => void;
 	onclearexport?: () => void;
 }
@@ -37,6 +38,7 @@ let {
 	ontoggle,
 	ondeselect,
 	onpreview,
+	oncycleguide,
 	onselectallexport,
 	onclearexport
 }: Props = $props();
@@ -88,7 +90,9 @@ const shortcuts = [
 			{ key: '\u2318E', label: 'Export' },
 			{ key: 'O', label: 'Set output dir' },
 			{ key: 'T', label: 'Toggle panel' },
-			{ key: 'V', label: 'Toggle preview' }
+			{ key: 'V', label: 'Toggle preview' },
+			{ key: 'G', label: 'Cycle guide' },
+			{ key: '\u21e7Click', label: 'Toggle export select' }
 		]
 	},
 	{
@@ -169,6 +173,10 @@ const shortcuts = [
 						<Command.Item onSelect={() => run(onpreview)}>
 							<span>Toggle Preview</span>
 							<Command.Shortcut>V</Command.Shortcut>
+						</Command.Item>
+						<Command.Item onSelect={() => run(oncycleguide)}>
+							<span>Cycle Composition Guide</span>
+							<Command.Shortcut>G</Command.Shortcut>
 						</Command.Item>
 					</Command.Group>
 					<Command.Group heading="Edit">
