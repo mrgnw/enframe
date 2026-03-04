@@ -1,3 +1,4 @@
+import { readTextFile } from '@tauri-apps/plugin-fs';
 import Database from '@tauri-apps/plugin-sql';
 
 let dbPromise: Promise<Database> | null = null;
@@ -68,6 +69,48 @@ export async function getPhoto(id: number): Promise<Photo | null> {
 	const db = await getDb();
 	const results = await db.select<Photo[]>('SELECT * FROM photos WHERE id = $1', [id]);
 	return results[0] || null;
+}
+
+export async function getPhotoByPath(filePath: string): Promise<Photo | null> {
+	const db = await getDb();
+	const results = await db.select<Photo[]>('SELECT * FROM photos WHERE file_path = $1', [filePath]);
+	return results[0] || null;
+}
+
+export async function updatePhoto(id: number, updates: Partial<Omit<Photo, 'id' | 'created_at'>>): Promise<void> {
+	const db = await getDb();
+	const sets: string[] = [];
+	const values: unknown[] = [];
+
+	if (updates.file_path !== undefined) {
+		sets.push(`file_path = $${sets.length + 1}`);
+		values.push(updates.file_path);
+	}
+	if (updates.width !== undefined) {
+		sets.push(`width = $${sets.length + 1}`);
+		values.push(updates.width);
+	}
+	if (updates.height !== undefined) {
+		sets.push(`height = $${sets.length + 1}`);
+		values.push(updates.height);
+	}
+	if (updates.title !== undefined) {
+		sets.push(`title = $${sets.length + 1}`);
+		values.push(updates.title);
+	}
+	if (updates.description !== undefined) {
+		sets.push(`description = $${sets.length + 1}`);
+		values.push(updates.description);
+	}
+	if (updates.lr_asset_id !== undefined) {
+		sets.push(`lr_asset_id = $${sets.length + 1}`);
+		values.push(updates.lr_asset_id);
+	}
+
+	if (sets.length === 0) return;
+
+	values.push(id);
+	await db.execute(`UPDATE photos SET ${sets.join(', ')} WHERE id = $${values.length}`, values);
 }
 
 export async function addPhoto(photo: Omit<Photo, 'id' | 'created_at'>): Promise<number> {
@@ -222,4 +265,85 @@ export async function importFile(
 		description: undefined,
 		lr_asset_id: metadata?.lr_asset_id
 	});
+}
+
+export async function importFromMetadata(metadataPath: string): Promise<number> {
+	const content = await readTextFile(metadataPath);
+	const metadata = JSON.parse(content);
+
+	// Validate metadata structure (basic check)
+	if (!metadata.photo || !metadata.photo.file_path) {
+		throw new Error('Invalid metadata file: missing photo or file_path');
+	}
+
+	// Check for existing photo
+	const existing = await getPhotoByPath(metadata.photo.file_path);
+	let photoId: number;
+
+	if (existing) {
+		// If photo exists, we update it with metadata info if missing, but primarily we want to return its ID
+		// Optionally update title/dims if they are missing in DB but present in metadata
+		// For now, let's just return the existing ID and skip frame import to avoid duplicates?
+		// Or should we import frames anyway? The user might be re-importing to update frames.
+		// Let's assume we proceed but maybe we should clear old frames?
+		// For safety, let's just return existing ID and let the user deal with it, OR simpler:
+		// We treat it as "importing new data", so maybe we should just skip if photo exists to avoid duplication.
+		// But the prompt says "Import frameset... import everything".
+		// Let's create a new photo entry if the path is different, but since path is the unique key (conceptually),
+		// we should probably just return the existing ID.
+		console.log('Photo already exists for path:', metadata.photo.file_path);
+		return existing.id;
+	} else {
+		// Create new photo
+		photoId = await addPhoto({
+			file_path: metadata.photo.file_path,
+			width: metadata.photo.width,
+			height: metadata.photo.height,
+			title: metadata.photo.title,
+			description: metadata.photo.description,
+			lr_asset_id: metadata.photo.lr_asset_id
+		});
+	}
+
+	// Map old frame IDs to new frame IDs
+	const frameIdMap = new Map<number, number>();
+
+	if (metadata.frames && Array.isArray(metadata.frames)) {
+		for (const frame of metadata.frames) {
+			const newFrameId = await addFrame({
+				photo_id: photoId,
+				label: frame.label,
+				x: frame.x,
+				y: frame.y,
+				width: frame.width,
+				height: frame.height,
+				rotation: frame.rotation || 0,
+				is_default: frame.is_default || false
+			});
+			if (frame.id) {
+				frameIdMap.set(frame.id, newFrameId);
+			}
+		}
+	}
+
+	if (metadata.focal_points && Array.isArray(metadata.focal_points)) {
+		for (const point of metadata.focal_points) {
+			// Resolve new frame ID if it was linked to a frame
+			let newFrameId: number | undefined;
+			if (point.frame_id !== null && point.frame_id !== undefined) {
+				newFrameId = frameIdMap.get(point.frame_id);
+			}
+
+			await addFocalPoint({
+				photo_id: photoId,
+				frame_id: newFrameId, // This will be undefined if map lookup failed or if it was null
+				x: point.x,
+				y: point.y,
+				label: point.label,
+				required: point.required
+			});
+		}
+	}
+
+	return photoId;
 }

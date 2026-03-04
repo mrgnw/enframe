@@ -1,10 +1,18 @@
 <script lang="ts">
-import { Aperture, ChevronDown, ChevronUp, FolderPlus } from '@lucide/svelte';
+import { Aperture, ChevronDown, ChevronUp, FolderPlus, ImageOff, Link } from '@lucide/svelte';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { open } from '@tauri-apps/plugin-dialog';
 import { stat } from '@tauri-apps/plugin-fs';
 import { onDestroy, onMount } from 'svelte';
-import { type Frame, importFile, listAllFrames, listPhotos, type Photo } from '$lib/db';
+import {
+	type Frame,
+	importFile,
+	importFromMetadata,
+	listAllFrames,
+	listPhotos,
+	type Photo,
+	updatePhoto
+} from '$lib/db';
 import { getImageSrc } from '$lib/tauri';
 import { getWatchDir, persistWatchDir } from '$lib/watch';
 import LightroomBrowser from './LightroomBrowser.svelte';
@@ -51,7 +59,43 @@ let showLightroom = $state(false);
 let dragging = $state(false);
 let draggingDir = $state(false);
 let watchDir = $state<string | null>(getWatchDir());
+let missingImages = $state<Set<number>>(new Set());
 let unlisten: (() => void) | null = null;
+
+function handleImageError(id: number) {
+	missingImages = new Set(missingImages).add(id);
+}
+
+async function handleLinkImage(id: number) {
+	const selected = await open({
+		multiple: false,
+		filters: [{ name: 'Images', extensions: Array.from(IMAGE_EXTS) }]
+	});
+	if (!selected || typeof selected !== 'string') return;
+
+	await updatePhotoAndReload(id, selected);
+}
+
+async function updatePhotoAndReload(id: number, filePath: string) {
+	const src = getImageSrc(filePath);
+	try {
+		const dims = await loadImageDimensions(src);
+		await updatePhoto(id, {
+			file_path: filePath,
+			width: dims.width,
+			height: dims.height
+		});
+
+		// Remove from missing set
+		const newMissing = new Set(missingImages);
+		newMissing.delete(id);
+		missingImages = newMissing;
+
+		await loadPhotos();
+	} catch (e) {
+		console.error('Failed to link image:', e);
+	}
+}
 
 onMount(async () => {
 	await loadPhotos();
@@ -75,9 +119,11 @@ onMount(async () => {
 			draggingDir = false;
 		} else if (event.payload.type === 'drop') {
 			const paths = event.payload.paths;
+			const position = event.payload.position;
 			dragging = false;
 			draggingDir = false;
 
+			// Handle folder drop (watch dir)
 			if (paths.length === 1) {
 				try {
 					const info = await stat(paths[0]);
@@ -89,7 +135,45 @@ onMount(async () => {
 				} catch {}
 			}
 
+			// Handle replacement drop on a missing image card
+			if (paths.length === 1 && isImagePath(paths[0])) {
+				// Check if dropped on a card with missing image
+				// We need to find the element at the drop position
+				// Since we can't easily access DOM elements by position here in a robust way without
+				// potentially querying the DOM, let's try a different approach:
+				// If we have missing images, we can check if the mouse is over one of them?
+				// But we are in an async callback.
+				// However, `document.elementFromPoint` should work if the window is focused.
+
+				const el = document.elementFromPoint(position.x, position.y);
+				const card = el?.closest('.photo-card[data-missing="true"]');
+				if (card) {
+					const idStr = card.getAttribute('data-id');
+					if (idStr) {
+						const id = parseInt(idStr, 10);
+						await updatePhotoAndReload(id, paths[0]);
+						return;
+					}
+				}
+			}
+
 			const imagePaths = paths.filter(isImagePath);
+			const metadataPaths = paths.filter((p) => p.endsWith('.metadata.json'));
+
+			if (metadataPaths.length > 0) {
+				importing = true;
+				try {
+					for (const path of metadataPaths) {
+						await importFromMetadata(path);
+					}
+					await loadPhotos();
+				} catch (e) {
+					console.error('Failed to import metadata:', e);
+				} finally {
+					importing = false;
+				}
+			}
+
 			if (imagePaths.length > 0) {
 				await importFiles(imagePaths);
 			}
@@ -215,38 +299,72 @@ async function handleOpenClick() {
 	{:else}
 		<div class="grid">
 			{#each photos as photo}
-				<a href="/edit/{photo.id}" class="photo-card">
-					<div class="thumbnail">
-						<img src={getImageSrc(photo.file_path)} alt={photo.title || 'Photo'} />
-						{#if framesByPhoto[photo.id]?.length}
-							{@const pframes = framesByPhoto[photo.id]}
-							<div class="frame-overlays">
-								<svg class="frame-dimming" viewBox="0 0 1 1" preserveAspectRatio="none">
-									<defs>
-										<mask id="mask-{photo.id}">
-											<rect x="0" y="0" width="1" height="1" fill="white" />
-											{#each pframes as frame}
-												<rect x={frame.x} y={frame.y} width={frame.width} height={frame.height} fill="black" />
-											{/each}
-										</mask>
-									</defs>
-									<rect x="0" y="0" width="1" height="1" fill="rgba(0,0,0,0.5)" mask="url(#mask-{photo.id})" />
-								</svg>
-								{#each pframes as frame, i}
-									<div
-										class="frame-preview"
-										style="left:{frame.x * 100}%;top:{frame.y * 100}%;width:{frame.width * 100}%;height:{frame.height * 100}%;"
+				<div
+					class="photo-card"
+					data-id={photo.id}
+					data-missing={missingImages.has(photo.id)}
+				>
+					<a href="/edit/{photo.id}" class="photo-link" class:missing={missingImages.has(photo.id)}>
+						<div class="thumbnail">
+							{#if missingImages.has(photo.id)}
+								<div class="missing-placeholder">
+									<ImageOff size={32} />
+									<span class="missing-text">Image not found</span>
+									<span class="missing-path" title={photo.file_path}>
+										{photo.file_path.split('/').pop()}
+									</span>
+									<button 
+										class="link-btn"
+										onclick={(e) => {
+											e.preventDefault();
+											e.stopPropagation();
+											handleLinkImage(photo.id);
+										}}
 									>
-										<span class="frame-preview-label">{i + 1}</span>
+										<Link size={12} />
+										Link Image
+									</button>
+								</div>
+							{:else}
+								<img 
+									src={getImageSrc(photo.file_path)} 
+									alt={photo.title || 'Photo'} 
+									onerror={() => {
+										missingImages.add(photo.id);
+										missingImages = new Set(missingImages);
+									}}
+								/>
+								{#if framesByPhoto[photo.id]?.length}
+									{@const pframes = framesByPhoto[photo.id]}
+									<div class="frame-overlays">
+										<svg class="frame-dimming" viewBox="0 0 1 1" preserveAspectRatio="none">
+											<defs>
+												<mask id="mask-{photo.id}">
+													<rect x="0" y="0" width="1" height="1" fill="white" />
+													{#each pframes as frame}
+														<rect x={frame.x} y={frame.y} width={frame.width} height={frame.height} fill="black" />
+													{/each}
+												</mask>
+											</defs>
+											<rect x="0" y="0" width="1" height="1" fill="rgba(0,0,0,0.5)" mask="url(#mask-{photo.id})" />
+										</svg>
+										{#each pframes as frame, i}
+											<div
+												class="frame-preview"
+												style="left:{frame.x * 100}%;top:{frame.y * 100}%;width:{frame.width * 100}%;height:{frame.height * 100}%;"
+											>
+												<span class="frame-preview-label">{i + 1}</span>
+											</div>
+										{/each}
 									</div>
-								{/each}
-							</div>
+								{/if}
+							{/if}
+						</div>
+						{#if photo.title}
+							<div class="title">{photo.title}</div>
 						{/if}
-					</div>
-					{#if photo.title}
-						<div class="title">{photo.title}</div>
-					{/if}
-				</a>
+					</a>
+				</div>
 			{/each}
 		</div>
 	{/if}
@@ -378,6 +496,18 @@ async function handleOpenClick() {
 		color: inherit;
 	}
 
+	.photo-link {
+		display: block;
+		width: 100%;
+		height: 100%;
+		text-decoration: none;
+		color: inherit;
+	}
+	
+	.photo-link.missing {
+		cursor: default;
+	}
+
 	.photo-card:hover {
 		transform: translateY(-4px);
 	}
@@ -393,6 +523,57 @@ async function handleOpenClick() {
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
+	}
+
+	.missing-placeholder {
+		position: absolute;
+		inset: 0;
+		background: #2a2a2a;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		color: #888;
+		padding: 1rem;
+		text-align: center;
+		border: 1px dashed #444;
+	}
+
+	.missing-text {
+		font-size: 0.8rem;
+		font-weight: 500;
+	}
+
+	.missing-path {
+		font-size: 0.7rem;
+		color: #666;
+		word-break: break-all;
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.link-btn {
+		margin-top: 0.5rem;
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 0.3rem 0.6rem;
+		background: #333;
+		border: 1px solid #444;
+		border-radius: 4px;
+		color: #ccc;
+		font-size: 0.7rem;
+		cursor: pointer;
+		transition: all 0.2s;
+	}
+
+	.link-btn:hover {
+		background: #444;
+		border-color: #555;
+		color: white;
 	}
 
 	.frame-overlays {
