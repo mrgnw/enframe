@@ -16,3 +16,9 @@ vite.config.ts.timestamp-*
 
 # Lock files (keep for applications)
 package-lock.json
+
+# Test fixtures (machine-specific)
+tests/fixtures/test.db
+
+# Test images (large binaries)
+images/

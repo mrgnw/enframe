@@ -8,6 +8,11 @@ edition = "2024"
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[[bin]]
+name = "screenshots"
+path = "src/bin/screenshots.rs"
+required-features = ["screenshots"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -19,12 +24,15 @@ tauri-plugin-sql = { version = "2.3.2", features = ["sqlite"] }
 tauri-plugin-fs = "2.4.5"
 tauri-plugin-dialog = "2.6.0"
 base64 = "0.22.1"
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "avif", "tiff"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "avif", "tiff", "webp"] }
 jxl-oxide = "0.11"
 rusqlite = { version = "0.32", features = ["bundled"] }
 rmp-serde = "1"
 rmpv = { version = "1", features = ["with-serde"] }
+xcap = { version = "0.8", optional = true }
+enigo = { version = "0.6", optional = true }
 
 [features]
 default = [ "custom-protocol" ]
 custom-protocol = [ "tauri/custom-protocol" ]
+screenshots = ["dep:xcap", "dep:enigo"]

@@ -45,6 +45,13 @@ fn needs_sips(path: &str, file_bytes: &[u8]) -> bool {
 }
 
 #[tauri::command]
+fn get_screenshot_mode() -> Option<i64> {
+    std::env::var("SCREENSHOT_PHOTO_ID")
+        .ok()
+        .and_then(|v| v.parse().ok())
+}
+
+#[tauri::command]
 fn save_image(path: String, data: String) -> Result<(), String> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(&data)
@@ -190,7 +197,8 @@ pub fn run() {
             lightroom::get_lr_asset_paths,
             inbox::scan_inbox,
             save_image,
-            crop_and_export
+            crop_and_export,
+            get_screenshot_mode
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application")
