@@ -1,6 +1,6 @@
 <script lang="ts">
 import { Pin, RotateCw } from '@lucide/svelte';
-import { isAutoFrame } from '$lib/composition';
+import { isLegacyAutoLabel } from '$lib/composition';
 import type { FocalPoint, Frame } from '$lib/db';
 import { updateFrame } from '$lib/db';
 import { DESTINATIONS, destinationHasRatio, findDestination } from '$lib/destinations';
@@ -210,7 +210,7 @@ function isPortrait(frame: Frame): boolean {
 			{#each frames as frame, i (frame.id)}
 			{@const isSelected = selectedFrameId === frame.id}
 			{@const portrait = isPortrait(frame)}
-			{@const isAuto = isAutoFrame(frame.label)}
+			{@const isAuto = isLegacyAutoLabel(frame.label)}
 			{@const isExportChecked = !hasExportSelection || exportSelection.has(frame.id)}
 			<div
 				class="panel-row"

@@ -7,6 +7,10 @@ export interface Point {
 	y: number;
 }
 
+export interface FocalInput extends Point {
+	required?: boolean;
+}
+
 export interface Rect {
 	x: number;
 	y: number;
@@ -26,6 +30,7 @@ export interface ScoredPlacement {
 	score: number;
 	matches: CompositionMatch[][]; // per focal point
 	label: string; // e.g. "Phi + Thirds"
+	satisfiesRequired: boolean;
 }
 
 // Power points for each compositional system (frame-relative 0-1 coords)
@@ -113,14 +118,48 @@ const PORTRAIT_WEIGHTS: SystemWeights = {
 const PROXIMITY_SENSITIVITY = 8; // higher = more forgiving distance
 const CONSENSUS_THRESHOLD = 0.4; // min proximity to count as "matching"
 const CONSENSUS_BONUS = 1.3;
-const INSET_PADDING = 0.05; // 5% inset from frame edges for focal points
-const MIN_FRAME_SIZE = 0.3; // minimum 30% of image dimension
-const SEARCH_STEP = 0.01; // 1% increments for position search
+
+const COMPOSITION_WEIGHT = 1.0;
+const CROP_WEIGHT = 0.5;
+const ZOOM_WEIGHT = 0.8;
+const ZOOM_COMFORT_SCALE = 0.55;
+const MIN_SCALE = 0.45;
+const SCALE_STEPS = 6;
+const POSITION_STEPS = 24;
 
 function distance(a: Point, b: Point): number {
 	const dx = a.x - b.x;
 	const dy = a.y - b.y;
 	return Math.sqrt(dx * dx + dy * dy);
+}
+
+function clamp01(value: number): number {
+	return Math.max(0, Math.min(1, value));
+}
+
+export function containsPoint(rect: Rect, point: Point): boolean {
+	return point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
+}
+
+function missDistance(rect: Rect, points: Point[]): number {
+	let total = 0;
+	for (const p of points) {
+		const dx = Math.max(rect.x - p.x, 0, p.x - (rect.x + rect.width));
+		const dy = Math.max(rect.y - p.y, 0, p.y - (rect.y + rect.height));
+		total += Math.sqrt(dx * dx + dy * dy);
+	}
+	return total;
+}
+
+export function excludedRequiredPoints(rect: Rect, points: FocalInput[]): FocalInput[] {
+	return points.filter((p) => p.required && !containsPoint(rect, p));
+}
+
+// Position for CSS `object-fit: cover` when the container matches the crop ratio.
+export function objectPosition(rect: Rect): string {
+	const px = rect.width >= 1 ? 0.5 : clamp01(rect.x / (1 - rect.width));
+	const py = rect.height >= 1 ? 0.5 : clamp01(rect.y / (1 - rect.height));
+	return `${(px * 100).toFixed(1)}% ${(py * 100).toFixed(1)}%`;
 }
 
 function getSystemPowerPoints(system: CompositionSystem, frameAspect: number): Point[] {
@@ -227,146 +266,88 @@ function buildLabel(matches: CompositionMatch[][]): string {
 	return sorted.map(([sys]) => SYSTEM_LABELS[sys]).join(' + ');
 }
 
+// Largest rect of the target ratio that fits the image, in normalized image coords.
+// If image is 4000x3000 (aspect 4/3) and the target is 16:9, the frame's normalized
+// width/height ratio is targetAspect / imageAspect.
+function maxRect(normalizedAspect: number): { width: number; height: number } {
+	if (normalizedAspect >= 1) {
+		return { width: 1, height: 1 / normalizedAspect };
+	}
+	return { width: normalizedAspect, height: 1 };
+}
+
+// ponytail: for a fixed ratio both crop and zoom derive from one scale variable, so the
+// two penalties only differ in curve shape (linear pull vs. knee below comfort scale).
+// Splitting them properly needs per-destination output pixel budgets.
 export function computeAutoFrame(
-	focalPoints: Point[],
+	focalPoints: FocalInput[],
 	targetAspect: number, // w/h ratio, e.g. 16/9 for landscape
 	imageAspect: number // w/h ratio of the source image
-): ScoredPlacement | null {
-	if (focalPoints.length === 0) return null;
+): ScoredPlacement {
+	const max = maxRect(targetAspect / imageAspect);
+	const centered: Rect = {
+		x: (1 - max.width) / 2,
+		y: (1 - max.height) / 2,
+		width: max.width,
+		height: max.height
+	};
 
-	const isLandscape = targetAspect > 1;
-	const weights = isLandscape ? LANDSCAPE_WEIGHTS : PORTRAIT_WEIGHTS;
-
-	// All coords are normalized 0-1 in image space.
-	// Frame dimensions in normalized coords depend on aspect ratios.
-	// If image is 4000x3000 (aspect 4/3) and we want a 16:9 frame:
-	//   frame pixel aspect = 16/9
-	//   frame normalized width W, normalized height H
-	//   (W * imgW) / (H * imgH) = targetAspect
-	//   W / H = targetAspect / imageAspect
-	const normalizedAspect = targetAspect / imageAspect;
-
-	// Find bounding box of focal points
-	let minX = Infinity,
-		minY = Infinity,
-		maxX = -Infinity,
-		maxY = -Infinity;
-	for (const fp of focalPoints) {
-		minX = Math.min(minX, fp.x);
-		minY = Math.min(minY, fp.y);
-		maxX = Math.max(maxX, fp.x);
-		maxY = Math.max(maxY, fp.y);
+	if (focalPoints.length === 0) {
+		return { rect: centered, score: 0, matches: [], label: '', satisfiesRequired: true };
 	}
 
-	// Determine frame size: largest possible that contains all points with padding
-	// Start with max size and shrink if needed
-	let frameW: number, frameH: number;
+	const weights = targetAspect > 1 ? LANDSCAPE_WEIGHTS : PORTRAIT_WEIGHTS;
+	const weightSum = ALL_SYSTEMS.reduce((sum, system) => sum + weights[system], 0);
+	const required = focalPoints.filter((p) => p.required);
 
-	if (normalizedAspect >= 1) {
-		// Frame is wider than tall in normalized space
-		frameW = 1.0; // start at full image width
-		frameH = frameW / normalizedAspect;
-		if (frameH > 1.0) {
-			frameH = 1.0;
-			frameW = frameH * normalizedAspect;
-		}
-	} else {
-		frameH = 1.0;
-		frameW = frameH * normalizedAspect;
-		if (frameW > 1.0) {
-			frameW = 1.0;
-			frameH = frameW / normalizedAspect;
-		}
-	}
-
-	// Ensure frame is large enough to contain all points with padding
-	const spreadX = maxX - minX;
-	const spreadY = maxY - minY;
-	const neededW = spreadX / (1 - 2 * INSET_PADDING);
-	const neededH = spreadY / (1 - 2 * INSET_PADDING);
-
-	if (neededW > frameW || neededH > frameH) {
-		// Need to size frame to fit all points
-		if (neededW / neededH > normalizedAspect) {
-			// Width-constrained
-			frameW = Math.min(1.0, neededW);
-			frameH = frameW / normalizedAspect;
-		} else {
-			// Height-constrained
-			frameH = Math.min(1.0, neededH);
-			frameW = frameH * normalizedAspect;
-		}
-		// Clamp
-		if (frameW > 1.0) {
-			frameW = 1.0;
-			frameH = frameW / normalizedAspect;
-		}
-		if (frameH > 1.0) {
-			frameH = 1.0;
-			frameW = frameH * normalizedAspect;
-		}
-	}
-
-	// Enforce minimum size
-	if (frameW < MIN_FRAME_SIZE) {
-		frameW = Math.min(1.0, MIN_FRAME_SIZE);
-		frameH = frameW / normalizedAspect;
-	}
-	if (frameH < MIN_FRAME_SIZE) {
-		frameH = Math.min(1.0, MIN_FRAME_SIZE);
-		frameW = frameH * normalizedAspect;
-	}
-
-	// Search for best position
-	const rangeX = 1.0 - frameW;
-	const rangeY = 1.0 - frameH;
-
-	let bestScore = -Infinity;
 	let bestRect: Rect | null = null;
+	let bestScore = -Infinity;
 	let bestMatches: CompositionMatch[][] = [];
+	let closestRect: Rect | null = null;
+	let closestMiss = Infinity;
 
-	const stepsX = Math.max(1, Math.round(rangeX / SEARCH_STEP));
-	const stepsY = Math.max(1, Math.round(rangeY / SEARCH_STEP));
+	for (let iScale = 0; iScale <= SCALE_STEPS; iScale++) {
+		const scale = 1 - (iScale / SCALE_STEPS) * (1 - MIN_SCALE);
+		const width = max.width * scale;
+		const height = max.height * scale;
+		const rangeX = 1 - width;
+		const rangeY = 1 - height;
+		const stepsX = rangeX > 0 ? POSITION_STEPS : 0;
+		const stepsY = rangeY > 0 ? POSITION_STEPS : 0;
 
-	for (let ix = 0; ix <= stepsX; ix++) {
-		const x = rangeX > 0 ? (ix / stepsX) * rangeX : 0;
-		for (let iy = 0; iy <= stepsY; iy++) {
-			const y = rangeY > 0 ? (iy / stepsY) * rangeY : 0;
+		const zoomMiss = Math.max(0, ZOOM_COMFORT_SCALE - scale) / ZOOM_COMFORT_SCALE;
+		const sizeScore = CROP_WEIGHT * width * height - ZOOM_WEIGHT * zoomMiss * zoomMiss;
 
-			const candidate: Rect = { x, y, width: frameW, height: frameH };
+		for (let ix = 0; ix <= stepsX; ix++) {
+			const x = stepsX > 0 ? (ix / stepsX) * rangeX : 0;
+			for (let iy = 0; iy <= stepsY; iy++) {
+				const y = stepsY > 0 ? (iy / stepsY) * rangeY : 0;
+				const candidate: Rect = { x, y, width, height };
 
-			// Check all focal points are within padded region
-			let allInside = true;
-			for (const fp of focalPoints) {
-				const relX = (fp.x - x) / frameW;
-				const relY = (fp.y - y) / frameH;
-				if (relX < INSET_PADDING || relX > 1 - INSET_PADDING || relY < INSET_PADDING || relY > 1 - INSET_PADDING) {
-					allInside = false;
-					break;
+				const miss = missDistance(candidate, required);
+				if (miss > 0) {
+					if (miss < closestMiss) {
+						closestMiss = miss;
+						closestRect = candidate;
+					}
+					continue;
 				}
-			}
-			if (!allInside) continue;
 
-			const { score, matches } = scoreCandidate(candidate, focalPoints, weights, targetAspect);
+				const { score, matches } = scoreCandidate(candidate, focalPoints, weights, targetAspect);
+				const composition = score / (focalPoints.length * weightSum);
+				const total = COMPOSITION_WEIGHT * composition + sizeScore;
 
-			if (score > bestScore) {
-				bestScore = score;
-				bestRect = candidate;
-				bestMatches = matches;
+				if (total > bestScore) {
+					bestScore = total;
+					bestRect = candidate;
+					bestMatches = matches;
+				}
 			}
 		}
 	}
 
 	if (!bestRect) {
-		// Fallback: center frame on centroid of focal points
-		const cx = focalPoints.reduce((s, p) => s + p.x, 0) / focalPoints.length;
-		const cy = focalPoints.reduce((s, p) => s + p.y, 0) / focalPoints.length;
-		bestRect = {
-			x: Math.max(0, Math.min(1 - frameW, cx - frameW / 2)),
-			y: Math.max(0, Math.min(1 - frameH, cy - frameH / 2)),
-			width: frameW,
-			height: frameH
-		};
+		bestRect = closestRect ?? centered;
 		const result = scoreCandidate(bestRect, focalPoints, weights, targetAspect);
 		bestMatches = result.matches;
 		bestScore = result.score;
@@ -376,7 +357,8 @@ export function computeAutoFrame(
 		rect: bestRect,
 		score: bestScore,
 		matches: bestMatches,
-		label: buildLabel(bestMatches)
+		label: buildLabel(bestMatches),
+		satisfiesRequired: missDistance(bestRect, required) === 0
 	};
 }
 
@@ -396,6 +378,12 @@ export function computeFrameLabel(
 export const AUTO_LANDSCAPE_LABEL = 'Auto L';
 export const AUTO_PORTRAIT_LABEL = 'Auto P';
 
-export function isAutoFrame(label: string | undefined | null): boolean {
+export function isLegacyAutoLabel(label: string | undefined | null): boolean {
 	return label === AUTO_LANDSCAPE_LABEL || label === AUTO_PORTRAIT_LABEL;
+}
+
+export function legacyAutoAspect(label: string | undefined | null): number | null {
+	if (label === AUTO_LANDSCAPE_LABEL) return 16 / 9;
+	if (label === AUTO_PORTRAIT_LABEL) return 9 / 16;
+	return null;
 }

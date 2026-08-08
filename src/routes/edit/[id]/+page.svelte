@@ -19,7 +19,7 @@ import {
 	AUTO_PORTRAIT_LABEL,
 	computeAutoFrame,
 	computeFrameLabel,
-	isAutoFrame
+	isLegacyAutoLabel
 } from '$lib/composition';
 import {
 	addFocalPoint,
@@ -485,7 +485,7 @@ async function recomputeAutoFrames() {
 	const newLabels = new Map<number, string>();
 	for (const frame of frames) {
 		// For each frame, compute which focal points are relevant
-		const relevantPoints = isAutoFrame(frame.label)
+		const relevantPoints = isLegacyAutoLabel(frame.label)
 			? globalPoints
 			: focalPoints.filter((fp) => !fp.frame_id || fp.frame_id === frame.id).map((fp) => ({ x: fp.x, y: fp.y }));
 		if (relevantPoints.length > 0) {

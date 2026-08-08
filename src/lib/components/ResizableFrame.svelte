@@ -1,5 +1,5 @@
 <script lang="ts">
-import { isAutoFrame } from '$lib/composition';
+import { isLegacyAutoLabel } from '$lib/composition';
 import type { Frame } from '$lib/db';
 import { updateFrame } from '$lib/db';
 
@@ -31,7 +31,7 @@ let {
 	onchange
 }: Props = $props();
 
-let isAuto = $derived(isAutoFrame(frame.label));
+let isAuto = $derived(isLegacyAutoLabel(frame.label));
 
 let handleSize = $derived(Math.max(6, 10 / scale));
 let borderWidth = $derived(Math.max(1, 2 / scale));
