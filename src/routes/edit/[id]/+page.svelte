@@ -100,7 +100,7 @@ function toggleExportSelection(frameId: number) {
 }
 
 function selectAllForExport() {
-	exportSelection = new Set();
+	exportSelection = new Set(frames.map((f) => f.id));
 }
 
 function clearExportSelection() {
