@@ -195,6 +195,20 @@ pub fn run() {
                                 "ALTER TABLE frames ADD COLUMN is_auto INTEGER NOT NULL DEFAULT 0;",
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 5,
+                            description: "persistent undo history",
+                            sql: "CREATE TABLE IF NOT EXISTS history (
+	id INTEGER PRIMARY KEY,
+	photo_id INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+	seq INTEGER NOT NULL,
+	snapshot TEXT NOT NULL,
+	created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_history_photo ON history(photo_id);
+ALTER TABLE photos ADD COLUMN history_pos INTEGER NOT NULL DEFAULT 0;",
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
