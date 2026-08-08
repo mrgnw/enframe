@@ -41,44 +41,114 @@ let {
 	activeGuide = 'off'
 }: Props = $props();
 
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 8;
+const DRAG_THRESHOLD = 3;
+
 let hasExportSelection = $derived(exportSelection.size > 0);
 
-let containerEl = $state<HTMLDivElement | null>(null);
-let imgEl = $state<HTMLImageElement | null>(null);
+let containerSize = $state({ w: 0, h: 0 });
+let naturalSize = $state({ w: 0, h: 0 });
+let fitMode = $state<'fit' | 'fill'>('fit');
+let zoom = $state(1);
+let pan = $state({ x: 0, y: 0 });
+let panning = $state(false);
 
-let renderRect = $state({ x: 0, y: 0, w: 0, h: 0 });
+let dragOrigin: { x: number; y: number; panX: number; panY: number } | null = null;
+let dragMoved = false;
 
-function computeRenderRect() {
-	if (!containerEl || !imgEl || !imgEl.naturalWidth || !imgEl.naturalHeight) return;
-
-	const cw = containerEl.clientWidth;
-	const ch = containerEl.clientHeight;
-	const iw = imgEl.naturalWidth;
-	const ih = imgEl.naturalHeight;
-
-	const scaleX = cw / iw;
-	const scaleY = ch / ih;
-	const s = Math.min(scaleX, scaleY);
-
-	const rw = iw * s;
-	const rh = ih * s;
-	const rx = (cw - rw) / 2;
-	const ry = (ch - rh) / 2;
-
-	renderRect = { x: rx, y: ry, w: rw, h: rh };
+function clamp(value: number, min: number, max: number) {
+	return Math.min(max, Math.max(min, value));
 }
 
-function handleImageLoad() {
-	computeRenderRect();
-	if (imgEl) onimageload?.(imgEl.naturalWidth, imgEl.naturalHeight);
-	if (containerEl) {
-		resizeObserver?.disconnect();
-		resizeObserver = new ResizeObserver(() => computeRenderRect());
-		resizeObserver.observe(containerEl);
+let renderRect = $derived.by(() => {
+	const { w: cw, h: ch } = containerSize;
+	const { w: iw, h: ih } = naturalSize;
+	if (cw === 0 || ch === 0 || iw === 0 || ih === 0) return { x: 0, y: 0, w: 0, h: 0 };
+
+	const cover = Math.max(cw / iw, ch / ih);
+	const contain = Math.min(cw / iw, ch / ih);
+	const scale = (fitMode === 'fill' ? cover : contain) * zoom;
+
+	const w = iw * scale;
+	const h = ih * scale;
+
+	return { x: (cw - w) / 2 + pan.x, y: (ch - h) / 2 + pan.y, w, h };
+});
+
+let pannable = $derived(renderRect.w > containerSize.w + 1 || renderRect.h > containerSize.h + 1);
+
+function clampPan(x: number, y: number) {
+	const limitX = Math.max(0, (renderRect.w - containerSize.w) / 2);
+	const limitY = Math.max(0, (renderRect.h - containerSize.h) / 2);
+	return { x: clamp(x, -limitX, limitX), y: clamp(y, -limitY, limitY) };
+}
+
+function observeContainer(node: HTMLElement) {
+	const observer = new ResizeObserver(() => {
+		containerSize = { w: node.clientWidth, h: node.clientHeight };
+		pan = clampPan(pan.x, pan.y);
+	});
+	observer.observe(node);
+	return () => observer.disconnect();
+}
+
+function handleImageLoad(event: Event) {
+	const img = event.currentTarget as HTMLImageElement;
+	naturalSize = { w: img.naturalWidth, h: img.naturalHeight };
+	zoom = 1;
+	pan = { x: 0, y: 0 };
+	onimageload?.(img.naturalWidth, img.naturalHeight);
+}
+
+function handleWheel(event: WheelEvent) {
+	event.preventDefault();
+	if (renderRect.w === 0) return;
+
+	const next = clamp(zoom * Math.exp(-event.deltaY * 0.002), ZOOM_MIN, ZOOM_MAX);
+	if (next === zoom) return;
+
+	const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+	const cursorX = event.clientX - rect.left;
+	const cursorY = event.clientY - rect.top;
+	const normX = (cursorX - renderRect.x) / renderRect.w;
+	const normY = (cursorY - renderRect.y) / renderRect.h;
+
+	const w = renderRect.w * (next / zoom);
+	const h = renderRect.h * (next / zoom);
+
+	zoom = next;
+	pan = clampPan(cursorX - normX * w - (containerSize.w - w) / 2, cursorY - normY * h - (containerSize.h - h) / 2);
+}
+
+function handlePointerDown(event: PointerEvent) {
+	if (event.button !== 0) return;
+	dragOrigin = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y };
+	dragMoved = false;
+}
+
+function handlePointerMove(event: PointerEvent) {
+	if (!dragOrigin) return;
+
+	const dx = event.clientX - dragOrigin.x;
+	const dy = event.clientY - dragOrigin.y;
+
+	if (!dragMoved) {
+		if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+		dragMoved = true;
+		panning = pannable;
+		if (panning) (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 	}
+
+	if (panning) pan = clampPan(dragOrigin.panX + dx, dragOrigin.panY + dy);
 }
 
-let resizeObserver: ResizeObserver | undefined;
+function handlePointerUp(event: PointerEvent) {
+	const node = event.currentTarget as HTMLElement;
+	if (node.hasPointerCapture(event.pointerId)) node.releasePointerCapture(event.pointerId);
+	panning = false;
+	dragOrigin = null;
+}
 
 function handleFrameClick(frameId: number, event?: PointerEvent) {
 	if (event && (event.shiftKey || event.metaKey)) {
@@ -95,18 +165,32 @@ function selectPoint(pointId: number) {
 function handleOverlayClick(event: PointerEvent) {
 	// Only handle clicks directly on the overlay container (blank canvas area)
 	if (event.target !== event.currentTarget) return;
-	if (renderRect.w === 0 || renderRect.h === 0) return;
+	if (dragMoved || renderRect.w === 0 || renderRect.h === 0) return;
 
 	const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-	const normX = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-	const normY = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+	const normX = clamp((event.clientX - rect.left) / rect.width, 0, 1);
+	const normY = clamp((event.clientY - rect.top) / rect.height, 0, 1);
 
 	oncanvasclick?.(normX, normY, event.altKey);
 }
 
+function isInputFocused() {
+	const el = document.activeElement;
+	if (!el) return false;
+	const tag = el.tagName.toLowerCase();
+	return tag === 'input' || tag === 'textarea' || (el as HTMLElement).isContentEditable;
+}
+
 function handleKeyDown(event: KeyboardEvent) {
-	if (event.key >= '1' && event.key <= '9') {
-		const index = parseInt(event.key) - 1;
+	if (event.metaKey || event.ctrlKey || event.altKey || isInputFocused()) return;
+
+	if (event.key === '0') {
+		event.preventDefault();
+		fitMode = fitMode === 'fit' ? 'fill' : 'fit';
+		zoom = 1;
+		pan = { x: 0, y: 0 };
+	} else if (event.key >= '1' && event.key <= '9') {
+		const index = parseInt(event.key, 10) - 1;
 		if (index < frames.length) {
 			event.preventDefault();
 			onselectframe?.(frames[index].id);
@@ -117,14 +201,25 @@ function handleKeyDown(event: KeyboardEvent) {
 
 <svelte:window onkeydown={handleKeyDown} />
 
-<div class="canvas-wrapper" bind:this={containerEl}>
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+	class="canvas-wrapper"
+	class:panning
+	class:pannable
+	{@attach observeContainer}
+	onwheel={handleWheel}
+	onpointerdown={handlePointerDown}
+	onpointermove={handlePointerMove}
+	onpointerup={handlePointerUp}
+	onpointercancel={handlePointerUp}
+>
 	<img
-		bind:this={imgEl}
 		src={getImageSrc(photo.file_path)}
 		alt={photo.title || 'Photo'}
 		draggable={false}
 		onload={handleImageLoad}
 		class="photo"
+		style="left:{renderRect.x}px;top:{renderRect.y}px;width:{renderRect.w}px;height:{renderRect.h}px;"
 	/>
 
 	{#if renderRect.w > 0}
@@ -132,7 +227,7 @@ function handleKeyDown(event: KeyboardEvent) {
 		<div
 			class="overlay-container"
 			style="left:{renderRect.x}px;top:{renderRect.y}px;width:{renderRect.w}px;height:{renderRect.h}px;"
-			onpointerdown={handleOverlayClick}
+			onpointerup={handleOverlayClick}
 		>
 		{#each frames as frame, i (frame.id)}
 			<ResizableFrame
@@ -184,13 +279,20 @@ function handleKeyDown(event: KeyboardEvent) {
 		height: 100%;
 		overflow: hidden;
 		background: #1a1a1a;
+		touch-action: none;
+	}
+
+	.canvas-wrapper.pannable {
+		cursor: grab;
+	}
+
+	.canvas-wrapper.panning {
+		cursor: grabbing;
 	}
 
 	.photo {
+		position: absolute;
 		display: block;
-		width: 100%;
-		height: 100%;
-		object-fit: contain;
 		user-select: none;
 		pointer-events: none;
 	}
