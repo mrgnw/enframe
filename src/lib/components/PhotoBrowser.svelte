@@ -4,6 +4,7 @@ import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { open } from '@tauri-apps/plugin-dialog';
 import { stat } from '@tauri-apps/plugin-fs';
 import { onDestroy, onMount } from 'svelte';
+import { toast } from 'svelte-sonner';
 import {
 	type Frame,
 	importFile,
@@ -94,6 +95,7 @@ async function updatePhotoAndReload(id: number, filePath: string) {
 		await loadPhotos();
 	} catch (e) {
 		console.error('Failed to link image:', e);
+		toast.error('Failed to link image');
 	}
 }
 
@@ -169,6 +171,7 @@ onMount(async () => {
 					await loadPhotos();
 				} catch (e) {
 					console.error('Failed to import metadata:', e);
+					toast.error('Failed to import metadata');
 				} finally {
 					importing = false;
 				}
@@ -214,6 +217,7 @@ async function importFiles(paths: string[]) {
 		await loadPhotos();
 	} catch (error) {
 		console.error('Failed to import files:', error);
+		toast.error('Failed to import files');
 	} finally {
 		importing = false;
 	}

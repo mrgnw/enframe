@@ -307,6 +307,7 @@ async function loadPhoto() {
 		}
 	} catch (error) {
 		console.error('Failed to load photo:', error);
+		toast.error('Failed to load photo');
 	} finally {
 		loading = false;
 	}
@@ -314,32 +315,42 @@ async function loadPhoto() {
 
 async function handleAddFrame() {
 	if (!photo) return;
-	const id = await addFrame({
-		photo_id: photoId,
-		label: undefined,
-		x: 0.2,
-		y: 0.2,
-		width: 0.6,
-		height: 0.6,
-		rotation: 0,
-		is_default: false
-	});
-	await loadPhoto();
-	selectedFrameId = id;
-	panelExpanded = true;
+	try {
+		const id = await addFrame({
+			photo_id: photoId,
+			label: undefined,
+			x: 0.2,
+			y: 0.2,
+			width: 0.6,
+			height: 0.6,
+			rotation: 0,
+			is_default: false
+		});
+		await loadPhoto();
+		selectedFrameId = id;
+		panelExpanded = true;
+	} catch (error) {
+		console.error('Failed to add frame:', error);
+		toast.error('Failed to add frame');
+	}
 }
 
 async function handleAddFocalPoint() {
 	if (!photo) return;
-	await addFocalPoint({
-		photo_id: photoId,
-		frame_id: undefined,
-		x: 0.5,
-		y: 0.5,
-		label: `Point ${focalPoints.length + 1}`,
-		required: true
-	});
-	await loadPhoto();
+	try {
+		await addFocalPoint({
+			photo_id: photoId,
+			frame_id: undefined,
+			x: 0.5,
+			y: 0.5,
+			label: `Point ${focalPoints.length + 1}`,
+			required: true
+		});
+		await loadPhoto();
+	} catch (error) {
+		console.error('Failed to add focal point:', error);
+		toast.error('Failed to add focal point');
+	}
 }
 
 async function handleDeleteFrame(frameId: number) {

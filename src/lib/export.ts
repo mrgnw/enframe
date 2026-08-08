@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
+import { toast } from 'svelte-sonner';
 import type { FocalPoint, Frame, Photo } from './db';
 import { getLrAssetPaths } from './lightroom';
 
@@ -33,7 +34,10 @@ async function resolveExportSource(photo: Photo): Promise<string> {
 	try {
 		const [paths] = await getLrAssetPaths([photo.lr_asset_id]);
 		if (paths?.proxy_path) return paths.proxy_path;
-	} catch {}
+	} catch (error) {
+		console.error('Failed to resolve Lightroom proxy path:', error);
+		toast.warning('Lightroom proxy unavailable, exporting from original file');
+	}
 	return photo.file_path;
 }
 
