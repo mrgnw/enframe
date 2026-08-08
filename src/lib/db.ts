@@ -1,6 +1,7 @@
 import { readTextFile } from '@tauri-apps/plugin-fs';
 import Database from '@tauri-apps/plugin-sql';
 import { isLegacyAutoLabel } from './composition';
+import type { HistorySnapshot } from './history';
 
 let dbPromise: Promise<Database> | null = null;
 
@@ -23,6 +24,7 @@ export interface Photo {
 	title?: string;
 	description?: string;
 	lr_asset_id?: string;
+	history_pos?: number;
 	created_at: string;
 }
 
@@ -260,6 +262,79 @@ export async function deleteFrame(id: number): Promise<void> {
 export async function deletePhoto(id: number): Promise<void> {
 	const db = await getDb();
 	await db.execute('DELETE FROM photos WHERE id = $1', [id]);
+}
+
+export async function getHistorySeqs(photoId: number): Promise<number[]> {
+	const db = await getDb();
+	const rows = await db.select<{ seq: number }[]>('SELECT seq FROM history WHERE photo_id = $1 ORDER BY seq', [
+		photoId
+	]);
+	return rows.map((row) => row.seq);
+}
+
+export async function getHistorySnapshot(photoId: number, seq: number): Promise<string | null> {
+	const db = await getDb();
+	const rows = await db.select<{ snapshot: string }[]>(
+		'SELECT snapshot FROM history WHERE photo_id = $1 AND seq = $2',
+		[photoId, seq]
+	);
+	return rows[0]?.snapshot ?? null;
+}
+
+export async function appendHistory(photoId: number, seq: number, snapshot: string): Promise<void> {
+	const db = await getDb();
+	await db.execute('INSERT INTO history (photo_id, seq, snapshot) VALUES ($1, $2, $3)', [photoId, seq, snapshot]);
+}
+
+export async function deleteHistorySeqs(photoId: number, seqs: number[]): Promise<void> {
+	if (seqs.length === 0) return;
+	const db = await getDb();
+	const placeholders = seqs.map((_, i) => `$${i + 2}`).join(', ');
+	await db.execute(`DELETE FROM history WHERE photo_id = $1 AND seq IN (${placeholders})`, [photoId, ...seqs]);
+}
+
+export async function setHistoryPos(photoId: number, pos: number): Promise<void> {
+	const db = await getDb();
+	await db.execute('UPDATE photos SET history_pos = $1 WHERE id = $2', [pos, photoId]);
+}
+
+// ponytail: sequential statements, no wrapping transaction — tauri-plugin-sql runs every
+// execute() on its own pooled connection, so BEGIN/COMMIT cannot span calls. history_pos is
+// only advanced after this resolves, so a mid-way failure is recoverable by retrying the undo.
+export async function restoreSnapshot(photoId: number, snapshot: HistorySnapshot): Promise<Map<number, number>> {
+	const db = await getDb();
+	await db.execute('DELETE FROM focal_points WHERE photo_id = $1', [photoId]);
+	await db.execute('DELETE FROM frames WHERE photo_id = $1', [photoId]);
+
+	const frameIds = new Map<number, number>();
+	for (const frame of snapshot.frames) {
+		const newId = await addFrame({
+			photo_id: photoId,
+			label: frame.label,
+			destination: frame.destination ?? null,
+			x: frame.x,
+			y: frame.y,
+			width: frame.width,
+			height: frame.height,
+			rotation: frame.rotation,
+			is_default: frame.is_default,
+			is_auto: frame.is_auto
+		});
+		frameIds.set(frame.id, newId);
+	}
+
+	for (const point of snapshot.focalPoints) {
+		await addFocalPoint({
+			photo_id: photoId,
+			frame_id: point.frame_id == null ? undefined : frameIds.get(point.frame_id),
+			x: point.x,
+			y: point.y,
+			label: point.label,
+			required: point.required
+		});
+	}
+
+	return frameIds;
 }
 
 export async function importFile(
