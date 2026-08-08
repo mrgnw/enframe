@@ -3,6 +3,7 @@ import { RotateCw } from '@lucide/svelte';
 import { isAutoFrame } from '$lib/composition';
 import type { FocalPoint, Frame } from '$lib/db';
 import { updateFrame } from '$lib/db';
+import { DESTINATIONS, destinationHasRatio, findDestination } from '$lib/destinations';
 
 interface Props {
 	frames: Frame[];
@@ -39,6 +40,7 @@ let {
 let hasExportSelection = $derived(exportSelection.size > 0);
 
 let panelEl = $state<HTMLDivElement | null>(null);
+let editingLabelId = $state<number | null>(null);
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
 let visible = $state(false);
 
@@ -112,13 +114,41 @@ function applyRatio(frame: Frame, ratioW: number, ratioH: number) {
 	persistFrame(frame);
 }
 
+function applyRatioPreset(frame: Frame, ratioW: number, ratioH: number) {
+	if (frame.destination && !destinationHasRatio(frame.destination, ratioW / ratioH)) {
+		frame.destination = null;
+	}
+	applyRatio(frame, ratioW, ratioH);
+}
+
+function applyDestination(frame: Frame, slug: string) {
+	const destination = findDestination(slug);
+	if (!destination) {
+		frame.destination = null;
+		persistFrame(frame);
+		return;
+	}
+	frame.destination = slug;
+	applyRatio(frame, destination.ratio.w, destination.ratio.h);
+}
+
+async function saveLabel(frame: Frame, value: string) {
+	editingLabelId = null;
+	const label = value.trim();
+	if (label === (frame.label ?? '')) return;
+	frame.label = label;
+	await updateFrame(frame.id, { label });
+	onchange?.();
+}
+
 async function persistFrame(frame: Frame) {
 	await updateFrame(frame.id, {
 		x: frame.x,
 		y: frame.y,
 		width: frame.width,
 		height: frame.height,
-		rotation: frame.rotation
+		rotation: frame.rotation,
+		destination: frame.destination ?? null
 	});
 	onchange?.();
 }
@@ -175,11 +205,46 @@ function isPortrait(frame: Frame): boolean {
 						<svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
 					{/if}
 				</button>
-				<span class="row-label" class:auto-label={isAuto}>{isAuto ? frame.label : i + 1}</span>
+				{#if editingLabelId === frame.id}
+					<input
+						class="label-input"
+						value={frame.label ?? ''}
+						onclick={(e: MouseEvent) => e.stopPropagation()}
+						onblur={(e: FocusEvent & { currentTarget: HTMLInputElement }) => saveLabel(frame, e.currentTarget.value)}
+						onkeydown={(e: KeyboardEvent & { currentTarget: HTMLInputElement }) => {
+							e.stopPropagation();
+							if (e.key === 'Enter') e.currentTarget.blur();
+							else if (e.key === 'Escape') editingLabelId = null;
+						}}
+						{@attach (node: HTMLInputElement) => node.select()}
+					/>
+				{:else if isAuto}
+					<span class="row-label auto-label">{frame.label}</span>
+				{:else}
+					<button
+						class="row-label label-btn"
+						title="Rename frame"
+						onclick={(e: MouseEvent) => { e.stopPropagation(); editingLabelId = frame.id; handleInteraction(); }}
+					>{frame.label || i + 1}</button>
+				{/if}
 
 					<button class="icon-btn" title="Rotate frame (swap W/H)" onclick={() => { rotateFrame(frame); handleInteraction(); }}>
 						<RotateCw size={12} />
 					</button>
+
+				<select
+					class="dest-select"
+					class:assigned={!!frame.destination}
+					title="Export destination"
+					value={frame.destination ?? ''}
+					onclick={(e: MouseEvent) => e.stopPropagation()}
+					onchange={(e: Event & { currentTarget: HTMLSelectElement }) => { applyDestination(frame, e.currentTarget.value); handleInteraction(); }}
+				>
+					<option value="">no destination</option>
+					{#each DESTINATIONS as destination (destination.slug)}
+						<option value={destination.slug}>{destination.name}</option>
+					{/each}
+				</select>
 
 				<div class="ratio-presets">
 					{#key portrait}
@@ -188,7 +253,7 @@ function isPortrait(frame: Frame): boolean {
 							{@const rh = portrait ? ratio.w : ratio.h}
 							<button
 								class="ratio-btn"
-								onclick={() => { applyRatio(frame, rw, rh); handleInteraction(); }}
+								onclick={() => { applyRatioPreset(frame, rw, rh); handleInteraction(); }}
 							>{rw}:{rh}</button>
 						{/each}
 					{/key}
@@ -351,10 +416,68 @@ function isPortrait(frame: Frame): boolean {
 		color: white;
 	}
 
+	.label-btn {
+		border: none;
+		background: transparent;
+		padding: 0;
+		text-align: left;
+		cursor: text;
+		font-family: inherit;
+	}
+
+	.label-btn:hover {
+		color: white;
+	}
+
+	.label-input {
+		width: 96px;
+		padding: 1px 4px;
+		border: 1px solid rgba(245, 158, 11, 0.6);
+		border-radius: 4px;
+		background: rgba(0, 0, 0, 0.4);
+		color: white;
+		font-family: inherit;
+		font-size: 12px;
+		font-weight: 600;
+	}
+
+	.label-input:focus {
+		outline: none;
+		border-color: #f59e0b;
+	}
+
+	.dest-select {
+		margin-left: auto;
+		padding: 2px 4px;
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		border-radius: 4px;
+		background: transparent;
+		color: rgba(255, 255, 255, 0.4);
+		font-family: inherit;
+		font-size: 10px;
+		cursor: pointer;
+		transition: color 0.15s, border-color 0.15s;
+	}
+
+	.dest-select:hover {
+		color: white;
+		border-color: rgba(255, 255, 255, 0.3);
+	}
+
+	.dest-select.assigned {
+		color: #f59e0b;
+		border-color: rgba(245, 158, 11, 0.4);
+	}
+
+	.dest-select option {
+		background: #1a1a1a;
+		color: white;
+	}
+
 	.ratio-presets {
 		display: flex;
 		gap: 2px;
-		margin-left: auto;
+		margin-left: 4px;
 		perspective: 200px;
 	}
 
