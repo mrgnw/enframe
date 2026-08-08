@@ -182,6 +182,12 @@ pub fn run() {
                             sql: "ALTER TABLE frames ADD COLUMN rotation REAL NOT NULL DEFAULT 0;",
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 3,
+                            description: "add destination to frames",
+                            sql: "ALTER TABLE frames ADD COLUMN destination TEXT;",
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

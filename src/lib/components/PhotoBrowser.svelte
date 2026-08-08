@@ -14,6 +14,7 @@ import {
 	type Photo,
 	updatePhoto
 } from '$lib/db';
+import { DESTINATIONS, REQUIRED_DESTINATIONS } from '$lib/destinations';
 import { getImageSrc } from '$lib/tauri';
 import { getWatchDir, persistWatchDir } from '$lib/watch';
 import LightroomBrowser from './LightroomBrowser.svelte';
@@ -295,7 +296,8 @@ async function handleOpenClick() {
 		</div>
 	{:else}
 		<div class="grid">
-			{#each photos as photo}
+			{#each photos as photo (photo.id)}
+				{@const covered = new Set((framesByPhoto[photo.id] ?? []).map((f) => f.destination))}
 				<div
 					class="photo-card"
 					data-id={photo.id}
@@ -356,6 +358,17 @@ async function handleOpenClick() {
 									</div>
 								{/if}
 							{/if}
+							<div class="dest-badges">
+								{#each DESTINATIONS as destination (destination.slug)}
+									{@const isCovered = covered.has(destination.slug)}
+									<span
+										class="dest-dot"
+										class:required={REQUIRED_DESTINATIONS.includes(destination.slug)}
+										class:covered={isCovered}
+										title="{destination.name}{isCovered ? '' : ' — not covered'}"
+									></span>
+								{/each}
+							</div>
 						</div>
 						{#if photo.title}
 							<div class="title">{photo.title}</div>
@@ -609,6 +622,31 @@ async function handleOpenClick() {
 		padding: 0 3px;
 		border-radius: 2px;
 		line-height: 14px;
+	}
+
+	.dest-badges {
+		position: absolute;
+		right: 6px;
+		bottom: 6px;
+		display: flex;
+		gap: 3px;
+	}
+
+	.dest-dot {
+		width: 5px;
+		height: 5px;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.14);
+	}
+
+	.dest-dot.required {
+		background: transparent;
+		box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.55);
+	}
+
+	.dest-dot.covered {
+		background: #2563eb;
+		box-shadow: none;
 	}
 
 	.title {

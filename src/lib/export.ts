@@ -7,11 +7,43 @@ import { getLrAssetPaths } from './lightroom';
 
 export type ExportFormat = 'avif' | 'jpg' | 'png';
 
-function generateFrameFilename(photo: Photo, frame: Frame, index: number, format: ExportFormat = 'avif'): string {
+function slugify(value: string): string {
+	return value
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '');
+}
+
+function frameNameSegment(frame: Frame, index: number): string {
+	if (frame.destination) return frame.destination;
+	const labelSlug = frame.label ? slugify(frame.label) : '';
+	if (labelSlug) return labelSlug;
+	const orientation = frame.width > frame.height ? 'l' : frame.width < frame.height ? 'p' : 's';
+	return `${orientation}.${index + 1}`;
+}
+
+export function generateFrameFilename(
+	photo: Photo,
+	frame: Frame,
+	index: number,
+	format: ExportFormat = 'avif',
+	usedNames?: Set<string>
+): string {
 	const basename = photo.title?.replace(/\.[^/.]+$/, '').replace(/\s+/g, '-') || 'photo';
 	const ratio = (frame.width / frame.height).toFixed(2);
-	const orientation = frame.width > frame.height ? 'l' : frame.width < frame.height ? 'p' : 's';
-	return `${basename}.${orientation}.${index + 1}.${ratio}.${format}`;
+
+	let name = frameNameSegment(frame, index);
+	if (usedNames) {
+		const base = name;
+		let suffix = 2;
+		while (usedNames.has(name)) {
+			name = `${base}-${suffix}`;
+			suffix += 1;
+		}
+		usedNames.add(name);
+	}
+
+	return `${basename}.${name}.${ratio}.${format}`;
 }
 
 export function getDefaultExportDir(photoPath: string): string {
@@ -52,6 +84,7 @@ export async function exportFrames(
 	const exportedPaths: string[] = [];
 	const qualityU8 = Math.round(quality * 100);
 	const sourcePath = await resolveExportSource(photo);
+	const usedNames = new Set<string>();
 
 	for (let i = 0; i < frames.length; i++) {
 		if (onProgress) {
@@ -60,7 +93,7 @@ export async function exportFrames(
 		}
 
 		const frame = frames[i];
-		const filename = generateFrameFilename(photo, frame, i, format);
+		const filename = generateFrameFilename(photo, frame, i, format, usedNames);
 		const fullPath = `${directory}/${filename}`;
 
 		await invoke('crop_and_export', {
@@ -96,6 +129,7 @@ export async function exportMetadata(
 		frames: frames.map((f) => ({
 			id: f.id,
 			label: f.label,
+			destination: f.destination ?? null,
 			x: f.x,
 			y: f.y,
 			width: f.width,
