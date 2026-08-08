@@ -100,7 +100,10 @@ const shortcuts = [
 		items: [
 			{ key: ',', label: 'Previous frame' },
 			{ key: '.', label: 'Next frame' },
-			{ key: '1\u20139', label: 'Select frame' }
+			{ key: '1\u20139', label: 'Select frame' },
+			{ key: '0', label: 'Fit / fill' },
+			{ key: 'Scroll', label: 'Zoom' },
+			{ key: 'Drag', label: 'Pan' }
 		]
 	}
 ];
