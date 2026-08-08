@@ -124,7 +124,7 @@ export async function addPhoto(photo: Omit<Photo, 'id' | 'created_at'>): Promise
 
 export async function getFrames(photoId: number): Promise<Frame[]> {
 	const db = await getDb();
-	return db.select<Frame[]>('SELECT * FROM frames WHERE photo_id = $1', [photoId]);
+	return db.select<Frame[]>('SELECT * FROM frames WHERE photo_id = $1 ORDER BY id', [photoId]);
 }
 
 export async function listAllFrames(): Promise<Frame[]> {
