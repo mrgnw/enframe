@@ -424,7 +424,11 @@ async function applyRect(frame: Frame, rect: { x: number; y: number; width: numb
 }
 
 async function generateVersions(slugs: string[]) {
-	if (!photo || imageWidth === 0 || imageHeight === 0 || slugs.length === 0) return;
+	if (!photo || slugs.length === 0) return;
+	if (imageWidth === 0 || imageHeight === 0) {
+		toast.error('Image is still loading');
+		return;
+	}
 
 	const imgAspect = imageWidth / imageHeight;
 	const points = globalFocalInputs();
