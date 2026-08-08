@@ -104,9 +104,18 @@ function handleOverlayClick(event: PointerEvent) {
 	oncanvasclick?.(normX, normY, event.altKey);
 }
 
+function isInputFocused() {
+	const el = document.activeElement;
+	if (!el) return false;
+	const tag = el.tagName.toLowerCase();
+	return tag === 'input' || tag === 'textarea' || (el as HTMLElement).isContentEditable;
+}
+
 function handleKeyDown(event: KeyboardEvent) {
+	if (event.metaKey || event.ctrlKey || event.altKey || isInputFocused()) return;
+
 	if (event.key >= '1' && event.key <= '9') {
-		const index = parseInt(event.key) - 1;
+		const index = parseInt(event.key, 10) - 1;
 		if (index < frames.length) {
 			event.preventDefault();
 			onselectframe?.(frames[index].id);
