@@ -36,6 +36,7 @@ export interface Frame {
 	id: number;
 	photo_id: number;
 	label?: string;
+	destination?: string | null;
 	x: number;
 	y: number;
 	width: number;
@@ -135,10 +136,11 @@ export async function listAllFrames(): Promise<Frame[]> {
 export async function addFrame(frame: Omit<Frame, 'id' | 'created_at'>): Promise<number> {
 	const db = await getDb();
 	const result = await db.execute(
-		'INSERT INTO frames (photo_id, label, x, y, width, height, rotation, is_default) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+		'INSERT INTO frames (photo_id, label, destination, x, y, width, height, rotation, is_default) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
 		[
 			frame.photo_id,
 			frame.label,
+			frame.destination ?? null,
 			frame.x,
 			frame.y,
 			frame.width,
@@ -161,6 +163,10 @@ export async function updateFrame(
 	if (updates.label !== undefined) {
 		sets.push(`label = $${sets.length + 1}`);
 		values.push(updates.label);
+	}
+	if (updates.destination !== undefined) {
+		sets.push(`destination = $${sets.length + 1}`);
+		values.push(updates.destination);
 	}
 	if (updates.x !== undefined) {
 		sets.push(`x = $${sets.length + 1}`);
@@ -313,6 +319,7 @@ export async function importFromMetadata(metadataPath: string): Promise<number> 
 			const newFrameId = await addFrame({
 				photo_id: photoId,
 				label: frame.label,
+				destination: frame.destination ?? null,
 				x: frame.x,
 				y: frame.y,
 				width: frame.width,
