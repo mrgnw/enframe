@@ -188,6 +188,13 @@ pub fn run() {
                             sql: "ALTER TABLE frames ADD COLUMN destination TEXT;",
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 4,
+                            description: "add is_auto to frames",
+                            sql:
+                                "ALTER TABLE frames ADD COLUMN is_auto INTEGER NOT NULL DEFAULT 0;",
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

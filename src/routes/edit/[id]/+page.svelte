@@ -12,15 +12,11 @@ import CommandBar from '$lib/components/CommandBar.svelte';
 import CursorProgress from '$lib/components/CursorProgress.svelte';
 import FloatingToolbar from '$lib/components/FloatingToolbar.svelte';
 import FramePointPanel from '$lib/components/FramePointPanel.svelte';
+import GenerateVersionsDialog from '$lib/components/GenerateVersionsDialog.svelte';
 import ImageCanvas from '$lib/components/ImageCanvas.svelte';
 import PreviewPanel from '$lib/components/PreviewPanel.svelte';
-import {
-	AUTO_LANDSCAPE_LABEL,
-	AUTO_PORTRAIT_LABEL,
-	computeAutoFrame,
-	computeFrameLabel,
-	isLegacyAutoLabel
-} from '$lib/composition';
+import { computeAutoFrame, computeFrameLabel, legacyAutoAspect } from '$lib/composition';
+import { findDestination, REQUIRED_DESTINATIONS } from '$lib/destinations';
 import {
 	addFocalPoint,
 	addFrame,
@@ -80,6 +76,7 @@ let compositionLabels = $state<Map<number, string>>(new Map());
 const GUIDE_TYPES = ['off', 'thirds', 'phi', 'spiral', 'triangle', 'diagonal'] as const;
 type GuideType = (typeof GUIDE_TYPES)[number];
 let activeGuide = $state<GuideType>('off');
+let generateOpen = $state(false);
 
 function handlePointerMove(event: PointerEvent) {
 	mouseX = event.clientX;
@@ -180,7 +177,7 @@ function handleKeyDown(event: KeyboardEvent) {
 	} else if (event.key === 'Escape') {
 		event.preventDefault();
 		handleDeselect();
-	} else if (!isInputFocused()) {
+	} else if (!isInputFocused() && !generateOpen) {
 		if (event.key === ',') {
 			event.preventDefault();
 			selectPrevFrame();
@@ -212,6 +209,9 @@ function handleKeyDown(event: KeyboardEvent) {
 		} else if (event.key === 'v') {
 			event.preventDefault();
 			previewOpen = !previewOpen;
+		} else if (event.key === 'a') {
+			event.preventDefault();
+			generateOpen = true;
 		} else if (event.key === 'g') {
 			event.preventDefault();
 			const idx = GUIDE_TYPES.indexOf(activeGuide);
@@ -324,7 +324,8 @@ async function handleAddFrame() {
 			width: 0.6,
 			height: 0.6,
 			rotation: 0,
-			is_default: false
+			is_default: false,
+			is_auto: false
 		});
 		await loadPhoto();
 		selectedFrameId = id;
@@ -394,90 +395,96 @@ async function handleCanvasClick(normX: number, normY: number, altKey: boolean) 
 	await loadPhoto();
 
 	if (altKey) {
-		// Ensure auto frame pair exists, then recompute
-		await ensureAutoFrames();
+		await generateVersions(REQUIRED_DESTINATIONS);
+		return;
 	}
 
 	await recomputeAutoFrames();
 	handleChange();
 }
 
-async function ensureAutoFrames() {
-	if (!photo) return;
-	const hasAutoL = frames.some((f) => f.label === AUTO_LANDSCAPE_LABEL);
-	const hasAutoP = frames.some((f) => f.label === AUTO_PORTRAIT_LABEL);
+function globalFocalInputs() {
+	return focalPoints.filter((fp) => !fp.frame_id).map((fp) => ({ x: fp.x, y: fp.y, required: fp.required }));
+}
 
-	if (!hasAutoL) {
-		await addFrame({
-			photo_id: photoId,
-			label: AUTO_LANDSCAPE_LABEL,
-			x: 0.1,
-			y: 0.1,
-			width: 0.8,
-			height: 0.45,
-			rotation: 0,
-			is_default: false
-		});
+function autoTargetAspect(frame: Frame): number {
+	const destination = findDestination(frame.destination);
+	if (destination) return destination.ratio.w / destination.ratio.h;
+	const legacy = legacyAutoAspect(frame.label);
+	if (legacy !== null) return legacy;
+	return (frame.width * imageWidth) / (frame.height * imageHeight);
+}
+
+async function applyRect(frame: Frame, rect: { x: number; y: number; width: number; height: number }) {
+	frame.x = rect.x;
+	frame.y = rect.y;
+	frame.width = rect.width;
+	frame.height = rect.height;
+	await updateFrame(frame.id, rect);
+}
+
+async function generateVersions(slugs: string[]) {
+	if (!photo || imageWidth === 0 || imageHeight === 0 || slugs.length === 0) return;
+
+	const imgAspect = imageWidth / imageHeight;
+	const points = globalFocalInputs();
+	let clipped = 0;
+
+	for (const slug of slugs) {
+		const destination = findDestination(slug);
+		if (!destination) continue;
+
+		const aspect = destination.ratio.w / destination.ratio.h;
+		const result = computeAutoFrame(points, aspect, imgAspect);
+		if (!result.satisfiesRequired) clipped++;
+
+		const existing = frames.find(
+			(f) => f.is_auto && (f.destination === slug || (!f.destination && legacyAutoAspect(f.label) === aspect))
+		);
+
+		if (existing) {
+			await applyRect(existing, result.rect);
+			existing.destination = slug;
+			existing.label = destination.name;
+			await updateFrame(existing.id, { destination: slug, label: destination.name });
+		} else {
+			await addFrame({
+				photo_id: photoId,
+				label: destination.name,
+				destination: slug,
+				x: result.rect.x,
+				y: result.rect.y,
+				width: result.rect.width,
+				height: result.rect.height,
+				rotation: 0,
+				is_default: false,
+				is_auto: true
+			});
+		}
 	}
-	if (!hasAutoP) {
-		await addFrame({
-			photo_id: photoId,
-			label: AUTO_PORTRAIT_LABEL,
-			x: 0.3,
-			y: 0.05,
-			width: 0.4,
-			height: 0.9,
-			rotation: 0,
-			is_default: false
-		});
-	}
-	if (!hasAutoL || !hasAutoP) {
-		await loadPhoto();
+
+	await loadPhoto();
+	await recomputeAutoFrames();
+	captureSnapshot();
+
+	if (clipped > 0) {
+		toast.warning(`${clipped} version${clipped === 1 ? '' : 's'} cannot fit every required point`);
+	} else {
+		toast.success(`Generated ${slugs.length} version${slugs.length === 1 ? '' : 's'}`);
 	}
 }
 
 async function recomputeAutoFrames() {
 	if (!photo || imageWidth === 0 || imageHeight === 0) return;
 
-	// Use all global focal points (frame_id is null/undefined)
-	const globalPoints = focalPoints.filter((fp) => !fp.frame_id).map((fp) => ({ x: fp.x, y: fp.y }));
-
+	const points = globalFocalInputs();
 	const imgAspect = imageWidth / imageHeight;
 
-	const autoL = frames.find((f) => f.label === AUTO_LANDSCAPE_LABEL);
-	const autoP = frames.find((f) => f.label === AUTO_PORTRAIT_LABEL);
-
-	if (globalPoints.length > 0) {
-		if (autoL) {
-			const result = computeAutoFrame(globalPoints, 16 / 9, imgAspect);
-			if (result) {
-				autoL.x = result.rect.x;
-				autoL.y = result.rect.y;
-				autoL.width = result.rect.width;
-				autoL.height = result.rect.height;
-				await updateFrame(autoL.id, {
-					x: result.rect.x,
-					y: result.rect.y,
-					width: result.rect.width,
-					height: result.rect.height
-				});
-			}
-		}
-
-		if (autoP) {
-			const result = computeAutoFrame(globalPoints, 9 / 16, imgAspect);
-			if (result) {
-				autoP.x = result.rect.x;
-				autoP.y = result.rect.y;
-				autoP.width = result.rect.width;
-				autoP.height = result.rect.height;
-				await updateFrame(autoP.id, {
-					x: result.rect.x,
-					y: result.rect.y,
-					width: result.rect.width,
-					height: result.rect.height
-				});
-			}
+	if (points.length > 0) {
+		for (const frame of frames) {
+			if (!frame.is_auto) continue;
+			const result = computeAutoFrame(points, autoTargetAspect(frame), imgAspect);
+			await applyRect(frame, result.rect);
 		}
 	}
 
@@ -485,8 +492,8 @@ async function recomputeAutoFrames() {
 	const newLabels = new Map<number, string>();
 	for (const frame of frames) {
 		// For each frame, compute which focal points are relevant
-		const relevantPoints = isLegacyAutoLabel(frame.label)
-			? globalPoints
+		const relevantPoints = frame.is_auto
+			? points
 			: focalPoints.filter((fp) => !fp.frame_id || fp.frame_id === frame.id).map((fp) => ({ x: fp.x, y: fp.y }));
 		if (relevantPoints.length > 0) {
 			const pxW = frame.width * imageWidth;
@@ -611,6 +618,7 @@ async function handleSetOutputDir() {
 				onredo={redo}
 				onaddframe={handleAddFrame}
 				onaddpoint={handleAddFocalPoint}
+				ongenerate={() => generateOpen = true}
 				onsave={saveMetadata}
 				onexport={handleExport}
 				ontoggle={() => panelExpanded = !panelExpanded}
@@ -636,9 +644,16 @@ async function handleSetOutputDir() {
 		<div class="loading">Photo not found</div>
 	{/if}
 
+	<GenerateVersionsDialog
+		open={generateOpen}
+		onclose={() => generateOpen = false}
+		ongenerate={generateVersions}
+	/>
+
 	<CommandBar
 		onaddframe={handleAddFrame}
 		onaddpoint={handleAddFocalPoint}
+		ongenerate={() => generateOpen = true}
 		onsave={saveMetadata}
 		onexport={handleExport}
 		onsetoutputdir={handleSetOutputDir}

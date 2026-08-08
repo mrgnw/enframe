@@ -6,6 +6,7 @@ import type { ExportFormat } from '$lib/export';
 interface Props {
 	onaddframe?: () => void;
 	onaddpoint?: () => void;
+	ongenerate?: () => void;
 	onsave?: () => void;
 	onexport?: () => void;
 	onsetoutputdir?: () => void;
@@ -26,6 +27,7 @@ interface Props {
 let {
 	onaddframe,
 	onaddpoint,
+	ongenerate,
 	onsave,
 	onexport,
 	onsetoutputdir,
@@ -86,6 +88,8 @@ const shortcuts = [
 		items: [
 			{ key: 'F', label: 'Add frame' },
 			{ key: 'P', label: 'Add focal point' },
+			{ key: 'A', label: 'Generate versions' },
+			{ key: '\u2325Click', label: 'Point + auto versions' },
 			{ key: '\u2318S', label: 'Save' },
 			{ key: '\u2318E', label: 'Export' },
 			{ key: 'O', label: 'Set output dir' },
@@ -156,6 +160,10 @@ const shortcuts = [
 						<Command.Item onSelect={() => run(onaddpoint)}>
 							<span>Add Focal Point</span>
 							<Command.Shortcut>P</Command.Shortcut>
+						</Command.Item>
+						<Command.Item onSelect={() => run(ongenerate)}>
+							<span>Generate Versions</span>
+							<Command.Shortcut>A</Command.Shortcut>
 						</Command.Item>
 						<Command.Item onSelect={() => run(onsave)}>
 							<span>Save</span>

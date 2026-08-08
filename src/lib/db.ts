@@ -1,5 +1,6 @@
 import { readTextFile } from '@tauri-apps/plugin-fs';
 import Database from '@tauri-apps/plugin-sql';
+import { isLegacyAutoLabel } from './composition';
 
 let dbPromise: Promise<Database> | null = null;
 
@@ -36,6 +37,7 @@ export interface Frame {
 	height: number;
 	rotation: number;
 	is_default: boolean;
+	is_auto: boolean;
 	created_at: string;
 }
 
@@ -112,20 +114,27 @@ export async function addPhoto(photo: Omit<Photo, 'id' | 'created_at'>): Promise
 	return result.lastInsertId ?? 0;
 }
 
+// Frames created before the is_auto column are recognised by their legacy label.
+function withAutoFlag(frame: Frame): Frame {
+	return { ...frame, is_auto: !!frame.is_auto || isLegacyAutoLabel(frame.label) };
+}
+
 export async function getFrames(photoId: number): Promise<Frame[]> {
 	const db = await getDb();
-	return db.select<Frame[]>('SELECT * FROM frames WHERE photo_id = $1 ORDER BY id', [photoId]);
+	const rows = await db.select<Frame[]>('SELECT * FROM frames WHERE photo_id = $1 ORDER BY id', [photoId]);
+	return rows.map(withAutoFlag);
 }
 
 export async function listAllFrames(): Promise<Frame[]> {
 	const db = await getDb();
-	return db.select<Frame[]>('SELECT * FROM frames');
+	const rows = await db.select<Frame[]>('SELECT * FROM frames');
+	return rows.map(withAutoFlag);
 }
 
 export async function addFrame(frame: Omit<Frame, 'id' | 'created_at'>): Promise<number> {
 	const db = await getDb();
 	const result = await db.execute(
-		'INSERT INTO frames (photo_id, label, destination, x, y, width, height, rotation, is_default) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+		'INSERT INTO frames (photo_id, label, destination, x, y, width, height, rotation, is_default, is_auto) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
 		[
 			frame.photo_id,
 			frame.label,
@@ -135,7 +144,8 @@ export async function addFrame(frame: Omit<Frame, 'id' | 'created_at'>): Promise
 			frame.width,
 			frame.height,
 			frame.rotation ?? 0,
-			frame.is_default ? 1 : 0
+			frame.is_default ? 1 : 0,
+			frame.is_auto ? 1 : 0
 		]
 	);
 	return result.lastInsertId ?? 0;
@@ -176,6 +186,10 @@ export async function updateFrame(
 	if (updates.rotation !== undefined) {
 		sets.push(`rotation = $${sets.length + 1}`);
 		values.push(updates.rotation);
+	}
+	if (updates.is_auto !== undefined) {
+		sets.push(`is_auto = $${sets.length + 1}`);
+		values.push(updates.is_auto ? 1 : 0);
 	}
 
 	if (sets.length === 0) return;
@@ -313,7 +327,8 @@ export async function importFromMetadata(metadataPath: string): Promise<number> 
 				width: frame.width,
 				height: frame.height,
 				rotation: frame.rotation || 0,
-				is_default: frame.is_default || false
+				is_default: frame.is_default || false,
+				is_auto: frame.is_auto || isLegacyAutoLabel(frame.label)
 			});
 			if (frame.id) {
 				frameIdMap.set(frame.id, newFrameId);

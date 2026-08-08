@@ -1,6 +1,6 @@
 <script lang="ts">
 import { Pin, RotateCw } from '@lucide/svelte';
-import { isLegacyAutoLabel } from '$lib/composition';
+import { clipsRequiredPoints } from '$lib/composition';
 import type { FocalPoint, Frame } from '$lib/db';
 import { updateFrame } from '$lib/db';
 import { DESTINATIONS, destinationHasRatio, findDestination } from '$lib/destinations';
@@ -159,13 +159,16 @@ async function saveLabel(frame: Frame, value: string) {
 }
 
 async function persistFrame(frame: Frame) {
+	const wasAuto = frame.is_auto;
+	frame.is_auto = false;
 	await updateFrame(frame.id, {
 		x: frame.x,
 		y: frame.y,
 		width: frame.width,
 		height: frame.height,
 		rotation: frame.rotation,
-		destination: frame.destination ?? null
+		destination: frame.destination ?? null,
+		...(wasAuto ? { is_auto: false } : {})
 	});
 	onchange?.();
 }
@@ -210,12 +213,14 @@ function isPortrait(frame: Frame): boolean {
 			{#each frames as frame, i (frame.id)}
 			{@const isSelected = selectedFrameId === frame.id}
 			{@const portrait = isPortrait(frame)}
-			{@const isAuto = isLegacyAutoLabel(frame.label)}
+			{@const isAuto = frame.is_auto}
+			{@const clipped = clipsRequiredPoints(frame, frame.id, focalPoints)}
 			{@const isExportChecked = !hasExportSelection || exportSelection.has(frame.id)}
 			<div
 				class="panel-row"
 				class:selected={isSelected}
 				class:auto-frame={isAuto}
+				class:clips-required={clipped}
 				class:export-dimmed={hasExportSelection && !exportSelection.has(frame.id)}
 				onclick={() => onselectframe?.(frame.id)}
 				onkeydown={() => {}}
@@ -286,6 +291,9 @@ function isPortrait(frame: Frame): boolean {
 						{/each}
 					{/key}
 				</div>
+				{#if clipped}
+					<span class="clip-warning" title="Crops out a required focal point">&#9888;</span>
+				{/if}
 				{#if compositionLabels.has(frame.id)}
 					<span class="comp-label">{compositionLabels.get(frame.id)}</span>
 				{/if}
@@ -444,6 +452,17 @@ function isPortrait(frame: Frame): boolean {
 
 	.auto-frame {
 		border-color: rgba(34, 211, 238, 0.2);
+	}
+
+	.panel-row.clips-required {
+		border-color: rgba(239, 68, 68, 0.55);
+		background: rgba(239, 68, 68, 0.08);
+	}
+
+	.clip-warning {
+		font-size: 11px;
+		color: #f97316;
+		margin-left: 2px;
 	}
 
 	.comp-label {

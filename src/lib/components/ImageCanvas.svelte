@@ -1,4 +1,5 @@
 <script lang="ts">
+import { clipsRequiredPoints } from '$lib/composition';
 import type { FocalPoint, Frame, Photo } from '$lib/db';
 import { getImageSrc } from '$lib/tauri';
 import CompositionGuide from './CompositionGuide.svelte';
@@ -239,6 +240,7 @@ function handleKeyDown(event: KeyboardEvent) {
 				selected={selectedFrameId === frame.id}
 				exportChecked={!hasExportSelection || exportSelection.has(frame.id)}
 				compositionLabel={compositionLabels.get(frame.id) ?? ''}
+				clipsRequired={clipsRequiredPoints(frame, frame.id, focalPoints)}
 				onSelect={(e) => handleFrameClick(frame.id, e)}
 				{onchange}
 			/>

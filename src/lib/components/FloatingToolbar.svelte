@@ -8,6 +8,7 @@ import {
 	Crop,
 	Eye,
 	EyeOff,
+	LayoutGrid,
 	Redo2,
 	Undo2
 } from '@lucide/svelte';
@@ -23,6 +24,7 @@ interface Props {
 	onredo?: () => void;
 	onaddframe?: () => void;
 	onaddpoint?: () => void;
+	ongenerate?: () => void;
 	onsave?: () => void;
 	onexport?: () => void;
 	ontoggle?: () => void;
@@ -40,6 +42,7 @@ let {
 	onredo,
 	onaddframe,
 	onaddpoint,
+	ongenerate,
 	onsave,
 	onexport,
 	ontoggle,
@@ -75,6 +78,13 @@ let {
 			</span>
 		</button>
 	</div>
+
+	<div class="toolbar-divider"></div>
+
+	<button class="tb-btn generate-btn" onclick={ongenerate} title="Generate versions for destinations (A)">
+		<LayoutGrid size={15} />
+		<span class="generate-label">Versions</span>
+	</button>
 
 	<div class="toolbar-divider"></div>
 
@@ -201,6 +211,23 @@ let {
 
 	.save-unsaved:hover {
 		color: #fbbf24;
+	}
+
+	.generate-btn {
+		width: auto;
+		gap: 5px;
+		padding: 0 10px;
+		font-size: 12px;
+		font-weight: 600;
+		color: rgba(103, 232, 249, 0.9);
+	}
+
+	.generate-btn:hover:not(:disabled) {
+		color: #67e8f9;
+	}
+
+	.generate-label {
+		line-height: 1;
 	}
 
 	.export-btn {

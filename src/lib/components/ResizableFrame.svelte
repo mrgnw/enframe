@@ -1,5 +1,4 @@
 <script lang="ts">
-import { isLegacyAutoLabel } from '$lib/composition';
 import type { Frame } from '$lib/db';
 import { updateFrame } from '$lib/db';
 
@@ -13,6 +12,7 @@ interface Props {
 	exportChecked?: boolean;
 	aspectLocked?: boolean;
 	compositionLabel?: string;
+	clipsRequired?: boolean;
 	onSelect?: (event?: PointerEvent) => void;
 	onchange?: () => void;
 }
@@ -27,11 +27,12 @@ let {
 	exportChecked = true,
 	aspectLocked = false,
 	compositionLabel = '',
+	clipsRequired = false,
 	onSelect,
 	onchange
 }: Props = $props();
 
-let isAuto = $derived(isLegacyAutoLabel(frame.label));
+let isAuto = $derived(frame.is_auto);
 
 let handleSize = $derived(Math.max(6, 10 / scale));
 let borderWidth = $derived(Math.max(1, 2 / scale));
@@ -43,6 +44,13 @@ let isDragging = $state(false);
 let isResizing = $state(false);
 let resizeHandle = $state<string | null>(null);
 let dragStart = $state({ x: 0, y: 0, frameX: 0, frameY: 0, frameW: 0, frameH: 0 });
+
+// A manual drag or resize makes the frame the user's: it stops being recomputed.
+async function claimFrame(geometry: { x: number; y: number; width?: number; height?: number }) {
+	const wasAuto = frame.is_auto;
+	frame.is_auto = false;
+	await updateFrame(frame.id, wasAuto ? { ...geometry, is_auto: false } : geometry);
+}
 
 function handleFramePointerDown(event: PointerEvent) {
 	if (event.button !== 0) return;
@@ -85,7 +93,7 @@ async function handleFramePointerUp(event: PointerEvent) {
 	isDragging = false;
 	(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
 
-	await updateFrame(frame.id, { x: frame.x, y: frame.y });
+	await claimFrame({ x: frame.x, y: frame.y });
 	onchange?.();
 }
 
@@ -212,7 +220,7 @@ async function handleHandlePointerUp(event: PointerEvent) {
 	resizeHandle = null;
 	(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
 
-	await updateFrame(frame.id, { x: frame.x, y: frame.y, width: frame.width, height: frame.height });
+	await claimFrame({ x: frame.x, y: frame.y, width: frame.width, height: frame.height });
 	onchange?.();
 }
 </script>
@@ -224,6 +232,7 @@ async function handleHandlePointerUp(event: PointerEvent) {
 	class:export-unchecked={!exportChecked}
 	class:dragging={isDragging}
 	class:resizing={isResizing}
+	class:clips-required={clipsRequired}
 	style="
 		left: {frame.x * 100}%;
 		top: {frame.y * 100}%;
@@ -238,8 +247,8 @@ async function handleHandlePointerUp(event: PointerEvent) {
 	onpointermove={handleFramePointerMove}
 	onpointerup={handleFramePointerUp}
 >
-	<div class="frame-label" class:auto-label={isAuto} style="transform: scale({labelScale}); transform-origin: bottom left;">
-		{isAuto ? frame.label : index + 1}{#if compositionLabel}<span class="comp-hint">{compositionLabel}</span>{/if}
+	<div class="frame-label" class:auto-label={isAuto} class:clip-label={clipsRequired} style="transform: scale({labelScale}); transform-origin: bottom left;">
+		{isAuto ? frame.label : index + 1}{#if clipsRequired}<span class="clip-warning" title="Crops out a required focal point">&#9888;</span>{/if}{#if compositionLabel}<span class="comp-hint">{compositionLabel}</span>{/if}
 	</div>
 
 	<!-- Resize handles -->
@@ -284,6 +293,20 @@ async function handleHandlePointerUp(event: PointerEvent) {
 		border-color: #f59e0b;
 		z-index: 10;
 		opacity: 1;
+	}
+
+	/* Crops out a required focal point */
+	.frame-overlay.clips-required {
+		border-color: #f97316;
+		box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.5), inset 0 0 24px rgba(239, 68, 68, 0.15);
+	}
+
+	.frame-label.clip-label {
+		background: #dc2626;
+	}
+
+	.clip-warning {
+		margin-left: 0.4em;
 	}
 
 	.frame-overlay.dragging,

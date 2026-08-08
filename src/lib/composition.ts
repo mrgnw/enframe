@@ -155,6 +155,15 @@ export function excludedRequiredPoints(rect: Rect, points: FocalInput[]): FocalI
 	return points.filter((p) => p.required && !containsPoint(rect, p));
 }
 
+// A point applies to a frame when it is global (no frame_id) or bound to that frame.
+export function clipsRequiredPoints(
+	rect: Rect,
+	frameId: number,
+	points: { x: number; y: number; required: boolean; frame_id?: number | null }[]
+): boolean {
+	return points.some((p) => p.required && (!p.frame_id || p.frame_id === frameId) && !containsPoint(rect, p));
+}
+
 // Position for CSS `object-fit: cover` when the container matches the crop ratio.
 export function objectPosition(rect: Rect): string {
 	const px = rect.width >= 1 ? 0.5 : clamp01(rect.x / (1 - rect.width));
