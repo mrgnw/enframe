@@ -2,7 +2,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import { toast } from 'svelte-sonner';
+import { objectPosition } from './composition';
 import type { FocalPoint, Frame, Photo } from './db';
+import { findDestination } from './destinations';
 import { getLrAssetPaths } from './lightroom';
 
 export type ExportFormat = 'avif' | 'jpg' | 'png';
@@ -113,6 +115,31 @@ export async function exportFrames(
 	return exportedPaths;
 }
 
+// Per-destination crops for render-time fitting: object_position approximates the
+// crop for consumers using CSS `object-fit: cover` on a container of the same ratio.
+function buildFitSection(frames: Frame[]) {
+	const fit: {
+		slug: string;
+		ratio: number;
+		crop: { x: number; y: number; width: number; height: number };
+		object_position: string;
+	}[] = [];
+
+	for (const frame of frames) {
+		const destination = findDestination(frame.destination);
+		if (!destination) continue;
+		const crop = { x: frame.x, y: frame.y, width: frame.width, height: frame.height };
+		fit.push({
+			slug: destination.slug,
+			ratio: destination.ratio.w / destination.ratio.h,
+			crop,
+			object_position: objectPosition(crop)
+		});
+	}
+
+	return fit;
+}
+
 export async function exportMetadata(
 	photo: Photo,
 	frames: Frame[],
@@ -130,6 +157,7 @@ export async function exportMetadata(
 			id: f.id,
 			label: f.label,
 			destination: f.destination ?? null,
+			is_auto: f.is_auto,
 			x: f.x,
 			y: f.y,
 			width: f.width,
@@ -142,7 +170,8 @@ export async function exportMetadata(
 			x: p.x,
 			y: p.y,
 			required: p.required
-		}))
+		})),
+		fit: buildFitSection(frames)
 	};
 
 	const json = JSON.stringify(metadata, null, 2);
