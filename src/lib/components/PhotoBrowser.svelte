@@ -4,6 +4,7 @@ import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { open } from '@tauri-apps/plugin-dialog';
 import { stat } from '@tauri-apps/plugin-fs';
 import { onDestroy, onMount } from 'svelte';
+import { toast } from 'svelte-sonner';
 import {
 	type Frame,
 	importFile,
@@ -94,6 +95,7 @@ async function updatePhotoAndReload(id: number, filePath: string) {
 		await loadPhotos();
 	} catch (e) {
 		console.error('Failed to link image:', e);
+		toast.error('Failed to link image');
 	}
 }
 
@@ -169,6 +171,7 @@ onMount(async () => {
 					await loadPhotos();
 				} catch (e) {
 					console.error('Failed to import metadata:', e);
+					toast.error('Failed to import metadata');
 				} finally {
 					importing = false;
 				}
@@ -187,13 +190,9 @@ onDestroy(() => {
 
 async function loadPhotos() {
 	loading = true;
-	console.log('[PhotoBrowser] loadPhotos() called');
 	try {
-		console.log('[PhotoBrowser] calling listPhotos()...');
 		photos = await listPhotos();
-		console.log('[PhotoBrowser] listPhotos() returned', photos.length, 'photos');
 		const allFrames = await listAllFrames();
-		console.log('[PhotoBrowser] listAllFrames() returned', allFrames.length, 'frames');
 		const grouped: Record<number, Frame[]> = {};
 		for (const f of allFrames) {
 			if (!grouped[f.photo_id]) grouped[f.photo_id] = [];
@@ -202,11 +201,8 @@ async function loadPhotos() {
 		framesByPhoto = grouped;
 	} catch (error) {
 		console.error('[PhotoBrowser] loadPhotos() FAILED:', error);
-		console.error('[PhotoBrowser] error type:', typeof error, error?.constructor?.name);
-		if (error instanceof Error) console.error('[PhotoBrowser] stack:', error.stack);
 	} finally {
 		loading = false;
-		console.log('[PhotoBrowser] loadPhotos() done, loading =', loading, ', photos.length =', photos.length);
 	}
 }
 
@@ -221,6 +217,7 @@ async function importFiles(paths: string[]) {
 		await loadPhotos();
 	} catch (error) {
 		console.error('Failed to import files:', error);
+		toast.error('Failed to import files');
 	} finally {
 		importing = false;
 	}

@@ -1,8 +1,15 @@
 <script lang="ts">
-import { RotateCw } from '@lucide/svelte';
+import { Pin, RotateCw } from '@lucide/svelte';
 import { isAutoFrame } from '$lib/composition';
 import type { FocalPoint, Frame } from '$lib/db';
 import { updateFrame } from '$lib/db';
+
+const PINNED_KEY = 'enframe.framePointPanel.pinned';
+
+function loadPinned(): boolean {
+	if (typeof localStorage === 'undefined') return false;
+	return localStorage.getItem(PINNED_KEY) === 'true';
+}
 
 interface Props {
 	frames: Frame[];
@@ -41,11 +48,16 @@ let hasExportSelection = $derived(exportSelection.size > 0);
 let panelEl = $state<HTMLDivElement | null>(null);
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
 let visible = $state(false);
+let pinned = $state(loadPinned());
 
 $effect(() => {
 	if (expanded) {
 		visible = true;
-		resetHideTimer();
+		if (pinned) {
+			if (hideTimer) clearTimeout(hideTimer);
+		} else {
+			resetHideTimer();
+		}
 	} else {
 		visible = false;
 	}
@@ -54,13 +66,18 @@ $effect(() => {
 function resetHideTimer() {
 	if (hideTimer) clearTimeout(hideTimer);
 	hideTimer = setTimeout(() => {
-		if (expanded) visible = false;
+		if (expanded && !pinned) visible = false;
 	}, 3000);
 }
 
 function handleInteraction() {
 	visible = true;
-	resetHideTimer();
+	if (!pinned) resetHideTimer();
+}
+
+function togglePinned() {
+	pinned = !pinned;
+	localStorage.setItem(PINNED_KEY, String(pinned));
 }
 
 function rotateFrame(frame: Frame) {
@@ -147,6 +164,17 @@ function isPortrait(frame: Frame): boolean {
 		role="region"
 		aria-label="Frames and points"
 	>
+		<div class="panel-header">
+			<button
+				class="pin-btn"
+				class:active={pinned}
+				title={pinned ? 'Unpin panel (auto-hides after 3s again)' : 'Pin panel open'}
+				onclick={togglePinned}
+			>
+				<Pin size={12} />
+			</button>
+		</div>
+
 		{#if frames.length > 0}
 			<div class="section-label">Frames</div>
 			{#each frames as frame, i (frame.id)}
@@ -238,6 +266,34 @@ function isPortrait(frame: Frame): boolean {
 	@keyframes panel-in {
 		from { opacity: 0; transform: translateY(-4px); }
 		to { opacity: 1; transform: translateY(0); }
+	}
+
+	.panel-header {
+		display: flex;
+		justify-content: flex-end;
+	}
+
+	.pin-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 20px;
+		height: 20px;
+		border: none;
+		border-radius: 4px;
+		background: transparent;
+		color: rgba(255, 255, 255, 0.35);
+		cursor: pointer;
+		transition: background 0.15s, color 0.15s;
+	}
+
+	.pin-btn:hover {
+		background: rgba(255, 255, 255, 0.1);
+		color: white;
+	}
+
+	.pin-btn.active {
+		color: #f59e0b;
 	}
 
 	.section-label {
