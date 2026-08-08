@@ -187,13 +187,9 @@ onDestroy(() => {
 
 async function loadPhotos() {
 	loading = true;
-	console.log('[PhotoBrowser] loadPhotos() called');
 	try {
-		console.log('[PhotoBrowser] calling listPhotos()...');
 		photos = await listPhotos();
-		console.log('[PhotoBrowser] listPhotos() returned', photos.length, 'photos');
 		const allFrames = await listAllFrames();
-		console.log('[PhotoBrowser] listAllFrames() returned', allFrames.length, 'frames');
 		const grouped: Record<number, Frame[]> = {};
 		for (const f of allFrames) {
 			if (!grouped[f.photo_id]) grouped[f.photo_id] = [];
@@ -202,11 +198,8 @@ async function loadPhotos() {
 		framesByPhoto = grouped;
 	} catch (error) {
 		console.error('[PhotoBrowser] loadPhotos() FAILED:', error);
-		console.error('[PhotoBrowser] error type:', typeof error, error?.constructor?.name);
-		if (error instanceof Error) console.error('[PhotoBrowser] stack:', error.stack);
 	} finally {
 		loading = false;
-		console.log('[PhotoBrowser] loadPhotos() done, loading =', loading, ', photos.length =', photos.length);
 	}
 }
 

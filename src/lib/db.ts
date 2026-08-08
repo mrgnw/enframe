@@ -5,18 +5,11 @@ let dbPromise: Promise<Database> | null = null;
 
 export function getDb(): Promise<Database> {
 	if (!dbPromise) {
-		console.log('[db] Database.load() starting...');
-		dbPromise = Database.load('sqlite:enframe.db').then(
-			(db) => {
-				console.log('[db] Database.load() succeeded');
-				return db;
-			},
-			(err) => {
-				console.error('[db] Database.load() FAILED:', err);
-				dbPromise = null; // clear cache so next call retries
-				throw err;
-			}
-		);
+		dbPromise = Database.load('sqlite:enframe.db').catch((err) => {
+			console.error('[db] Database.load() FAILED:', err);
+			dbPromise = null; // clear cache so next call retries
+			throw err;
+		});
 	}
 	return dbPromise;
 }
@@ -57,12 +50,8 @@ export interface FocalPoint {
 }
 
 export async function listPhotos(): Promise<Photo[]> {
-	console.log('[db] listPhotos() calling getDb()...');
 	const db = await getDb();
-	console.log('[db] listPhotos() got db, running SELECT...');
-	const result = await db.select<Photo[]>('SELECT * FROM photos ORDER BY created_at DESC');
-	console.log('[db] listPhotos() returned', result.length, 'photos');
-	return result;
+	return db.select<Photo[]>('SELECT * FROM photos ORDER BY created_at DESC');
 }
 
 export async function getPhoto(id: number): Promise<Photo | null> {
@@ -291,7 +280,6 @@ export async function importFromMetadata(metadataPath: string): Promise<number> 
 		// But the prompt says "Import frameset... import everything".
 		// Let's create a new photo entry if the path is different, but since path is the unique key (conceptually),
 		// we should probably just return the existing ID.
-		console.log('Photo already exists for path:', metadata.photo.file_path);
 		return existing.id;
 	} else {
 		// Create new photo

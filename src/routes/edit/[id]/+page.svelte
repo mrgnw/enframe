@@ -26,7 +26,6 @@ import {
 	addFrame,
 	deleteFocalPoint,
 	deleteFrame,
-	deletePhoto,
 	type FocalPoint,
 	type Frame,
 	getFocalPoints,

@@ -395,7 +395,6 @@ export function computeFrameLabel(
 
 export const AUTO_LANDSCAPE_LABEL = 'Auto L';
 export const AUTO_PORTRAIT_LABEL = 'Auto P';
-export const AUTO_LABELS = [AUTO_LANDSCAPE_LABEL, AUTO_PORTRAIT_LABEL] as const;
 
 export function isAutoFrame(label: string | undefined | null): boolean {
 	return label === AUTO_LANDSCAPE_LABEL || label === AUTO_PORTRAIT_LABEL;
