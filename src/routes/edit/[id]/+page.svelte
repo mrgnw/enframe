@@ -20,23 +20,35 @@ import { findDestination, REQUIRED_DESTINATIONS } from '$lib/destinations';
 import {
 	addFocalPoint,
 	addFrame,
+	appendHistory,
 	deleteFocalPoint,
 	deleteFrame,
+	deleteHistorySeqs,
 	type FocalPoint,
 	type Frame,
 	getFocalPoints,
 	getFrames,
+	getHistorySeqs,
+	getHistorySnapshot,
 	getPhoto,
 	type Photo,
+	restoreSnapshot,
+	setHistoryPos,
 	updateFocalPoint,
 	updateFrame
 } from '$lib/db';
 import { type ExportFormat, exportFrames, exportMetadata, getDefaultExportDir, pickDirectory } from '$lib/export';
-
-type HistoryState = {
-	frames: Frame[];
-	focalPoints: FocalPoint[];
-};
+import {
+	clampPos,
+	HISTORY_DEBOUNCE_MS,
+	parseSnapshot,
+	planAppend,
+	redoSeq,
+	remapId,
+	remapSelection,
+	serializeSnapshot,
+	undoSeq
+} from '$lib/history';
 
 let photo = $state<Photo | null>(null);
 let frames = $state<Frame[]>([]);
@@ -49,8 +61,9 @@ let saveTotal = $state(0);
 
 const photoId = Number($page.params.id);
 
-let history = $state<HistoryState[]>([]);
-let historyIndex = $state(-1);
+let historySeqs = $state<number[]>([]);
+let historyPos = $state(0);
+let restoring = false;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 let exportDir = $state('');
@@ -116,36 +129,70 @@ let busyColor = $derived(exporting ? '#22c55e' : '#3b82f6');
 let progressX = $derived(mouseKnown ? mouseX : typeof window !== 'undefined' ? window.innerWidth / 2 : 0);
 let progressY = $derived(mouseKnown ? mouseY : typeof window !== 'undefined' ? window.innerHeight / 2 : 0);
 
+let canUndo = $derived(undoSeq(historySeqs, historyPos) !== null);
+let canRedo = $derived(redoSeq(historySeqs, historyPos) !== null);
+
 function captureSnapshot() {
+	saveStatus = 'unsaved';
 	if (debounceTimer) clearTimeout(debounceTimer);
 	debounceTimer = setTimeout(() => {
-		history = history.slice(0, historyIndex + 1);
-		history.push({
-			frames: structuredClone(frames),
-			focalPoints: structuredClone(focalPoints)
-		});
-		if (history.length > 50) {
-			history = history.slice(-50);
-		}
-		historyIndex = history.length - 1;
-		saveStatus = 'unsaved';
-	}, 500);
+		debounceTimer = null;
+		void pushHistory();
+	}, HISTORY_DEBOUNCE_MS);
 }
 
-function undo() {
-	if (historyIndex <= 0) return;
-	historyIndex--;
-	const state = history[historyIndex];
-	frames = structuredClone(state.frames);
-	focalPoints = structuredClone(state.focalPoints);
+async function pushHistory() {
+	if (restoring) return;
+	const { drop, seq } = planAppend(historySeqs, historyPos);
+	try {
+		await deleteHistorySeqs(photoId, drop);
+		await appendHistory(photoId, seq, serializeSnapshot(frames, focalPoints));
+		await setHistoryPos(photoId, seq);
+		historySeqs = historySeqs.filter((s) => !drop.includes(s)).concat(seq);
+		historyPos = seq;
+	} catch (error) {
+		console.error('Failed to record history:', error);
+	}
 }
 
-function redo() {
-	if (historyIndex >= history.length - 1) return;
-	historyIndex++;
-	const state = history[historyIndex];
-	frames = structuredClone(state.frames);
-	focalPoints = structuredClone(state.focalPoints);
+async function flushHistory() {
+	if (!debounceTimer) return;
+	clearTimeout(debounceTimer);
+	debounceTimer = null;
+	await pushHistory();
+}
+
+async function undo() {
+	await flushHistory();
+	await restoreSeq(undoSeq(historySeqs, historyPos));
+}
+
+async function redo() {
+	await flushHistory();
+	await restoreSeq(redoSeq(historySeqs, historyPos));
+}
+
+async function restoreSeq(seq: number | null) {
+	if (seq === null || restoring) return;
+	restoring = true;
+	try {
+		const stored = await getHistorySnapshot(photoId, seq);
+		if (stored === null) return;
+		const frameIds = await restoreSnapshot(photoId, parseSnapshot(stored));
+		await setHistoryPos(photoId, seq);
+		historyPos = seq;
+		selectedFrameId = remapId(selectedFrameId, frameIds);
+		selectedPointId = null;
+		exportSelection = remapSelection(exportSelection, frameIds);
+		await loadPhoto();
+		saveStatus = 'saved';
+	} catch (error) {
+		console.error('Failed to restore history:', error);
+		toast.error('Undo failed');
+	} finally {
+		restoring = false;
+	}
+	await recomputeAutoFrames();
 }
 
 function isInputFocused(): boolean {
@@ -283,15 +330,16 @@ async function saveMetadata() {
 
 onMount(async () => {
 	await loadPhoto();
-	history.push({
-		frames: structuredClone(frames),
-		focalPoints: structuredClone(focalPoints)
-	});
-	historyIndex = 0;
+	historySeqs = await getHistorySeqs(photoId);
+	historyPos = clampPos(historySeqs, photo?.history_pos ?? 0);
+	if (historySeqs.length === 0) {
+		await pushHistory();
+		saveStatus = 'saved';
+	}
 });
 
 function handleChange() {
-	if (loading || history.length === 0) return;
+	if (loading || historySeqs.length === 0) return;
 	recomputeAutoFrames();
 	captureSnapshot();
 }
@@ -365,7 +413,6 @@ async function handleDeleteFrame(frameId: number) {
 		exportSelection = next;
 	}
 	await loadPhoto();
-	saveStatus = 'unsaved';
 	captureSnapshot();
 }
 
@@ -376,7 +423,6 @@ async function handleDeletePoint(pointId: number) {
 	}
 	await loadPhoto();
 	await recomputeAutoFrames();
-	saveStatus = 'unsaved';
 	captureSnapshot();
 }
 
@@ -612,8 +658,8 @@ async function handleSetOutputDir() {
 
 		<div class="floating-ui">
 			<FloatingToolbar
-				canUndo={historyIndex > 0}
-				canRedo={historyIndex < history.length - 1}
+				{canUndo}
+				{canRedo}
 				{saveStatus}
 				{panelExpanded}
 				{previewOpen}
