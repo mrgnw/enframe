@@ -1,20 +1,6 @@
-import { readTextFile } from '@tauri-apps/plugin-fs';
-import Database from '@tauri-apps/plugin-sql';
+import { getDb, readTextFile } from './bridge';
 import { isLegacyAutoLabel } from './composition';
 import type { HistorySnapshot } from './history';
-
-let dbPromise: Promise<Database> | null = null;
-
-export function getDb(): Promise<Database> {
-	if (!dbPromise) {
-		dbPromise = Database.load('sqlite:enframe.db').catch((err) => {
-			console.error('[db] Database.load() FAILED:', err);
-			dbPromise = null; // clear cache so next call retries
-			throw err;
-		});
-	}
-	return dbPromise;
-}
 
 export interface Photo {
 	id: number;

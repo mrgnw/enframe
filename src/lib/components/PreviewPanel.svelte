@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { Frame, Photo } from '$lib/db';
-import { getImageSrc } from '$lib/tauri';
+import { getImageSrc } from '$lib/bridge';
 
 interface Props {
 	photo: Photo;

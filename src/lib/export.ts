@@ -1,7 +1,5 @@
-import { invoke } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-dialog';
-import { writeFile } from '@tauri-apps/plugin-fs';
 import { toast } from 'svelte-sonner';
+import { pickDirectory as bridgePickDirectory, invoke, writeFile } from './bridge';
 import { objectPosition } from './composition';
 import type { FocalPoint, Frame, Photo } from './db';
 import { findDestination } from './destinations';
@@ -53,14 +51,8 @@ export function getDefaultExportDir(photoPath: string): string {
 	return lastSlash > 0 ? photoPath.substring(0, lastSlash) : '/';
 }
 
-export async function pickDirectory(title = 'Select export directory'): Promise<string | null> {
-	const result = await open({
-		directory: true,
-		multiple: false,
-		title
-	});
-	if (!result || typeof result !== 'string') return null;
-	return result;
+export function pickDirectory(title = 'Select export directory'): Promise<string | null> {
+	return bridgePickDirectory(title);
 }
 
 async function resolveExportSource(photo: Photo): Promise<string> {

@@ -12,7 +12,7 @@ import {
 	listLrRecent,
 	searchLrAssets
 } from '$lib/lightroom';
-import { getImageSrc } from '$lib/tauri';
+import { getImageSrc } from '$lib/bridge';
 
 interface Props {
 	onPhotosImported?: () => void;

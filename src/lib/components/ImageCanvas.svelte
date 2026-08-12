@@ -1,7 +1,7 @@
 <script lang="ts">
 import { clipsRequiredPoints } from '$lib/composition';
 import type { FocalPoint, Frame, Photo } from '$lib/db';
-import { getImageSrc } from '$lib/tauri';
+import { getImageSrc } from '$lib/bridge';
 import CompositionGuide from './CompositionGuide.svelte';
 import DraggableFocalPoint from './DraggableFocalPoint.svelte';
 import ResizableFrame from './ResizableFrame.svelte';
