@@ -3,8 +3,18 @@ mod lightroom;
 
 use base64::Engine;
 use image::ImageEncoder;
+use rawler::decoders::{Decoder, RawDecodeParams};
+use rawler::rawsource::RawSource;
 use std::fs;
 use std::process::Command;
+use std::sync::Arc;
+
+// sips survives for HEIC/HEIF only: rawler decodes camera RAW formats and the
+// `image` crate has no HEIF codec, so macOS is the only decoder available.
+fn is_heif(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    lower.ends_with(".heic") || lower.ends_with(".heif")
+}
 
 fn sips_convert_to_tiff(source: &str) -> Result<String, String> {
     let tmp = std::env::temp_dir().join(format!("enframe_sips_{}.tiff", std::process::id()));
@@ -22,26 +32,32 @@ fn sips_convert_to_tiff(source: &str) -> Result<String, String> {
     Ok(tmp_str)
 }
 
-fn needs_sips(path: &str, file_bytes: &[u8]) -> bool {
-    let lower = path.to_lowercase();
-    if lower.ends_with(".dng")
-        || lower.ends_with(".arw")
-        || lower.ends_with(".cr2")
-        || lower.ends_with(".cr3")
-        || lower.ends_with(".nef")
-        || lower.ends_with(".heic")
-        || lower.ends_with(".heif")
+// ponytail: embedded previews carry the in-camera render, so prefer them, but
+// Sony ARW previews cap at 1616x1080 and fall through to a full demosaic.
+fn preview_is_full_size(preview_width: u32, raw_width: usize) -> bool {
+    preview_width as usize * 10 >= raw_width * 9
+}
+
+fn decode_raw(decoder: &dyn Decoder, src: &RawSource) -> Result<image::DynamicImage, String> {
+    let params = RawDecodeParams::default();
+    let dims = decoder
+        .raw_image(src, &params, true)
+        .map_err(|e| format!("RAW header error: {e}"))?;
+
+    if let Ok(Some(preview)) = decoder.preview_image(src, &params)
+        && preview_is_full_size(preview.width(), dims.width)
     {
-        return true;
+        return Ok(preview);
     }
-    // DNG/TIFF magic with lossy JPEG compression (LR CC proxies have no extension)
-    if file_bytes.len() >= 4 {
-        let is_tiff = &file_bytes[0..4] == b"II\x2a\x00" || &file_bytes[0..4] == b"MM\x00\x2a";
-        if is_tiff && image::open(path).is_err() {
-            return true;
-        }
-    }
-    false
+
+    let raw = decoder
+        .raw_image(src, &params, false)
+        .map_err(|e| format!("RAW decode error: {e}"))?;
+    rawler::imgop::develop::RawDevelop::default()
+        .develop_intermediate(&raw)
+        .map_err(|e| format!("RAW develop error: {e}"))?
+        .to_dynamic_image()
+        .ok_or_else(|| "RAW develop produced no image".to_string())
 }
 
 #[tauri::command]
@@ -72,21 +88,17 @@ fn crop_and_export(
     format: String,
 ) -> Result<(), String> {
     let file_bytes = fs::read(&source_path).map_err(|e| format!("Read error: {e}"))?;
+    let src = RawSource::new_from_shared_vec(Arc::new(file_bytes));
+    let file_bytes = src.buf();
 
     let is_jxl = source_path.ends_with(".jxl")
         || (file_bytes.len() >= 2
             && (file_bytes[0..2] == [0xFF, 0x0A]
                 || file_bytes.starts_with(b"\x00\x00\x00\x0CJXL ")));
 
-    let sips_tmp: Option<String> = if !is_jxl && needs_sips(&source_path, &file_bytes) {
-        Some(sips_convert_to_tiff(&source_path)?)
-    } else {
-        None
-    };
-
     let img = if is_jxl {
         let decoder = jxl_oxide::JxlImage::builder()
-            .read(&file_bytes[..])
+            .read(file_bytes)
             .map_err(|e| format!("JXL decode error: {e}"))?;
         let render = decoder
             .render_frame(0)
@@ -109,16 +121,18 @@ fn crop_and_export(
         }
         image::RgbImage::from_raw(w, h, rgb_buf)
             .ok_or_else(|| "Failed to create image from JXL data".to_string())?
+    } else if let Ok(decoder) = rawler::get_decoder(&src) {
+        decode_raw(decoder.as_ref(), &src)?.to_rgb8()
+    } else if is_heif(&source_path) {
+        let tmp = sips_convert_to_tiff(&source_path)?;
+        let decoded = image::open(&tmp).map_err(|e| format!("Image open error: {e}"));
+        let _ = fs::remove_file(&tmp);
+        decoded?.to_rgb8()
     } else {
-        let open_path = sips_tmp.as_deref().unwrap_or(&source_path);
-        let dyn_img = image::open(open_path).map_err(|e| format!("Image open error: {e}"))?;
-        dyn_img.to_rgb8()
+        image::open(&source_path)
+            .map_err(|e| format!("Image open error: {e}"))?
+            .to_rgb8()
     };
-
-    // Clean up temp file
-    if let Some(ref tmp) = sips_tmp {
-        let _ = fs::remove_file(tmp);
-    }
 
     let img_w = img.width();
     let img_h = img.height();
@@ -229,4 +243,21 @@ ALTER TABLE photos ADD COLUMN history_pos INTEGER NOT NULL DEFAULT 0;",
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::preview_is_full_size;
+
+    #[test]
+    fn sony_arw_preview_falls_through_to_develop() {
+        assert!(!preview_is_full_size(1616, 6024));
+    }
+
+    #[test]
+    fn full_size_preview_is_used() {
+        assert!(preview_is_full_size(6024, 6024));
+        assert!(preview_is_full_size(5422, 6024));
+        assert!(!preview_is_full_size(5421, 6024));
+    }
 }
