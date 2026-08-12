@@ -1,10 +1,8 @@
 <script lang="ts">
 import { Aperture, ChevronDown, ChevronUp, FolderPlus, ImageOff, Link } from '@lucide/svelte';
-import { getCurrentWebview } from '@tauri-apps/api/webview';
-import { open } from '@tauri-apps/plugin-dialog';
-import { stat } from '@tauri-apps/plugin-fs';
 import { onDestroy, onMount } from 'svelte';
 import { toast } from 'svelte-sonner';
+import { getImageSrc, onDragDrop, pickFiles, stat } from '$lib/bridge';
 import {
 	type Frame,
 	importFile,
@@ -15,7 +13,6 @@ import {
 	updatePhoto
 } from '$lib/db';
 import { DESTINATIONS, REQUIRED_DESTINATIONS } from '$lib/destinations';
-import { getImageSrc } from '$lib/tauri';
 import { getWatchDir, persistWatchDir } from '$lib/watch';
 import LightroomBrowser from './LightroomBrowser.svelte';
 import WatchDir from './WatchDir.svelte';
@@ -69,13 +66,10 @@ function handleImageError(id: number) {
 }
 
 async function handleLinkImage(id: number) {
-	const selected = await open({
-		multiple: false,
-		filters: [{ name: 'Images', extensions: Array.from(IMAGE_EXTS) }]
-	});
-	if (!selected || typeof selected !== 'string') return;
+	const selected = await pickFiles({ extensions: Array.from(IMAGE_EXTS) });
+	if (!selected) return;
 
-	await updatePhotoAndReload(id, selected);
+	await updatePhotoAndReload(id, selected[0]);
 }
 
 async function updatePhotoAndReload(id: number, filePath: string) {
@@ -103,10 +97,10 @@ async function updatePhotoAndReload(id: number, filePath: string) {
 onMount(async () => {
 	await loadPhotos();
 
-	unlisten = await getCurrentWebview().onDragDropEvent(async (event) => {
-		if (event.payload.type === 'enter') {
+	unlisten = await onDragDrop(async (payload) => {
+		if (payload.type === 'enter') {
 			dragging = true;
-			const paths = event.payload.paths;
+			const paths = payload.paths;
 			if (paths.length === 1) {
 				try {
 					const info = await stat(paths[0]);
@@ -117,12 +111,12 @@ onMount(async () => {
 			} else {
 				draggingDir = false;
 			}
-		} else if (event.payload.type === 'leave') {
+		} else if (payload.type === 'leave') {
 			dragging = false;
 			draggingDir = false;
-		} else if (event.payload.type === 'drop') {
-			const paths = event.payload.paths;
-			const position = event.payload.position;
+		} else if (payload.type === 'drop') {
+			const paths = payload.paths;
+			const position = payload.position;
 			dragging = false;
 			draggingDir = false;
 
@@ -225,18 +219,12 @@ async function importFiles(paths: string[]) {
 }
 
 async function handleOpenClick() {
-	const selected = await open({
+	const selected = await pickFiles({
 		multiple: true,
-		filters: [
-			{
-				name: 'Images',
-				extensions: ['jpg', 'jpeg', 'png', 'jxl', 'tiff', 'tif', 'webp', 'heic', 'dng', 'arw']
-			}
-		]
+		extensions: ['jpg', 'jpeg', 'png', 'jxl', 'tiff', 'tif', 'webp', 'heic', 'dng', 'arw']
 	});
 	if (!selected) return;
-	const files = Array.isArray(selected) ? selected : [selected];
-	await importFiles(files);
+	await importFiles(selected);
 }
 </script>
 

@@ -1,7 +1,7 @@
 <script lang="ts">
-import { invoke } from '@tauri-apps/api/core';
 import { onMount } from 'svelte';
 import { goto } from '$app/navigation';
+import { invoke } from '$lib/bridge';
 import PhotoBrowser from '$lib/components/PhotoBrowser.svelte';
 
 onMount(async () => {

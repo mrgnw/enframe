@@ -1,9 +1,8 @@
 <script lang="ts">
 import { Eye, FolderOpen, X } from '@lucide/svelte';
-import { open } from '@tauri-apps/plugin-dialog';
 import { onDestroy, onMount } from 'svelte';
+import { getImageSrc, pickDirectory } from '$lib/bridge';
 import { importFile } from '$lib/db';
-import { getImageSrc } from '$lib/tauri';
 import { persistWatchDir, scanWatchDir } from '$lib/watch';
 
 interface Props {
@@ -91,8 +90,8 @@ function updateDir(dir: string | null) {
 }
 
 async function pickWatchDir() {
-	const dir = await open({ directory: true, title: 'Select folder to watch' });
-	if (!dir || typeof dir !== 'string') return;
+	const dir = await pickDirectory('Select folder to watch');
+	if (!dir) return;
 	updateDir(dir);
 }
 
