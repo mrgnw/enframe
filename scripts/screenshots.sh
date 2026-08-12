@@ -13,10 +13,10 @@ if [ ! -f "$FIXTURE_DB" ]; then
 fi
 
 # Build screenshot binary if needed
-BINARY="$TAURI_DIR/target/release/screenshots"
-if [ ! -f "$BINARY" ] || [ "$TAURI_DIR/src/bin/screenshots.rs" -nt "$BINARY" ]; then
+BINARY="$TAURI_DIR/target/release/examples/screenshots"
+if [ ! -f "$BINARY" ] || [ "$TAURI_DIR/examples/screenshots.rs" -nt "$BINARY" ]; then
 	echo "Building screenshot binary..."
-	cargo build --release --features screenshots --manifest-path "$TAURI_DIR/Cargo.toml" --bin screenshots
+	cargo build --release --features screenshots --manifest-path "$TAURI_DIR/Cargo.toml" --example screenshots
 fi
 
 # Build the app if needed
