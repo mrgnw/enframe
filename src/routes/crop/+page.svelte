@@ -397,10 +397,12 @@ function setFormat(next: ExportFormat) {
 				<span class="mark br"></span>
 				<span class="grain"></span>
 			</div>
-			<h1>One image, no library</h1>
+			<h1>Frame your image</h1>
 			<p class="lede">
-				Drop a photo here to frame it. Bring its <code>.metadata.json</code> along and the crops you made last time
-				come back with it.
+				Drop an image and create multiple ways to frame it. One photo can tell many stories.
+			</p>
+			<p class="lede small">
+				Bring its <code>.metadata.json</code> along and the crops you made last time come back with it.
 			</p>
 			<button class="open" onclick={chooseImage} disabled={opening}>
 				{opening ? openingNote || 'Opening…' : 'Choose an image'}
@@ -606,10 +608,16 @@ function setFormat(next: ExportFormat) {
 
 	.lede {
 		max-width: 42ch;
-		margin: 0 0 1.75rem;
+		margin: 0 0 0.5rem;
 		color: #a1a1aa;
 		font-size: 0.9rem;
 		line-height: 1.65;
+	}
+
+	.lede.small {
+		margin: 0 0 1.75rem;
+		color: #71717a;
+		font-size: 0.8rem;
 	}
 
 	code {
