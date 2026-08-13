@@ -1,3 +1,5 @@
+import { RAW_EXTENSIONS } from './raw';
+
 interface PickerAccept {
 	description?: string;
 	accept: Record<string, string[]>;
@@ -29,6 +31,8 @@ export const fileSystemAccess: boolean =
 	typeof window.showOpenFilePicker === 'function' &&
 	typeof window.showDirectoryPicker === 'function';
 
+const RAW_ACCEPT = RAW_EXTENSIONS.map((extension) => `.${extension}`);
+
 export const IMAGE_TYPES: PickerAccept[] = [
 	{
 		description: 'Image and sidecar',
@@ -36,6 +40,11 @@ export const IMAGE_TYPES: PickerAccept[] = [
 			'image/*': ['.jpg', '.jpeg', '.png', '.webp', '.avif', '.gif', '.tif', '.tiff'],
 			'application/json': ['.json']
 		}
+	},
+	{
+		// Camera RAW has no image/* MIME the pickers agree on, so it gets its own entry.
+		description: 'Camera RAW',
+		accept: { 'application/octet-stream': RAW_ACCEPT }
 	}
 ];
 
@@ -58,7 +67,7 @@ function pickWithInput(): Promise<PickedFile[]> {
 		const input = document.createElement('input');
 		input.type = 'file';
 		input.multiple = true;
-		input.accept = 'image/*,application/json,.json';
+		input.accept = `image/*,application/json,.json,${RAW_ACCEPT.join(',')}`;
 		input.addEventListener('change', () => {
 			resolve(Array.from(input.files ?? []).map((file) => ({ file, handle: null })));
 		});

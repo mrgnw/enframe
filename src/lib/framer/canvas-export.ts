@@ -39,7 +39,7 @@ function clamp(value: number, low: number, high: number): number {
 	return Math.min(high, Math.max(low, value));
 }
 
-function canvasBlob(canvas: HTMLCanvasElement, mime: string, quality: number): Promise<Blob> {
+export function canvasBlob(canvas: HTMLCanvasElement, mime: string, quality: number): Promise<Blob> {
 	return new Promise((resolve, reject) => {
 		canvas.toBlob(
 			(blob) => {
