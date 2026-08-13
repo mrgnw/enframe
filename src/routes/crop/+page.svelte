@@ -15,6 +15,7 @@ import {
 import Framer from '$lib/framer/Framer.svelte';
 import { MemoryStore } from '$lib/framer/memory-store.svelte';
 import { generateFrameFilename, getDefaultExportDir, sidecarJson, sidecarName } from '$lib/framer/output';
+import { decodeRaw, isRawName } from '$lib/framer/raw';
 import {
 	type CropDoc,
 	CROP_DOC_VERSION,
@@ -43,6 +44,7 @@ let nativePath = $state<string | null>(null);
 let mismatch = $state<string | null>(null);
 let dragging = $state(false);
 let opening = $state(false);
+let openingNote = $state('');
 
 let format = $state<ExportFormat>('avif');
 let exportDir = $state('');
@@ -111,6 +113,21 @@ async function measure(src: string): Promise<DocImage & { element: HTMLImageElem
 	return { name: '', width: element.naturalWidth, height: element.naturalHeight, element };
 }
 
+// A browser cannot put a RAW in an <img>, so develop it first and hand the rest of the
+// app the decoded pixels. Everything downstream — the natural dimensions the CropDoc
+// records, and the canvas the exporter crops — then reads from the decode, not the file.
+async function sourceFor(file: File): Promise<string> {
+	if (!isRawName(file.name)) return URL.createObjectURL(file);
+	openingNote = `Developing ${file.name}…`;
+	const pending = toast.loading(openingNote);
+	try {
+		return URL.createObjectURL(await decodeRaw(file));
+	} finally {
+		toast.dismiss(pending);
+		openingNote = '';
+	}
+}
+
 async function openPicked(picked: PickedFile[]) {
 	if (picked.length === 0) return;
 	const image = picked.find((p) => !isSidecar(p.file.name));
@@ -127,7 +144,7 @@ async function openPicked(picked: PickedFile[]) {
 
 	opening = true;
 	try {
-		const url = URL.createObjectURL(image.file);
+		const url = await sourceFor(image.file);
 		const measured = await measure(url);
 		if (imageSrc.startsWith('blob:')) URL.revokeObjectURL(imageSrc);
 		imageSrc = url;
@@ -140,7 +157,7 @@ async function openPicked(picked: PickedFile[]) {
 		);
 	} catch (error) {
 		console.error('Failed to open image:', error);
-		toast.error('Could not open that image');
+		toast.error(error instanceof Error && error.message ? error.message : 'Could not open that image');
 	} finally {
 		opening = false;
 	}
@@ -386,7 +403,7 @@ function setFormat(next: ExportFormat) {
 				come back with it.
 			</p>
 			<button class="open" onclick={chooseImage} disabled={opening}>
-				{opening ? 'Opening…' : 'Choose an image'}
+				{opening ? openingNote || 'Opening…' : 'Choose an image'}
 			</button>
 			<p class="fine">
 				Nothing is imported and nothing leaves this machine.
