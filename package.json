@@ -40,6 +40,7 @@
 		"code-quality": "bun run format && bun run lint:fix && bun run check",
 		"clean": "rm -rf node_modules && rm -rf .svelte-kit && rm -rf src-tauri/gen && rm -rf src-tauri/target && rm -rf src-tauri/versoview",
 		"reinstall": "bun run clean && bun install",
+		"serve": "cargo run --release --manifest-path src-tauri/Cargo.toml -p enframe-serve",
 		"test": "bun test",
 		"screenshots": "bash scripts/screenshots.sh"
 	},

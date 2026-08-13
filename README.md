@@ -74,6 +74,36 @@ just dev
 bun run dev
 ```
 
+## Headless serve mode
+
+The same UI runs in a plain browser, backed by an HTTP server instead of Tauri.
+
+```sh
+bun run sveltekit:build
+bun run serve
+```
+
+Then point a tunnel (Tailscale, cloudflared, ssh -R) at `127.0.0.1:5911`.
+
+The server reads and writes the same database as the desktop app
+(`~/Library/Application Support/com.enframe.app/enframe.db`) and creates it with all
+migrations applied if it does not exist yet. It has **no authentication** — it binds to
+loopback only, and exposing it is the tunnel's job.
+
+Overrides, as flags or environment variables:
+
+| Flag | Env | Default |
+| --- | --- | --- |
+| `--host` | `ENFRAME_HOST` | `127.0.0.1` |
+| `--port` | `ENFRAME_PORT` | `5911` |
+| `--db` | `ENFRAME_DB` | app-support `enframe.db` |
+| `--web` | `ENFRAME_WEB` | `build` |
+| `--inbox` | `ENFRAME_INBOX` | app-support `inbox` |
+
+Browsers give no filesystem paths, so serve mode substitutes a server-side file picker
+for the native dialogs, and drag-dropped files are uploaded into the inbox directory and
+imported from there.
+
 ## Database Schema
 
 - `photos`: imported images (local or from Lightroom)

@@ -288,7 +288,8 @@ async fn upload(
     let filename = headers
         .get("x-filename")
         .and_then(|v| v.to_str().ok())
-        .map(|v| v.rsplit('/').next().unwrap_or(v).to_string())
+        .map(|v| percent_encoding::percent_decode_str(v).decode_utf8_lossy().into_owned())
+        .map(|v| v.rsplit('/').next().unwrap_or(&v).to_string())
         .filter(|v| !v.is_empty() && v != "." && v != "..")
         .ok_or((StatusCode::BAD_REQUEST, "missing x-filename header".into()))?;
 

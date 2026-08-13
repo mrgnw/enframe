@@ -112,8 +112,31 @@ export async function stat(path: string): Promise<{ isDirectory: boolean }> {
 	return response.json() as Promise<{ isDirectory: boolean }>;
 }
 
+export interface LsEntry {
+	name: string;
+	path: string;
+	isDirectory: boolean;
+	isImage: boolean;
+}
+
+export interface Listing {
+	path: string;
+	parent: string | null;
+	entries: LsEntry[];
+}
+
+export async function listDirectory(dir?: string): Promise<Listing> {
+	const query = dir ? `?dir=${encodeURIComponent(dir)}` : '';
+	const response = await request(`/api/ls${query}`);
+	return response.json() as Promise<Listing>;
+}
+
 export async function pickDirectory(title: string): Promise<string | null> {
-	if (!isTauri()) return null;
+	if (!isTauri()) {
+		const { browserPick } = await import('./picker');
+		const selected = await browserPick({ title, directory: true });
+		return selected?.[0] ?? null;
+	}
 	const { open } = await import('@tauri-apps/plugin-dialog');
 	const selected = await open({ directory: true, multiple: false, title });
 	return typeof selected === 'string' ? selected : null;
@@ -124,7 +147,10 @@ export async function pickFiles(options: {
 	multiple?: boolean;
 	extensions?: string[];
 }): Promise<string[] | null> {
-	if (!isTauri()) return null;
+	if (!isTauri()) {
+		const { browserPick } = await import('./picker');
+		return browserPick(options);
+	}
 	const { open } = await import('@tauri-apps/plugin-dialog');
 	const selected = await open({
 		title: options.title,
@@ -141,8 +167,63 @@ export type DragDropPayload =
 	| { type: 'drop'; paths: string[]; position: { x: number; y: number } }
 	| { type: 'leave' };
 
+// Browser drops carry bytes, not paths, so each file lands in the server inbox and
+// the resulting absolute path stands in for the one Tauri would have given us.
+async function uploadDropped(file: File): Promise<string> {
+	const response = await request('/api/upload', {
+		method: 'POST',
+		headers: { 'x-filename': encodeURIComponent(file.name) },
+		body: file
+	});
+	const uploaded = (await response.json()) as { path: string };
+	return uploaded.path;
+}
+
+function browserDragDrop(handler: (payload: DragDropPayload) => void): () => void {
+	let depth = 0;
+
+	const enter = (event: DragEvent) => {
+		event.preventDefault();
+		depth += 1;
+		if (depth === 1) {
+			handler({ type: 'enter', paths: [], position: { x: event.clientX, y: event.clientY } });
+		}
+	};
+	const over = (event: DragEvent) => {
+		event.preventDefault();
+		handler({ type: 'over', position: { x: event.clientX, y: event.clientY } });
+	};
+	const leave = () => {
+		depth = Math.max(0, depth - 1);
+		if (depth === 0) handler({ type: 'leave' });
+	};
+	const drop = async (event: DragEvent) => {
+		event.preventDefault();
+		depth = 0;
+		const files = Array.from(event.dataTransfer?.files ?? []);
+		const position = { x: event.clientX, y: event.clientY };
+		const paths: string[] = [];
+		for (const file of files) {
+			paths.push(await uploadDropped(file));
+		}
+		handler({ type: 'drop', paths, position });
+	};
+
+	window.addEventListener('dragenter', enter);
+	window.addEventListener('dragover', over);
+	window.addEventListener('dragleave', leave);
+	window.addEventListener('drop', drop);
+
+	return () => {
+		window.removeEventListener('dragenter', enter);
+		window.removeEventListener('dragover', over);
+		window.removeEventListener('dragleave', leave);
+		window.removeEventListener('drop', drop);
+	};
+}
+
 export async function onDragDrop(handler: (payload: DragDropPayload) => void): Promise<() => void> {
-	if (!isTauri()) return () => {};
+	if (!isTauri()) return browserDragDrop(handler);
 	const { getCurrentWebview } = await import('@tauri-apps/api/webview');
 	return getCurrentWebview().onDragDropEvent((event) => handler(event.payload));
 }

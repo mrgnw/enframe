@@ -1327,6 +1327,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "enframe",
+ "percent-encoding",
  "rusqlite",
  "serde",
  "serde_json",
