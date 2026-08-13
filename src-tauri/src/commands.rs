@@ -3,6 +3,7 @@ use image::ImageEncoder;
 use rawler::decoders::{Decoder, RawDecodeParams};
 use rawler::rawsource::RawSource;
 use std::fs;
+use std::io::Cursor;
 use std::process::Command;
 use std::sync::Arc;
 
@@ -55,6 +56,23 @@ fn decode_raw(decoder: &dyn Decoder, src: &RawSource) -> Result<image::DynamicIm
         .map_err(|e| format!("RAW develop error: {e}"))?
         .to_dynamic_image()
         .ok_or_else(|| "RAW develop produced no image".to_string())
+}
+
+// Browsers cannot decode camera RAW, so serve mode renders a JPEG rather than shipping
+// the original bytes to an <img>. Returns None when the file is not RAW at all.
+pub fn raw_as_jpeg(path: &str) -> Result<Option<Vec<u8>>, String> {
+    let file_bytes = fs::read(path).map_err(|e| format!("Read error: {e}"))?;
+    let src = RawSource::new_from_shared_vec(Arc::new(file_bytes));
+    let Ok(decoder) = rawler::get_decoder(&src) else {
+        return Ok(None);
+    };
+    let image = decode_raw(decoder.as_ref(), &src)?;
+    let mut jpeg = Vec::new();
+    image
+        .to_rgb8()
+        .write_to(&mut Cursor::new(&mut jpeg), image::ImageFormat::Jpeg)
+        .map_err(|e| format!("JPEG encode error: {e}"))?;
+    Ok(Some(jpeg))
 }
 
 #[tauri::command]

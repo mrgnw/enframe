@@ -1,4 +1,4 @@
-import type { FocalPoint, Frame } from './db';
+import { type FocalPoint, type Frame, frameRecord, pointRecord } from './framer/types';
 
 export const HISTORY_CAP = 100;
 export const HISTORY_DEBOUNCE_MS = 500;
@@ -6,36 +6,6 @@ export const HISTORY_DEBOUNCE_MS = 500;
 export interface HistorySnapshot {
 	frames: Frame[];
 	focalPoints: FocalPoint[];
-}
-
-function frameRecord(frame: Frame): Frame {
-	return {
-		id: frame.id,
-		photo_id: frame.photo_id,
-		label: frame.label,
-		destination: frame.destination ?? null,
-		x: frame.x,
-		y: frame.y,
-		width: frame.width,
-		height: frame.height,
-		rotation: frame.rotation ?? 0,
-		is_default: !!frame.is_default,
-		is_auto: !!frame.is_auto,
-		created_at: frame.created_at
-	};
-}
-
-function pointRecord(point: FocalPoint): FocalPoint {
-	return {
-		id: point.id,
-		photo_id: point.photo_id,
-		frame_id: point.frame_id ?? undefined,
-		x: point.x,
-		y: point.y,
-		label: point.label,
-		required: !!point.required,
-		created_at: point.created_at
-	};
 }
 
 export function serializeSnapshot(frames: Frame[], focalPoints: FocalPoint[]): string {

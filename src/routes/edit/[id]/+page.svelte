@@ -37,7 +37,8 @@ import {
 	updateFocalPoint,
 	updateFrame
 } from '$lib/db';
-import { type ExportFormat, exportFrames, exportMetadata, getDefaultExportDir, pickDirectory } from '$lib/export';
+import { exportFrames, exportMetadata, getDefaultExportDir, pickDirectory } from '$lib/export';
+import { CROP_DOC_VERSION, type ExportFormat } from '$lib/framer/types';
 import {
 	clampPos,
 	HISTORY_DEBOUNCE_MS,
@@ -575,7 +576,16 @@ async function handleExport() {
 		exportProgress = toExport.length;
 		await yieldFrame();
 		const basename = photo.title?.replace(/\.[^/.]+$/, '').replace(/\s+/g, '-') || 'photo';
-		await exportMetadata(photo, toExport, focalPoints, `${exportDir}/${basename}.metadata.json`);
+		await exportMetadata(
+			photo,
+			{
+				version: CROP_DOC_VERSION,
+				image: { name: photo.title ?? '', width: imageWidth, height: imageHeight },
+				frames: toExport,
+				focalPoints
+			},
+			`${exportDir}/${basename}.metadata.json`
+		);
 		exportProgress = exportTotal;
 		toast.success(`Exported ${toExport.length} frame${toExport.length === 1 ? '' : 's'}`);
 	} catch (error) {

@@ -5,7 +5,7 @@ use axum::Json;
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Path, Query, Request, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use roots::Roots;
@@ -408,6 +408,23 @@ async fn img(
         format!("/{path}")
     };
     let file = state.roots.check_read(&absolute).map_err(denied)?;
+
+    let source = file.clone();
+    let raw = blocking(move || app_lib::commands::raw_as_jpeg(&text(source))).await?;
+
+    // ponytail: decoded on every request; the immutable Cache-Control keeps the browser
+    // from asking twice. Add a keyed cache if cold loads of a large library ever hurt.
+    if let Some(jpeg) = raw {
+        return Ok((
+            [
+                (header::CONTENT_TYPE, "image/jpeg"),
+                (header::CACHE_CONTROL, "private, max-age=31536000, immutable"),
+            ],
+            jpeg,
+        )
+            .into_response());
+    }
+
     ServeFile::new(file)
         .oneshot(request)
         .await

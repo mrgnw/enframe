@@ -1,5 +1,6 @@
 import { getDb, readTextFile } from './bridge';
 import { isLegacyAutoLabel } from './composition';
+import type { FocalPoint as DocFocalPoint, Frame as DocFrame } from './framer/types';
 import type { HistorySnapshot } from './history';
 
 export interface Photo {
@@ -14,29 +15,13 @@ export interface Photo {
 	created_at: string;
 }
 
-export interface Frame {
-	id: number;
+export interface Frame extends DocFrame {
 	photo_id: number;
-	label?: string;
-	destination?: string | null;
-	x: number;
-	y: number;
-	width: number;
-	height: number;
-	rotation: number;
-	is_default: boolean;
-	is_auto: boolean;
 	created_at: string;
 }
 
-export interface FocalPoint {
-	id: number;
+export interface FocalPoint extends DocFocalPoint {
 	photo_id: number;
-	frame_id?: number;
-	x: number;
-	y: number;
-	label?: string;
-	required: boolean;
 	created_at: string;
 }
 

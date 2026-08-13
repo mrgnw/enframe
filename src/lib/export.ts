@@ -1,11 +1,12 @@
 import { toast } from 'svelte-sonner';
 import { pickDirectory as bridgePickDirectory, invoke, writeFile } from './bridge';
 import { objectPosition } from './composition';
-import type { FocalPoint, Frame, Photo } from './db';
+import type { Photo } from './db';
 import { findDestination } from './destinations';
+import { type CropDoc, docToSidecar, type ExportFormat, type Frame } from './framer/types';
 import { getLrAssetPaths } from './lightroom';
 
-export type ExportFormat = 'avif' | 'jpg' | 'png';
+export type { ExportFormat };
 
 function slugify(value: string): string {
 	return value
@@ -132,41 +133,13 @@ function buildFitSection(frames: Frame[]) {
 	return fit;
 }
 
-export async function exportMetadata(
-	photo: Photo,
-	frames: Frame[],
-	focalPoints: FocalPoint[],
-	exportPath: string
-): Promise<void> {
-	const metadata = {
-		photo: {
-			title: photo.title,
-			width: photo.width,
-			height: photo.height,
-			file_path: photo.file_path
-		},
-		frames: frames.map((f) => ({
-			id: f.id,
-			label: f.label,
-			destination: f.destination ?? null,
-			is_auto: f.is_auto,
-			x: f.x,
-			y: f.y,
-			width: f.width,
-			height: f.height
-		})),
-		focal_points: focalPoints.map((p) => ({
-			id: p.id,
-			frame_id: p.frame_id,
-			label: p.label,
-			x: p.x,
-			y: p.y,
-			required: p.required
-		})),
-		fit: buildFitSection(frames)
-	};
+export async function exportMetadata(photo: Photo, doc: CropDoc, exportPath: string): Promise<void> {
+	const sidecar = docToSidecar(doc, photo.file_path);
+	sidecar.photo.title = photo.title;
+	sidecar.photo.width = photo.width;
+	sidecar.photo.height = photo.height;
 
-	const json = JSON.stringify(metadata, null, 2);
+	const json = JSON.stringify({ ...sidecar, fit: buildFitSection(doc.frames) }, null, 2);
 	const encoder = new TextEncoder();
 	await writeFile(exportPath, encoder.encode(json));
 }

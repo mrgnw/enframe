@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { FocalPoint, Frame } from './db';
+import type { FocalPoint, Frame } from './framer/types';
 import {
 	clampPos,
 	HISTORY_CAP,
@@ -15,7 +15,6 @@ import {
 const FRAMES: Frame[] = [
 	{
 		id: 7,
-		photo_id: 3,
 		label: 'Instagram Portrait',
 		destination: 'instagram-portrait',
 		x: 0.1,
@@ -24,12 +23,10 @@ const FRAMES: Frame[] = [
 		height: 0.625,
 		rotation: 1.5,
 		is_default: false,
-		is_auto: true,
-		created_at: '2026-01-01 00:00:00'
+		is_auto: true
 	},
 	{
 		id: 9,
-		photo_id: 3,
 		label: undefined,
 		destination: null,
 		x: 0,
@@ -38,36 +35,31 @@ const FRAMES: Frame[] = [
 		height: 1,
 		rotation: 0,
 		is_default: true,
-		is_auto: false,
-		created_at: '2026-01-02 00:00:00'
+		is_auto: false
 	}
 ];
 
 const POINTS: FocalPoint[] = [
 	{
 		id: 1,
-		photo_id: 3,
 		frame_id: 7,
 		x: 0.4,
 		y: 0.45,
 		label: 'Eyes',
-		required: true,
-		created_at: '2026-01-01 00:00:00'
+		required: true
 	},
 	{
 		id: 2,
-		photo_id: 3,
 		frame_id: undefined,
 		x: 0.8,
 		y: 0.1,
 		label: undefined,
-		required: false,
-		created_at: '2026-01-01 00:00:01'
+		required: false
 	}
 ];
 
 describe('snapshot round-trip', () => {
-	test('preserves every frame and focal point column', () => {
+	test('preserves every frame and focal point field', () => {
 		const restored = parseSnapshot(serializeSnapshot(FRAMES, POINTS));
 		expect(restored.frames).toEqual(FRAMES);
 		expect(restored.focalPoints).toEqual(POINTS);
@@ -85,6 +77,16 @@ describe('snapshot round-trip', () => {
 		expect(restored.frames[0].is_auto).toBe(true);
 		expect(restored.frames[0].is_default).toBe(false);
 		expect(restored.focalPoints[0].required).toBe(false);
+	});
+
+	test('reads snapshots written before the document split, dropping row columns', () => {
+		const legacy = JSON.stringify({
+			frames: [{ ...FRAMES[0], photo_id: 3, created_at: '2026-01-01 00:00:00' }],
+			focalPoints: [{ ...POINTS[0], photo_id: 3, created_at: '2026-01-01 00:00:00' }]
+		});
+		const restored = parseSnapshot(legacy);
+		expect(restored.frames).toEqual([FRAMES[0]]);
+		expect(restored.focalPoints).toEqual([POINTS[0]]);
 	});
 
 	test('handles an empty state', () => {
