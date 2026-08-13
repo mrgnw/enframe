@@ -6,8 +6,8 @@ function yieldFrame(): Promise<void> {
 	return new Promise((r) => requestAnimationFrame(() => r()));
 }
 
-import { goto } from '$app/navigation';
 import { page } from '$app/stores';
+import { getImageSrc } from '$lib/bridge';
 import CommandBar from '$lib/components/CommandBar.svelte';
 import CursorProgress from '$lib/components/CursorProgress.svelte';
 import FloatingToolbar from '$lib/components/FloatingToolbar.svelte';
@@ -450,6 +450,31 @@ async function handleCanvasClick(normX: number, normY: number, altKey: boolean) 
 	handleChange();
 }
 
+// A manual drag, resize or ratio change makes the frame the user's: it stops being recomputed.
+async function claimFrame(frameId: number, geometry: Partial<Frame>) {
+	const frame = frames.find((f) => f.id === frameId);
+	if (!frame) return;
+	const wasAuto = frame.is_auto;
+	frame.is_auto = false;
+	Object.assign(frame, geometry);
+	await updateFrame(frameId, wasAuto ? { ...geometry, is_auto: false } : geometry);
+}
+
+async function setFrameLabel(frameId: number, label: string) {
+	const frame = frames.find((f) => f.id === frameId);
+	if (!frame) return;
+	frame.label = label;
+	await updateFrame(frameId, { label });
+}
+
+async function movePoint(pointId: number, position: { x: number; y: number }) {
+	const point = focalPoints.find((p) => p.id === pointId);
+	if (!point) return;
+	point.x = position.x;
+	point.y = position.y;
+	await updateFocalPoint(pointId, position);
+}
+
 function globalFocalInputs() {
 	return focalPoints.filter((fp) => !fp.frame_id).map((fp) => ({ x: fp.x, y: fp.y, required: fp.required }));
 }
@@ -631,7 +656,8 @@ async function handleSetOutputDir() {
 		<div class="editor-body">
 			<div class="canvas-area">
 				<ImageCanvas
-					{photo}
+					imageSrc={getImageSrc(photo.file_path)}
+					imageName={photo.title}
 					bind:frames
 					bind:focalPoints
 					{selectedFrameId}
@@ -640,6 +666,8 @@ async function handleSetOutputDir() {
 					{compositionLabels}
 					{activeGuide}
 					onchange={handleChange}
+					onclaimframe={claimFrame}
+					onmovepoint={movePoint}
 					ondeleteframe={handleDeleteFrame}
 					onselectframe={(id) => { selectedFrameId = id; selectedPointId = null; }}
 					onselectpoint={(id) => { selectedPointId = id; selectedFrameId = null; }}
@@ -651,7 +679,7 @@ async function handleSetOutputDir() {
 
 			{#if previewOpen}
 				<PreviewPanel
-					{photo}
+					imageSrc={getImageSrc(photo.file_path)}
 					{frames}
 					{selectedFrameId}
 					{exportSelection}
@@ -697,6 +725,8 @@ async function handleSetOutputDir() {
 				onselectframe={(id) => { selectedFrameId = id; selectedPointId = null; }}
 				onselectpoint={(id) => { selectedPointId = id; selectedFrameId = null; }}
 				ontoggleexport={toggleExportSelection}
+				onclaim={claimFrame}
+				onlabel={setFrameLabel}
 				onchange={handleChange}
 			/>
 		</div>

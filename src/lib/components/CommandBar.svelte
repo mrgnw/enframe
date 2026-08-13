@@ -1,7 +1,7 @@
 <script lang="ts">
 import * as Command from '$lib/components/ui/command/index.js';
 import * as Dialog from '$lib/components/ui/dialog/index.js';
-import type { ExportFormat } from '$lib/export';
+import type { ExportFormat } from '$lib/framer/types';
 
 interface Props {
 	onaddframe?: () => void;

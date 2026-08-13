@@ -1,6 +1,5 @@
 <script lang="ts">
-import type { Frame } from '$lib/db';
-import { updateFrame } from '$lib/db';
+import type { Frame } from '$lib/framer/types';
 
 interface Props {
 	frame: Frame;
@@ -14,6 +13,7 @@ interface Props {
 	compositionLabel?: string;
 	clipsRequired?: boolean;
 	onSelect?: (event?: PointerEvent) => void;
+	onclaim?: (geometry: { x: number; y: number; width?: number; height?: number }) => Promise<void> | void;
 	onchange?: () => void;
 }
 
@@ -29,6 +29,7 @@ let {
 	compositionLabel = '',
 	clipsRequired = false,
 	onSelect,
+	onclaim,
 	onchange
 }: Props = $props();
 
@@ -44,13 +45,6 @@ let isDragging = $state(false);
 let isResizing = $state(false);
 let resizeHandle = $state<string | null>(null);
 let dragStart = $state({ x: 0, y: 0, frameX: 0, frameY: 0, frameW: 0, frameH: 0 });
-
-// A manual drag or resize makes the frame the user's: it stops being recomputed.
-async function claimFrame(geometry: { x: number; y: number; width?: number; height?: number }) {
-	const wasAuto = frame.is_auto;
-	frame.is_auto = false;
-	await updateFrame(frame.id, wasAuto ? { ...geometry, is_auto: false } : geometry);
-}
 
 function handleFramePointerDown(event: PointerEvent) {
 	if (event.button !== 0) return;
@@ -93,7 +87,7 @@ async function handleFramePointerUp(event: PointerEvent) {
 	isDragging = false;
 	(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
 
-	await claimFrame({ x: frame.x, y: frame.y });
+	await onclaim?.({ x: frame.x, y: frame.y });
 	onchange?.();
 }
 
@@ -220,7 +214,7 @@ async function handleHandlePointerUp(event: PointerEvent) {
 	resizeHandle = null;
 	(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
 
-	await claimFrame({ x: frame.x, y: frame.y, width: frame.width, height: frame.height });
+	await onclaim?.({ x: frame.x, y: frame.y, width: frame.width, height: frame.height });
 	onchange?.();
 }
 </script>

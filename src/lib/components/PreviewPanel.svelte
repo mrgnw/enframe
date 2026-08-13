@@ -1,9 +1,8 @@
 <script lang="ts">
-import type { Frame, Photo } from '$lib/db';
-import { getImageSrc } from '$lib/bridge';
+import type { Frame } from '$lib/framer/types';
 
 interface Props {
-	photo: Photo;
+	imageSrc: string;
 	frames: Frame[];
 	selectedFrameId?: number | null;
 	exportSelection?: Set<number>;
@@ -17,7 +16,7 @@ interface Props {
 }
 
 let {
-	photo,
+	imageSrc,
 	frames,
 	selectedFrameId = null,
 	exportSelection = new Set(),
@@ -110,7 +109,7 @@ function frameIndex(frame: Frame) {
 							style="aspect-ratio: {aspect};"
 						>
 							<img
-								src={getImageSrc(photo.file_path)}
+								src={imageSrc}
 								alt="Frame {frameIndex(frame)}"
 								draggable={false}
 								style="

@@ -1,19 +1,24 @@
 <script lang="ts">
 import { clipsRequiredPoints } from '$lib/composition';
-import type { FocalPoint, Frame, Photo } from '$lib/db';
-import { getImageSrc } from '$lib/bridge';
+import type { FocalPoint, Frame } from '$lib/framer/types';
 import CompositionGuide from './CompositionGuide.svelte';
 import DraggableFocalPoint from './DraggableFocalPoint.svelte';
 import ResizableFrame from './ResizableFrame.svelte';
 
 interface Props {
-	photo: Photo;
+	imageSrc: string;
+	imageName?: string;
 	frames?: Frame[];
 	focalPoints?: FocalPoint[];
 	selectedFrameId?: number | null;
 	selectedPointId?: number | null;
 	exportSelection?: Set<number>;
 	onchange?: () => void;
+	onclaimframe?: (
+		frameId: number,
+		geometry: { x: number; y: number; width?: number; height?: number }
+	) => Promise<void> | void;
+	onmovepoint?: (pointId: number, position: { x: number; y: number }) => Promise<void> | void;
 	ondeleteframe?: (frameId: number) => void;
 	onselectframe?: (frameId: number | null) => void;
 	onselectpoint?: (pointId: number | null) => void;
@@ -25,13 +30,16 @@ interface Props {
 }
 
 let {
-	photo,
+	imageSrc,
+	imageName = '',
 	frames = $bindable([]),
 	focalPoints = $bindable([]),
 	selectedFrameId = null,
 	selectedPointId = null,
 	exportSelection = new Set(),
 	onchange,
+	onclaimframe,
+	onmovepoint,
 	ondeleteframe,
 	onselectframe,
 	onselectpoint,
@@ -215,8 +223,8 @@ function handleKeyDown(event: KeyboardEvent) {
 	onpointercancel={handlePointerUp}
 >
 	<img
-		src={getImageSrc(photo.file_path)}
-		alt={photo.title || 'Photo'}
+		src={imageSrc}
+		alt={imageName || 'Photo'}
 		draggable={false}
 		onload={handleImageLoad}
 		class="photo"
@@ -242,6 +250,7 @@ function handleKeyDown(event: KeyboardEvent) {
 				compositionLabel={compositionLabels.get(frame.id) ?? ''}
 				clipsRequired={clipsRequiredPoints(frame, frame.id, focalPoints)}
 				onSelect={(e) => handleFrameClick(frame.id, e)}
+				onclaim={(geometry) => onclaimframe?.(frame.id, geometry)}
 				{onchange}
 			/>
 			{#if selectedFrameId === frame.id && activeGuide !== 'off'}
@@ -267,6 +276,7 @@ function handleKeyDown(event: KeyboardEvent) {
 					scale={1}
 					selected={selectedPointId === point.id}
 					onSelect={() => selectPoint(point.id)}
+					onmove={(position) => onmovepoint?.(point.id, position)}
 					{onchange}
 				/>
 			{/each}

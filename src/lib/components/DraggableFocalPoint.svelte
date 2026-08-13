@@ -1,6 +1,5 @@
 <script lang="ts">
-import type { FocalPoint } from '$lib/db';
-import { updateFocalPoint } from '$lib/db';
+import type { FocalPoint } from '$lib/framer/types';
 
 interface Props {
 	point: FocalPoint;
@@ -10,10 +9,21 @@ interface Props {
 	scale: number;
 	selected?: boolean;
 	onSelect?: () => void;
+	onmove?: (position: { x: number; y: number }) => Promise<void> | void;
 	onchange?: () => void;
 }
 
-let { point, index = 0, imageWidth, imageHeight, scale, selected = false, onSelect, onchange }: Props = $props();
+let {
+	point,
+	index = 0,
+	imageWidth,
+	imageHeight,
+	scale,
+	selected = false,
+	onSelect,
+	onmove,
+	onchange
+}: Props = $props();
 
 let isDragging = $state(false);
 let dragStart = $state({ x: 0, y: 0, pointX: 0, pointY: 0 });
@@ -54,7 +64,7 @@ async function handlePointerUp(event: PointerEvent) {
 	isDragging = false;
 	(event.target as HTMLElement).releasePointerCapture(event.pointerId);
 
-	await updateFocalPoint(point.id, { x: point.x, y: point.y });
+	await onmove?.({ x: point.x, y: point.y });
 	onchange?.();
 }
 </script>

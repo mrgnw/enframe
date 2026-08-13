@@ -1,9 +1,8 @@
 <script lang="ts">
 import { Pin, RotateCw } from '@lucide/svelte';
 import { clipsRequiredPoints } from '$lib/composition';
-import type { FocalPoint, Frame } from '$lib/db';
-import { updateFrame } from '$lib/db';
 import { DESTINATIONS, destinationHasRatio, findDestination } from '$lib/destinations';
+import type { FocalPoint, Frame } from '$lib/framer/types';
 
 const PINNED_KEY = 'enframe.framePointPanel.pinned';
 
@@ -25,6 +24,8 @@ interface Props {
 	onselectframe?: (frameId: number | null) => void;
 	onselectpoint?: (pointId: number | null) => void;
 	ontoggleexport?: (frameId: number) => void;
+	onclaim?: (frameId: number, geometry: Partial<Frame>) => Promise<void> | void;
+	onlabel?: (frameId: number, label: string) => Promise<void> | void;
 	onchange?: () => void;
 }
 
@@ -41,6 +42,8 @@ let {
 	onselectframe,
 	onselectpoint,
 	ontoggleexport,
+	onclaim,
+	onlabel,
 	onchange
 }: Props = $props();
 
@@ -153,22 +156,18 @@ async function saveLabel(frame: Frame, value: string) {
 	editingLabelId = null;
 	const label = value.trim();
 	if (label === (frame.label ?? '')) return;
-	frame.label = label;
-	await updateFrame(frame.id, { label });
+	await onlabel?.(frame.id, label);
 	onchange?.();
 }
 
 async function persistFrame(frame: Frame) {
-	const wasAuto = frame.is_auto;
-	frame.is_auto = false;
-	await updateFrame(frame.id, {
+	await onclaim?.(frame.id, {
 		x: frame.x,
 		y: frame.y,
 		width: frame.width,
 		height: frame.height,
 		rotation: frame.rotation,
-		destination: frame.destination ?? null,
-		...(wasAuto ? { is_auto: false } : {})
+		destination: frame.destination ?? null
 	});
 	onchange?.();
 }
