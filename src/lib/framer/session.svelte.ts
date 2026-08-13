@@ -186,6 +186,7 @@ export class FramerSession {
 			const id = await this.#insertFrame(frame);
 			this.selectedFrameId = id;
 			this.#emit();
+			this.#capture();
 			return id;
 		} catch (error) {
 			console.error('Failed to add frame:', error);
@@ -198,6 +199,7 @@ export class FramerSession {
 		try {
 			const id = await this.#insertPoint(x, y);
 			this.#emit();
+			this.#capture();
 			return id;
 		} catch (error) {
 			console.error('Failed to add focal point:', error);
