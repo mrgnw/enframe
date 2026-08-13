@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Aperture, ChevronDown, ChevronUp, FolderPlus, ImageOff, Link } from '@lucide/svelte';
+import { Aperture, ChevronDown, ChevronUp, Crop, FolderPlus, ImageOff, Link } from '@lucide/svelte';
 import { onDestroy, onMount } from 'svelte';
 import { toast } from 'svelte-sonner';
 import { getImageSrc, onDragDrop, pickFiles, stat } from '$lib/bridge';
@@ -253,6 +253,11 @@ async function handleOpenClick() {
 				{importing ? 'Importing...' : 'Open'}
 			</button>
 
+			<a class="action-pill" href="/crop" title="Frame one image without importing it">
+				<Crop size={14} />
+				Single
+			</a>
+
 			<button
 				class="action-pill lr-pill"
 				class:active={showLightroom}
@@ -281,6 +286,7 @@ async function handleOpenClick() {
 		<div class="empty">
 			<p>No photos yet</p>
 			<p class="hint">Drop images here, click Open, or browse Lightroom</p>
+			<p class="hint">Just one image? <a href="/crop">Frame it without importing</a></p>
 		</div>
 	{:else}
 		<div class="grid">
@@ -418,6 +424,7 @@ async function handleOpenClick() {
 		border-radius: 0.375rem;
 		color: #ccc;
 		font-size: 0.75rem;
+		text-decoration: none;
 		cursor: pointer;
 		white-space: nowrap;
 		transition: border-color 0.15s, background 0.15s;
@@ -474,6 +481,15 @@ async function handleOpenClick() {
 	.hint {
 		font-size: 0.875rem;
 		margin-top: 0.5rem;
+	}
+
+	.hint a {
+		color: #60a5fa;
+		text-decoration: none;
+	}
+
+	.hint a:hover {
+		text-decoration: underline;
 	}
 
 	.grid {

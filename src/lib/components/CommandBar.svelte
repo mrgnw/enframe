@@ -1,4 +1,5 @@
 <script lang="ts">
+import { page } from '$app/stores';
 import * as Command from '$lib/components/ui/command/index.js';
 import * as Dialog from '$lib/components/ui/dialog/index.js';
 import type { ExportFormat } from '$lib/framer/types';
@@ -49,6 +50,7 @@ let open = $state(false);
 let searchValue = $state('');
 
 let showCheatsheet = $derived(searchValue.trim() === '');
+let standalone = $derived($page.url.pathname.startsWith('/crop'));
 
 function handleKeydown(e: KeyboardEvent) {
 	if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
@@ -218,6 +220,13 @@ const shortcuts = [
 							<Command.Shortcut>&#9003;</Command.Shortcut>
 						</Command.Item>
 					</Command.Group>
+					{#if !standalone}
+						<Command.Group heading="Open">
+							<Command.LinkItem href="/crop" onSelect={() => (open = false)}>
+								<span>Open Single Image&hellip;</span>
+							</Command.LinkItem>
+						</Command.Group>
+					{/if}
 					<Command.Group heading="Export Selection">
 						<Command.Item onSelect={() => run(onselectallexport)}>
 							<span>Export All Frames</span>
