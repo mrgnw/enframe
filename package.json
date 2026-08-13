@@ -45,6 +45,7 @@
 		"screenshots": "bash scripts/screenshots.sh"
 	},
 	"dependencies": {
+		"@jsquash/avif": "^2.1.1",
 		"@tailwindcss/vite": "^4.1.12",
 		"@tauri-apps/plugin-dialog": "^2.6.0",
 		"@tauri-apps/plugin-fs": "^2.4.5",
