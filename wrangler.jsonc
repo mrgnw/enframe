@@ -1,0 +1,14 @@
+{
+	"name": "enframe",
+	"compatibility_date": "2026-08-13",
+	// No `main`: the web target is a static SPA, so there is no Worker script and no
+	// assets binding. @jsquash/avif uses the single-threaded WASM build, so the site
+	// deliberately does not ask for cross-origin isolation.
+	"assets": {
+		"directory": "./build-web/",
+		"not_found_handling": "single-page-application"
+	},
+	"observability": {
+		"enabled": true
+	}
+}
