@@ -1,0 +1,19 @@
+<script lang="ts">
+import { onMount } from 'svelte';
+import { goto } from '$app/navigation';
+import { invoke } from '$lib/bridge';
+import PhotoBrowser from '$lib/library/PhotoBrowser.svelte';
+
+onMount(async () => {
+	try {
+		const photoId = await invoke<number | null>('get_screenshot_mode');
+		if (photoId) {
+			goto(`/edit/${photoId}`);
+		}
+	} catch {
+		// Not in screenshot mode or not running in Tauri
+	}
+});
+</script>
+
+<PhotoBrowser />

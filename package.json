@@ -27,6 +27,8 @@
 		"tauri": "tauri",
 		"sveltekit:dev": "vite dev",
 		"sveltekit:build": "vite build",
+		"build:web": "ENFRAME_TARGET=web vite build",
+		"deploy:web": "bun run build:web && wrangler deploy",
 		"sveltekit:preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
