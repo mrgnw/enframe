@@ -1,6 +1,6 @@
 use app_lib::migrations::MIGRATIONS;
-use rusqlite::types::{ToSqlOutput, Value as SqlValue, ValueRef};
 use rusqlite::Connection;
+use rusqlite::types::{ToSqlOutput, Value as SqlValue, ValueRef};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha384};
 use std::collections::HashSet;

@@ -1,13 +1,14 @@
 mod db;
 mod roots;
 
+use axum::Json;
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Path, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::Json;
+use roots::Roots;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -26,12 +27,22 @@ const MAX_ENTRIES: usize = 5_000;
 struct AppState {
     conn: Arc<Mutex<Connection>>,
     inbox: PathBuf,
+    browse: PathBuf,
+    roots: Arc<Roots>,
 }
 
 type ApiResult<T> = Result<T, (StatusCode, String)>;
 
 fn fail(error: impl std::fmt::Display) -> (StatusCode, String) {
     (StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+}
+
+fn denied(message: String) -> (StatusCode, String) {
+    (StatusCode::FORBIDDEN, message)
+}
+
+fn text(path: PathBuf) -> String {
+    path.to_string_lossy().into_owned()
 }
 
 async fn blocking<T, F>(work: F) -> ApiResult<T>
@@ -52,7 +63,10 @@ struct SqlBody {
     values: Vec<Value>,
 }
 
-async fn sql_select(State(state): State<AppState>, Json(body): Json<SqlBody>) -> ApiResult<Json<Value>> {
+async fn sql_select(
+    State(state): State<AppState>,
+    Json(body): Json<SqlBody>,
+) -> ApiResult<Json<Value>> {
     blocking(move || {
         let conn = state.conn.lock().map_err(|e| e.to_string())?;
         db::select(&conn, &body.sql, &body.values)
@@ -61,7 +75,10 @@ async fn sql_select(State(state): State<AppState>, Json(body): Json<SqlBody>) ->
     .map(Json)
 }
 
-async fn sql_execute(State(state): State<AppState>, Json(body): Json<SqlBody>) -> ApiResult<Json<Value>> {
+async fn sql_execute(
+    State(state): State<AppState>,
+    Json(body): Json<SqlBody>,
+) -> ApiResult<Json<Value>> {
     blocking(move || {
         let conn = state.conn.lock().map_err(|e| e.to_string())?;
         db::execute(&conn, &body.sql, &body.values)
@@ -159,7 +176,9 @@ fn dispatch(command: &str, body: Value) -> Result<Value, String> {
         "list_lr_albums" => encode(lightroom::list_lr_albums()),
         "list_lr_album_assets" => {
             let a: AlbumAssetsArgs = args(body)?;
-            encode(lightroom::list_lr_album_assets(a.album_id, a.limit, a.offset))
+            encode(lightroom::list_lr_album_assets(
+                a.album_id, a.limit, a.offset,
+            ))
         }
         "search_lr_assets" => {
             let a: SearchArgs = args(body)?;
@@ -177,7 +196,47 @@ fn dispatch(command: &str, body: Value) -> Result<Value, String> {
     }
 }
 
-async fn api(Path(command): Path<String>, Json(body): Json<Value>) -> ApiResult<Json<Value>> {
+enum Access {
+    Read,
+    Write,
+}
+
+// Replaces a caller-supplied path with the checked, canonical one before the command
+// ever sees it, so every path-carrying command is confined in one place.
+fn confine(roots: &Roots, body: &mut Value, key: &str, access: Access) -> ApiResult<()> {
+    let requested = body
+        .get(key)
+        .and_then(Value::as_str)
+        .ok_or((StatusCode::BAD_REQUEST, format!("missing {key}")))?;
+    let checked = match access {
+        Access::Read => roots.check_read(requested),
+        Access::Write => roots.check_write(requested),
+    }
+    .map_err(denied)?;
+    body[key] = Value::String(text(checked));
+    Ok(())
+}
+
+fn confine_command(roots: &Roots, command: &str, body: &mut Value) -> ApiResult<()> {
+    match command {
+        "save_image" => confine(roots, body, "path", Access::Write),
+        "crop_and_export" => {
+            confine(roots, body, "sourcePath", Access::Read)?;
+            confine(roots, body, "outputPath", Access::Write)
+        }
+        "scan_inbox" => confine(roots, body, "directory", Access::Read),
+        // The Lightroom commands take ids and queries, and read the library through
+        // a root that has to be allowlisted for them to work at all.
+        _ => Ok(()),
+    }
+}
+
+async fn api(
+    State(state): State<AppState>,
+    Path(command): Path<String>,
+    Json(mut body): Json<Value>,
+) -> ApiResult<Json<Value>> {
+    confine_command(&state.roots, &command, &mut body)?;
     blocking(move || dispatch(&command, body)).await.map(Json)
 }
 
@@ -186,8 +245,14 @@ struct PathQuery {
     path: String,
 }
 
-async fn read_text(Query(query): Query<PathQuery>) -> ApiResult<String> {
-    blocking(move || std::fs::read_to_string(&query.path).map_err(|e| e.to_string())).await
+// ponytail: the root check runs on the async thread — it is one realpath(2).
+// Move it into spawn_blocking if roots ever point at a network mount.
+async fn read_text(
+    State(state): State<AppState>,
+    Query(query): Query<PathQuery>,
+) -> ApiResult<String> {
+    let path = state.roots.check_read(&query.path).map_err(denied)?;
+    blocking(move || std::fs::read_to_string(&path).map_err(|e| e.to_string())).await
 }
 
 #[derive(Serialize)]
@@ -196,9 +261,13 @@ struct Stat {
     is_directory: bool,
 }
 
-async fn stat(Query(query): Query<PathQuery>) -> ApiResult<Json<Stat>> {
+async fn stat(
+    State(state): State<AppState>,
+    Query(query): Query<PathQuery>,
+) -> ApiResult<Json<Stat>> {
+    let path = state.roots.check_read(&query.path).map_err(denied)?;
     blocking(move || {
-        let meta = std::fs::metadata(&query.path).map_err(|e| e.to_string())?;
+        let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
         Ok(Stat {
             is_directory: meta.is_dir(),
         })
@@ -234,11 +303,7 @@ fn is_image(path: &FsPath) -> bool {
         .is_some_and(|e| app_lib::inbox::IMAGE_EXTENSIONS.contains(&e.to_lowercase().as_str()))
 }
 
-fn list_dir(dir: Option<String>) -> Result<Listing, String> {
-    let home = std::env::var("HOME").map_err(|e| format!("HOME: {e}"))?;
-    let dir = PathBuf::from(dir.filter(|d| !d.is_empty()).unwrap_or(home));
-    let dir = dir.canonicalize().map_err(|e| format!("{}: {e}", dir.display()))?;
-
+fn list_dir(roots: &Roots, dir: PathBuf) -> Result<Listing, String> {
     let mut entries = Vec::new();
     for entry in std::fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))? {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -264,15 +329,35 @@ fn list_dir(dir: Option<String>) -> Result<Listing, String> {
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
 
+    // Only offer an "up" link the picker is actually allowed to open.
+    let parent = dir
+        .parent()
+        .filter(|parent| {
+            roots
+                .read_roots()
+                .iter()
+                .any(|root| parent.starts_with(root))
+        })
+        .map(|parent| parent.to_string_lossy().into_owned());
+
     Ok(Listing {
-        parent: dir.parent().map(|p| p.to_string_lossy().into_owned()),
-        path: dir.to_string_lossy().into_owned(),
+        parent,
+        path: text(dir),
         entries,
     })
 }
 
-async fn ls(Query(query): Query<LsQuery>) -> ApiResult<Json<Listing>> {
-    blocking(move || list_dir(query.dir)).await.map(Json)
+async fn ls(
+    State(state): State<AppState>,
+    Query(query): Query<LsQuery>,
+) -> ApiResult<Json<Listing>> {
+    let dir = match query.dir.filter(|dir| !dir.is_empty()) {
+        Some(dir) => state.roots.check_read(&dir).map_err(denied)?,
+        None => state.browse.clone(),
+    };
+    blocking(move || list_dir(&state.roots, dir))
+        .await
+        .map(Json)
 }
 
 #[derive(Serialize)]
@@ -289,30 +374,41 @@ async fn upload(
     let filename = headers
         .get("x-filename")
         .and_then(|v| v.to_str().ok())
-        .map(|v| percent_encoding::percent_decode_str(v).decode_utf8_lossy().into_owned())
+        .map(|v| {
+            percent_encoding::percent_decode_str(v)
+                .decode_utf8_lossy()
+                .into_owned()
+        })
         .map(|v| v.rsplit('/').next().unwrap_or(&v).to_string())
         .filter(|v| !v.is_empty() && v != "." && v != "..")
         .ok_or((StatusCode::BAD_REQUEST, "missing x-filename header".into()))?;
 
+    std::fs::create_dir_all(&state.inbox).map_err(fail)?;
+    let path = state
+        .roots
+        .check_write(&text(state.inbox.join(&filename)))
+        .map_err(denied)?;
+
     blocking(move || {
-        std::fs::create_dir_all(&state.inbox).map_err(|e| e.to_string())?;
-        let path = state.inbox.join(&filename);
         std::fs::write(&path, &body).map_err(|e| e.to_string())?;
-        Ok(Uploaded {
-            path: path.to_string_lossy().into_owned(),
-        })
+        Ok(Uploaded { path: text(path) })
     })
     .await
     .map(Json)
 }
 
-async fn img(Path(path): Path<String>, request: Request) -> ApiResult<Response> {
+async fn img(
+    State(state): State<AppState>,
+    Path(path): Path<String>,
+    request: Request,
+) -> ApiResult<Response> {
     let absolute = if path.starts_with('/') {
         path
     } else {
         format!("/{path}")
     };
-    ServeFile::new(absolute)
+    let file = state.roots.check_read(&absolute).map_err(denied)?;
+    ServeFile::new(file)
         .oneshot(request)
         .await
         .map(IntoResponse::into_response)
@@ -325,6 +421,8 @@ struct Options {
     database: PathBuf,
     web: PathBuf,
     inbox: PathBuf,
+    read_roots: Vec<PathBuf>,
+    write_roots: Vec<PathBuf>,
 }
 
 fn flag(args: &[String], name: &str, env: &str) -> Option<String> {
@@ -333,6 +431,25 @@ fn flag(args: &[String], name: &str, env: &str) -> Option<String> {
         .and_then(|i| args.get(i + 1))
         .cloned()
         .or_else(|| std::env::var(env).ok())
+}
+
+// Repeatable flag plus a colon-separated env var, matching how PATH-shaped config reads.
+fn flags(args: &[String], name: &str, env: &str) -> Vec<PathBuf> {
+    let mut values: Vec<PathBuf> = args
+        .windows(2)
+        .filter(|pair| pair[0] == name)
+        .map(|pair| PathBuf::from(&pair[1]))
+        .collect();
+    if let Ok(list) = std::env::var(env) {
+        values.extend(list.split(':').filter(|v| !v.is_empty()).map(PathBuf::from));
+    }
+    values
+}
+
+// ponytail: a default root that is absent is dropped, not fatal — a machine without
+// ~/Pictures should still boot. An explicitly configured root must exist.
+fn existing(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    paths.into_iter().filter(|path| path.exists()).collect()
 }
 
 fn options() -> Result<Options, String> {
@@ -355,17 +472,58 @@ fn options() -> Result<Options, String> {
             None => DEFAULT_PORT,
         },
         web: PathBuf::from(flag(&args, "--web", "ENFRAME_WEB").unwrap_or_else(|| "build".into())),
+        read_roots: flags(&args, "--read-root", "ENFRAME_READ_ROOTS"),
+        write_roots: flags(&args, "--write-root", "ENFRAME_WRITE_ROOTS"),
         database,
         inbox,
     })
 }
 
+// Photos and the Lightroom library both live under ~/Pictures, and exports default to
+// the directory of the source photo, so that one tree is both readable and writable.
+fn pictures() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|e| format!("HOME: {e}"))?;
+    Ok(PathBuf::from(home).join("Pictures"))
+}
+
+fn build_roots(options: &Options, pictures: &FsPath) -> Result<Roots, String> {
+    let database = options
+        .database
+        .parent()
+        .ok_or("database path has no parent")?
+        .to_path_buf();
+    let read = existing(vec![
+        pictures.to_path_buf(),
+        database,
+        options.inbox.clone(),
+        options.web.clone(),
+    ]);
+    let write = existing(vec![options.inbox.clone(), pictures.to_path_buf()]);
+    Roots::new(
+        [read, options.read_roots.clone()].concat(),
+        [write, options.write_roots.clone()].concat(),
+    )
+}
+
 #[tokio::main]
 async fn main() -> Result<(), String> {
     let options = options()?;
+    let connection = db::open(&options.database)?;
+    std::fs::create_dir_all(&options.inbox)
+        .map_err(|e| format!("create {}: {e}", options.inbox.display()))?;
+
+    let pictures = pictures()?;
+    let roots = build_roots(&options, &pictures)?;
+    let browse = match pictures.canonicalize() {
+        Ok(pictures) if roots.check_read(&text(pictures.clone())).is_ok() => pictures,
+        _ => roots.read_roots()[0].clone(),
+    };
+
     let state = AppState {
-        conn: Arc::new(Mutex::new(db::open(&options.database)?)),
+        conn: Arc::new(Mutex::new(connection)),
         inbox: options.inbox.clone(),
+        browse,
+        roots: Arc::new(roots),
     };
 
     let spa = ServeDir::new(&options.web).fallback(ServeFile::new(options.web.join("index.html")));
@@ -380,7 +538,7 @@ async fn main() -> Result<(), String> {
         .route("/img/{*path}", get(img))
         .fallback_service(spa)
         .layer(DefaultBodyLimit::max(MAX_BODY))
-        .with_state(state);
+        .with_state(state.clone());
 
     let address = format!("{}:{}", options.host, options.port);
     let listener = tokio::net::TcpListener::bind(&address)
@@ -390,6 +548,12 @@ async fn main() -> Result<(), String> {
     println!("  database {}", options.database.display());
     println!("  web      {}", options.web.display());
     println!("  inbox    {}", options.inbox.display());
+    for root in state.roots.read_roots() {
+        println!("  read     {}", root.display());
+    }
+    for root in state.roots.write_roots() {
+        println!("  write    {}", root.display());
+    }
 
     axum::serve(listener, app.into_make_service())
         .await
