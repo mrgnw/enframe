@@ -2,7 +2,7 @@
 import { onMount } from 'svelte';
 import { toast } from 'svelte-sonner';
 import { getImageSrc, isTauri, onDragDrop, pickFiles, readTextFile } from '$lib/bridge';
-import { cropToBlob, encodingFor, loadImage } from '$lib/framer/canvas-export';
+import { cropToBlob, encodingFor, loadImage, prepareEncoder } from '$lib/framer/canvas-export';
 import {
 	download,
 	fileSystemAccess,
@@ -267,7 +267,7 @@ async function runExport(frames: Frame[], edited: CropDoc, report: Report) {
 		toast.success(`Exported ${frames.length} frame${frames.length === 1 ? '' : 's'}`);
 	} catch (error) {
 		console.error('Export failed:', error);
-		toast.error('Export failed');
+		toast.error(error instanceof Error ? error.message : 'Export failed');
 	}
 }
 
@@ -285,7 +285,7 @@ async function exportNative(frames: Frame[], edited: CropDoc, report: Report, to
 async function exportInBrowser(frames: Frame[], edited: CropDoc, report: Report, total: number) {
 	const image = imageEl ?? (await loadImage(imageSrc));
 	const encoding = encodingFor(format);
-	if (encoding.substituted) toast.warning('Browsers cannot encode AVIF — exporting WebP instead');
+	await prepareEncoder(encoding);
 
 	const used = new Set<string>();
 	for (let i = 0; i < frames.length; i++) {
@@ -328,11 +328,6 @@ async function setOutputDir() {
 
 function setFormat(next: ExportFormat) {
 	format = next;
-	const encoding = encodingFor(next);
-	if (!nativePath && encoding.substituted) {
-		toast.warning('Browsers cannot encode AVIF — exports will be WebP');
-		return;
-	}
 	toast.success(`Export format: ${next.toUpperCase()}`);
 }
 </script>

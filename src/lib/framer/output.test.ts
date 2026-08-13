@@ -32,14 +32,14 @@ describe('generateFrameFilename', () => {
 	});
 
 	test('falls back to orientation and index', () => {
-		expect(generateFrameFilename(PHOTO, frame({ width: 0.8, height: 0.4 }), 0, 'webp')).toBe(
-			'A-Sunny-Day.l.1.2.00.webp'
+		expect(generateFrameFilename(PHOTO, frame({ width: 0.8, height: 0.4 }), 0, 'avif')).toBe(
+			'A-Sunny-Day.l.1.2.00.avif'
 		);
-		expect(generateFrameFilename(PHOTO, frame({ width: 0.2, height: 0.4 }), 1, 'webp')).toBe(
-			'A-Sunny-Day.p.2.0.50.webp'
+		expect(generateFrameFilename(PHOTO, frame({ width: 0.2, height: 0.4 }), 1, 'avif')).toBe(
+			'A-Sunny-Day.p.2.0.50.avif'
 		);
-		expect(generateFrameFilename(PHOTO, frame({ width: 0.4, height: 0.4 }), 2, 'webp')).toBe(
-			'A-Sunny-Day.s.3.1.00.webp'
+		expect(generateFrameFilename(PHOTO, frame({ width: 0.4, height: 0.4 }), 2, 'avif')).toBe(
+			'A-Sunny-Day.s.3.1.00.avif'
 		);
 	});
 

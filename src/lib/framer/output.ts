@@ -2,9 +2,6 @@ import { objectPosition } from '../composition';
 import { findDestination } from '../destinations';
 import { type CropDoc, docToSidecar, type ExportFormat, type Frame } from './types';
 
-// Browsers cannot encode AVIF, so a standalone export lands on WebP instead.
-export type FileFormat = ExportFormat | 'webp';
-
 function slugify(value: string): string {
 	return value
 		.toLowerCase()
@@ -32,7 +29,7 @@ export function generateFrameFilename(
 	photo: { title?: string },
 	frame: Frame,
 	index: number,
-	format: FileFormat = 'avif',
+	format: ExportFormat = 'avif',
 	usedNames?: Set<string>
 ): string {
 	const stem = basename(photo.title ?? '');
