@@ -164,4 +164,20 @@ on your account.
 
 Each frame can have its own focal points. Focal points with `frame_id = NULL` apply to the default (full-image) frame.
 
+## License
 
+Enframe itself is MIT — see [LICENSE](LICENSE).
+
+The **web build** is the one exception worth knowing about. Browsers cannot decode camera
+RAW, so `bun run build:web` bundles [`libraw-wasm`](https://github.com/ybouane/LibRaw-Wasm)
+(ISC) which embeds [LibRaw](https://www.libraw.org/) compiled to WebAssembly. LibRaw is
+offered under either LGPL-2.1 or CDDL-1.0, and **enframe elects LGPL-2.1**. That election
+carries a relinking obligation: anyone who receives the web build must be able to swap in
+their own LibRaw. The build keeps that possible by emitting the decoder as standalone,
+replaceable artifacts rather than inlining it — `_app/immutable/workers/worker-*.js` and
+`_app/immutable/workers/assets/libraw-*.wasm` — which can be rebuilt from LibRaw source
+and dropped in place. LibRaw's source, and the script that compiles it, live in the
+upstream `libraw-wasm` repository.
+
+The desktop and `serve` builds are unaffected: they decode RAW through the Rust `rawler`
+crate and never link LibRaw.
