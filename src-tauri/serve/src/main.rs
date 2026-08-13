@@ -486,19 +486,59 @@ fn pictures() -> Result<PathBuf, String> {
     Ok(PathBuf::from(home).join("Pictures"))
 }
 
-fn build_roots(options: &Options, pictures: &FsPath) -> Result<Roots, String> {
+// Photos live wherever the user keeps them: iCloud Drive, an external volume, ~/Pictures.
+// Deriving roots from the library itself keeps serve able to read what the app imported,
+// without widening the boundary to everything the desktop app could touch.
+fn library_roots(connection: &Connection) -> Vec<PathBuf> {
+    let Ok(mut statement) = connection.prepare("SELECT DISTINCT file_path FROM photos") else {
+        return Vec::new();
+    };
+    let Ok(rows) = statement.query_map([], |row| row.get::<_, String>(0)) else {
+        return Vec::new();
+    };
+    let mut roots: Vec<PathBuf> = Vec::new();
+    for path in rows.flatten() {
+        let Some(parent) = FsPath::new(&path).parent() else {
+            continue;
+        };
+        if !is_specific_enough(parent) || roots.iter().any(|root| root == parent) {
+            continue;
+        }
+        roots.push(parent.to_path_buf());
+    }
+    roots
+}
+
+// A photo sitting directly in / or ~ would otherwise turn the whole tree into a root.
+fn is_specific_enough(path: &FsPath) -> bool {
+    if path.components().count() < 4 {
+        return false;
+    }
+    match std::env::var("HOME") {
+        Ok(home) => path != FsPath::new(&home),
+        Err(_) => true,
+    }
+}
+
+fn build_roots(options: &Options, pictures: &FsPath, library: Vec<PathBuf>) -> Result<Roots, String> {
     let database = options
         .database
         .parent()
         .ok_or("database path has no parent")?
         .to_path_buf();
-    let read = existing(vec![
-        pictures.to_path_buf(),
-        database,
-        options.inbox.clone(),
-        options.web.clone(),
-    ]);
-    let write = existing(vec![options.inbox.clone(), pictures.to_path_buf()]);
+    let read = existing(
+        [
+            vec![
+                pictures.to_path_buf(),
+                database,
+                options.inbox.clone(),
+                options.web.clone(),
+            ],
+            library.clone(),
+        ]
+        .concat(),
+    );
+    let write = existing([vec![options.inbox.clone(), pictures.to_path_buf()], library].concat());
     Roots::new(
         [read, options.read_roots.clone()].concat(),
         [write, options.write_roots.clone()].concat(),
@@ -513,7 +553,7 @@ async fn main() -> Result<(), String> {
         .map_err(|e| format!("create {}: {e}", options.inbox.display()))?;
 
     let pictures = pictures()?;
-    let roots = build_roots(&options, &pictures)?;
+    let roots = build_roots(&options, &pictures, library_roots(&connection))?;
     let browse = match pictures.canonicalize() {
         Ok(pictures) if roots.check_read(&text(pictures.clone())).is_ok() => pictures,
         _ => roots.read_roots()[0].clone(),
