@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-const IMAGE_EXTENSIONS: &[&str] = &[
+pub const IMAGE_EXTENSIONS: &[&str] = &[
     "jpg", "jpeg", "png", "tiff", "tif", "heic", "heif", "webp", "avif", "jxl", "dng", "arw",
     "cr2", "cr3", "nef", "raf",
 ];
