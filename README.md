@@ -66,20 +66,38 @@ sudo apt install libwebkit2gtk-4.1-dev \
 bun install
 ```
 
-## Development
+## Three ways to run enframe
+
+| | What you get | Backend |
+| --- | --- | --- |
+| Desktop app | Library, Lightroom import, watch folder, framer | SQLite via Tauri |
+| Headless serve | The same UI in a browser, behind a tunnel | SQLite over HTTP |
+| Static web build | The standalone framer only, one image at a time | none |
+
+All three come out of this one repo. The library is just one way to pick an image — the
+static build has no backend to pick from, so `/` is the framer itself.
+
+### Desktop app
 
 ```sh
-just dev
-# or
 bun run dev
 ```
 
-## Headless serve mode
+Release build:
+
+```sh
+bun run build
+```
+
+### Headless serve mode
 
 The same UI runs in a plain browser, backed by an HTTP server instead of Tauri.
 
 ```sh
 bun run sveltekit:build
+```
+
+```sh
 bun run serve
 ```
 
@@ -103,6 +121,40 @@ Overrides, as flags or environment variables:
 Browsers give no filesystem paths, so serve mode substitutes a server-side file picker
 for the native dialogs, and drag-dropped files are uploaded into the inbox directory and
 imported from there.
+
+### Static web build
+
+No server, no database, nothing to tunnel. `/` opens one image, you frame it in memory,
+and it exports through the canvas and writes a sidecar JSON beside the output. `/edit/:id`
+does not exist here and redirects home.
+
+```sh
+bun run build:web
+```
+
+The site lands in `build-web/`, separate from `build/` so it never shadows what
+`bun run serve` hands out. Check the config without publishing:
+
+```sh
+wrangler deploy --dry-run
+```
+
+Deploying needs a Cloudflare account you have already logged into (`wrangler login`):
+
+```sh
+bun run deploy:web
+```
+
+Wrangler publishes it to `enframe.<your-subdomain>.workers.dev`. To put it on your own
+hostname, add a custom domain to the `enframe` Worker in the Cloudflare dashboard under
+Workers & Pages → enframe → Settings → Domains & Routes:
+
+```sh
+HOSTNAME=enframe.example.com
+```
+
+Cloudflare creates the DNS record for `$HOSTNAME` itself, as long as the zone is already
+on your account.
 
 ## Database Schema
 
