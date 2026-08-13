@@ -1,5 +1,5 @@
 import { mount, unmount } from 'svelte';
-import FilePicker from './components/FilePicker.svelte';
+import FilePicker from './library/FilePicker.svelte';
 
 export function browserPick(options: {
 	title?: string;

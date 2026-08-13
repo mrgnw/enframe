@@ -2,7 +2,7 @@
 import { onMount } from 'svelte';
 import { goto } from '$app/navigation';
 import { invoke } from '$lib/bridge';
-import PhotoBrowser from '$lib/components/PhotoBrowser.svelte';
+import PhotoBrowser from '$lib/library/PhotoBrowser.svelte';
 
 onMount(async () => {
 	try {
