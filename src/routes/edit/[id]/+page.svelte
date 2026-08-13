@@ -21,8 +21,9 @@ import {
 	updateFocalPoint,
 	updateFrame
 } from '$lib/db';
-import { exportFrames, exportMetadata, getDefaultExportDir, pickDirectory } from '$lib/export';
+import { exportFrames, exportMetadata, pickDirectory } from '$lib/export';
 import Framer from '$lib/framer/Framer.svelte';
+import { getDefaultExportDir, sidecarName } from '$lib/framer/output';
 import type { FramerStore } from '$lib/framer/session.svelte';
 import { type CropDoc, CROP_DOC_VERSION, type ExportFormat, type Frame } from '$lib/framer/types';
 import { parseSnapshot } from '$lib/history';
@@ -124,8 +125,7 @@ async function runExport(frames: Frame[], edited: CropDoc, report: Report) {
 		await exportFrames(photo, frames, exportDir, exportFormat, 0.92, (current: number) => report(current, total));
 		report(frames.length, total);
 		await yieldFrame();
-		const basename = photo.title?.replace(/\.[^/.]+$/, '').replace(/\s+/g, '-') || 'photo';
-		await exportMetadata(photo, { ...edited, frames }, `${exportDir}/${basename}.metadata.json`);
+		await exportMetadata(photo, { ...edited, frames }, `${exportDir}/${sidecarName(photo.title ?? '')}`);
 		report(total, total);
 		toast.success(`Exported ${frames.length} frame${frames.length === 1 ? '' : 's'}`);
 	} catch (error) {
