@@ -146,6 +146,16 @@ export function docFromSidecar(raw: Partial<Sidecar>): CropDoc {
 	};
 }
 
+// Step through the frame list, wrapping at both ends. An unknown current id lands on
+// the first frame going forwards and the second-to-last going backwards, which is what
+// falls out of the wrap and keeps `,`/`.` usable after a frame disappears.
+export function cycleFrameId(frames: Frame[], current: number | null, delta: 1 | -1): number | null {
+	if (frames.length === 0) return null;
+	if (current === null) return delta > 0 ? frames[0].id : frames[frames.length - 1].id;
+	const index = frames.findIndex((f) => f.id === current);
+	return frames[(index + delta + frames.length) % frames.length].id;
+}
+
 export function nextLocalId(doc: CropDoc): number {
 	let lowest = 0;
 	for (const frame of doc.frames) lowest = Math.min(lowest, frame.id);

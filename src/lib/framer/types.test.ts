@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { AUTO_LANDSCAPE_LABEL } from '../composition';
-import { type CropDoc, CROP_DOC_VERSION, docFromSidecar, docToSidecar, emptyDoc, nextLocalId } from './types';
+import {
+	type CropDoc,
+	CROP_DOC_VERSION,
+	cycleFrameId,
+	docFromSidecar,
+	docToSidecar,
+	emptyDoc,
+	nextLocalId
+} from './types';
 
 const DOC: CropDoc = {
 	version: CROP_DOC_VERSION,
@@ -81,6 +89,32 @@ describe('sidecar serialization', () => {
 
 	test('an empty sidecar yields an empty document', () => {
 		expect(docFromSidecar({})).toEqual(emptyDoc());
+	});
+});
+
+describe('cycleFrameId', () => {
+	const ids = DOC.frames.map((f) => f.id);
+
+	test('wraps forwards and backwards', () => {
+		expect(cycleFrameId(DOC.frames, ids[0], 1)).toBe(ids[1]);
+		expect(cycleFrameId(DOC.frames, ids[1], 1)).toBe(ids[0]);
+		expect(cycleFrameId(DOC.frames, ids[0], -1)).toBe(ids[1]);
+		expect(cycleFrameId(DOC.frames, ids[1], -1)).toBe(ids[0]);
+	});
+
+	test('starts at either end when nothing is selected', () => {
+		expect(cycleFrameId(DOC.frames, null, 1)).toBe(ids[0]);
+		expect(cycleFrameId(DOC.frames, null, -1)).toBe(ids[1]);
+	});
+
+	test('recovers from an id that is no longer in the list', () => {
+		expect(cycleFrameId(DOC.frames, 999, 1)).toBe(ids[0]);
+		expect(cycleFrameId(DOC.frames, 999, -1)).toBe(ids[0]);
+	});
+
+	test('has nothing to select in an empty document', () => {
+		expect(cycleFrameId([], null, 1)).toBeNull();
+		expect(cycleFrameId([], 7, -1)).toBeNull();
 	});
 });
 
