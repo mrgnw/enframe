@@ -1,5 +1,7 @@
 use app_lib::migrations::MIGRATIONS;
 use rusqlite::Connection;
+use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
+use rusqlite::limits::Limit;
 use rusqlite::types::{ToSqlOutput, Value as SqlValue, ValueRef};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha384};
@@ -35,7 +37,26 @@ pub fn open(path: &Path) -> Result<Connection, String> {
     conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")
         .map_err(|e| e.to_string())?;
     migrate(&mut conn)?;
+    confine(&conn);
     Ok(conn)
+}
+
+// /sql takes arbitrary statements, and SQLite can reach outside its own database:
+// ATTACH creates a file anywhere, and a virtual table module can open one. Both are
+// shut off here, after the migrations have run their DDL.
+// rusqlite's `load_extension` feature is not enabled, so sqlite3_load_extension is
+// not compiled in and cannot be reached from SQL.
+fn confine(conn: &Connection) {
+    conn.set_limit(Limit::SQLITE_LIMIT_ATTACHED, 0);
+    conn.authorizer(Some(|context: AuthContext<'_>| match context.action {
+        AuthAction::Attach { .. }
+        | AuthAction::Detach { .. }
+        | AuthAction::CreateVtable { .. }
+        | AuthAction::DropVtable { .. }
+        | AuthAction::Pragma { .. }
+        | AuthAction::Unknown { .. } => Authorization::Deny,
+        _ => Authorization::Allow,
+    }));
 }
 
 // Mirrors the sqlx bookkeeping tauri-plugin-sql uses, so a database migrated here
@@ -203,6 +224,41 @@ mod tests {
             select(&conn, "SELECT count(*) AS n FROM photos", &[]).unwrap(),
             serde_json::json!([{ "n": 0 }])
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn attach_is_denied_and_app_queries_still_run() {
+        let dir = std::env::temp_dir().join(format!("enframe_serve_attach_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let conn = open(&dir.join("enframe.db")).unwrap();
+
+        let pwn = dir.join("pwn.db");
+        let attach = format!("ATTACH DATABASE '{}' AS pwn", pwn.display());
+        assert!(execute(&conn, &attach, &[]).is_err());
+        assert!(execute(&conn, "DETACH DATABASE pwn", &[]).is_err());
+        assert!(execute(&conn, "PRAGMA journal_mode = DELETE", &[]).is_err());
+        assert!(!pwn.exists());
+
+        // The four statement shapes src/lib/db.ts actually sends.
+        execute(
+            &conn,
+            "INSERT INTO photos (file_path, title) VALUES ($1, $2)",
+            &[Value::from("/photo.jpg"), Value::from("a")],
+        )
+        .unwrap();
+        execute(
+            &conn,
+            "UPDATE photos SET title = $1 WHERE id = $2",
+            &[Value::from("b"), Value::from(1)],
+        )
+        .unwrap();
+        assert_eq!(
+            select(&conn, "SELECT count(*) AS n FROM photos", &[]).unwrap(),
+            serde_json::json!([{ "n": 1 }])
+        );
+        execute(&conn, "DELETE FROM photos WHERE id = $1", &[Value::from(1)]).unwrap();
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
