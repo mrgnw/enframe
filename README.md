@@ -101,7 +101,54 @@ bun run sveltekit:build
 bun run serve
 ```
 
-Then point a tunnel (Tailscale, cloudflared, ssh -R) at `127.0.0.1:5911`.
+That runs in the foreground and stops when the terminal closes. To keep it running across
+logouts and reboots, `services.toml` registers it with [kagaya](https://ky.xcc.es):
+
+```sh
+ky add && ky start
+```
+
+```sh
+ky status
+```
+
+It runs the release binary directly, so build it once before the first start:
+
+```sh
+cargo build --release --manifest-path src-tauri/Cargo.toml -p enframe-serve
+```
+
+#### Reaching it from elsewhere
+
+The server binds to loopback, so something has to bridge it. Tailnet-only, no public DNS:
+
+```sh
+tailscale serve --bg 5911
+```
+
+Or a throwaway Cloudflare tunnel, which prints a random `trycloudflare.com` URL:
+
+```sh
+cloudflared tunnel --url http://127.0.0.1:5911
+```
+
+For a stable hostname, create a named tunnel once and route DNS to it:
+
+```sh
+HOSTNAME=enframe.xcc.es
+```
+
+```sh
+cloudflared tunnel create enframe
+```
+
+```sh
+cloudflared tunnel route dns enframe "$HOSTNAME"
+```
+
+```sh
+cloudflared tunnel run --url http://127.0.0.1:5911 enframe
+```
 
 The server reads and writes the same database as the desktop app
 (`~/Library/Application Support/com.enframe.app/enframe.db`) and creates it with all
@@ -117,10 +164,33 @@ Overrides, as flags or environment variables:
 | `--db` | `ENFRAME_DB` | app-support `enframe.db` |
 | `--web` | `ENFRAME_WEB` | `build` |
 | `--inbox` | `ENFRAME_INBOX` | app-support `inbox` |
+| `--read-root` | `ENFRAME_READ_ROOTS` | see below |
+| `--write-root` | `ENFRAME_WRITE_ROOTS` | see below |
 
 Browsers give no filesystem paths, so serve mode substitutes a server-side file picker
 for the native dialogs, and drag-dropped files are uploaded into the inbox directory and
 imported from there.
+
+#### What serve mode can touch
+
+Unlike the desktop app, the server confines every path it accepts to a set of roots.
+Paths are canonicalised first, so `..` and symlinks cannot escape. By default the roots
+are `~/Pictures`, the directories of photos already in the library (so an iCloud Drive or
+external-volume library keeps working), the database directory, and the inbox.
+
+Both flags are repeatable; the env vars take a colon-separated list. Add a root when a
+photo lives somewhere the library has not seen yet — for example a volume that was not
+mounted at startup:
+
+```sh
+PHOTOS=/Volumes/disk/photos
+```
+
+```sh
+bun run serve --read-root "$PHOTOS" --write-root "$PHOTOS"
+```
+
+The effective roots are logged at boot.
 
 ### Static web build
 
