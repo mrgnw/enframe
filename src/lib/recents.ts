@@ -30,7 +30,7 @@ export function recentId(entry: Recent): string {
 
 function isRecent(value: unknown): value is Recent {
 	if (typeof value !== 'object' || value === null) return false;
-	const entry = value as Partial<LibraryRecent & StandaloneRecent>;
+	const entry = value as Record<string, unknown>;
 	if (typeof entry.name !== 'string') return false;
 	if (!Number.isFinite(entry.width) || !Number.isFinite(entry.height)) return false;
 	if (!Number.isFinite(entry.openedAt)) return false;

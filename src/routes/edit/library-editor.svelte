@@ -27,6 +27,7 @@ import { getDefaultExportDir, sidecarName } from '$lib/framer/output';
 import type { FramerStore } from '$lib/framer/session.svelte';
 import { type CropDoc, CROP_DOC_VERSION, type ExportFormat, type Frame } from '$lib/framer/types';
 import { parseSnapshot } from '$lib/history';
+import { rememberRecent } from '$lib/recents';
 
 type Report = (done: number, total: number) => void;
 
@@ -79,6 +80,7 @@ onMount(async () => {
 			};
 			historySeqs = await getHistorySeqs(photoId);
 			historyPos = photo.history_pos ?? 0;
+			remember();
 		}
 	} catch (error) {
 		console.error('Failed to load photo:', error);
@@ -87,6 +89,19 @@ onMount(async () => {
 		loading = false;
 	}
 });
+
+// The photo id is enough to reopen this: the library still holds the frames.
+function remember() {
+	if (!photo) return;
+	rememberRecent({
+		kind: 'library',
+		photoId,
+		name: photo.title ?? photo.file_path.split('/').pop() ?? `Photo ${photoId}`,
+		width: photo.width ?? 0,
+		height: photo.height ?? 0,
+		openedAt: Date.now()
+	});
+}
 
 async function save(edited: CropDoc, report: Report) {
 	const total = edited.frames.length + edited.focalPoints.length;
@@ -114,6 +129,7 @@ async function save(edited: CropDoc, report: Report) {
 		report(++done, total);
 		await yieldFrame();
 	}
+	remember();
 }
 
 async function runExport(frames: Frame[], edited: CropDoc, report: Report) {
@@ -148,11 +164,11 @@ function setFormat(format: ExportFormat) {
 <div class="editor" data-tauri-drag-region>
 	<div class="stoplight-area">
 		<div class="stoplight-shadow"></div>
-		<a href="/" class="back-btn" aria-label="Back">
+		<a href="/library" class="back-btn" aria-label="Library">
 			<svg class="back-chevron" width="14" height="14" viewBox="0 0 20 20" fill="none">
 				<path d="M12 15L7 10L12 5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
 			</svg>
-			<span class="back-label">Back</span>
+			<span class="back-label">Library</span>
 		</a>
 	</div>
 
@@ -220,7 +236,7 @@ function setFormat(format: ExportFormat) {
 	}
 
 	.back-btn:hover {
-		width: 72px;
+		width: 84px;
 		color: white;
 		background: rgba(0, 0, 0, 0.6);
 	}
