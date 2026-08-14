@@ -259,6 +259,7 @@ function handleKeyDown(event: KeyboardEvent) {
 				inSelection={!hasSelection || selection.has(frame.id)}
 				compositionLabel={compositionLabels.get(frame.id) ?? ''}
 				clipsRequired={clipsRequiredPoints(frame, frame.id, focalPoints)}
+				onselect={(mode) => (mode === 'toggle' ? ontoggleselect?.(frame.id) : onselectframe?.(frame.id))}
 				onclaim={(geometry) => onclaimframe?.(frame.id, geometry)}
 				{onchange}
 			/>

@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { Frame } from '$lib/framer/types';
+import type { Frame, SelectMode } from '$lib/framer/types';
 
 interface Props {
 	frame: Frame;
@@ -12,6 +12,7 @@ interface Props {
 	aspectLocked?: boolean;
 	compositionLabel?: string;
 	clipsRequired?: boolean;
+	onselect?: (mode: SelectMode) => void;
 	onclaim?: (geometry: { x: number; y: number; width?: number; height?: number }) => Promise<void> | void;
 	onchange?: () => void;
 }
@@ -27,6 +28,7 @@ let {
 	aspectLocked = false,
 	compositionLabel = '',
 	clipsRequired = false,
+	onselect,
 	onclaim,
 	onchange
 }: Props = $props();
@@ -96,6 +98,14 @@ async function handleFramePointerUp(event: PointerEvent) {
 	event.stopPropagation();
 	await onclaim?.({ x: frame.x, y: frame.y });
 	onchange?.();
+}
+
+// The label sits above the frame box where nothing overlaps it, so it selects its frame
+// directly instead of joining the click-cycling the overlapping fills need.
+function handleLabelPointerDown(event: PointerEvent) {
+	if (event.button !== 0) return;
+	event.stopPropagation();
+	onselect?.(event.shiftKey || event.metaKey ? 'toggle' : 'replace');
 }
 
 function handleHandlePointerDown(event: PointerEvent, handle: string) {
@@ -248,7 +258,15 @@ async function handleHandlePointerUp(event: PointerEvent) {
 	onpointermove={handleFramePointerMove}
 	onpointerup={handleFramePointerUp}
 >
-	<div class="frame-label" class:auto-label={isAuto} class:clip-label={clipsRequired} style="transform: scale({labelScale}); transform-origin: bottom left;">
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="frame-label"
+		class:auto-label={isAuto}
+		class:clip-label={clipsRequired}
+		style="transform: scale({labelScale}); transform-origin: bottom left;"
+		onpointerdown={handleLabelPointerDown}
+		onpointerup={(e: PointerEvent) => e.stopPropagation()}
+	>
 		{isAuto ? frame.label : index + 1}{#if clipsRequired}<span class="clip-warning" title="Crops out a required focal point">&#9888;</span>{/if}{#if compositionLabel}<span class="comp-hint">{compositionLabel}</span>{/if}
 	</div>
 
@@ -335,7 +353,12 @@ async function handleHandlePointerUp(event: PointerEvent) {
 		font-size: 0.75rem;
 		border-radius: 0.25rem;
 		white-space: nowrap;
-		pointer-events: none;
+		pointer-events: auto;
+		cursor: pointer;
+	}
+
+	.frame-label:hover {
+		filter: brightness(1.2);
 	}
 
 	.frame-overlay.out-of-selection .frame-label {
