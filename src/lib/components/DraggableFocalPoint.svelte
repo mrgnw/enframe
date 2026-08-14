@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { FocalPoint } from '$lib/framer/types';
+import type { FocalPoint, SelectMode } from '$lib/framer/types';
 
 interface Props {
 	point: FocalPoint;
@@ -8,7 +8,8 @@ interface Props {
 	imageHeight: number;
 	scale: number;
 	selected?: boolean;
-	onSelect?: () => void;
+	inSelection?: boolean;
+	onSelect?: (mode: SelectMode) => void;
 	onmove?: (position: { x: number; y: number }) => Promise<void> | void;
 	onchange?: () => void;
 }
@@ -20,6 +21,7 @@ let {
 	imageHeight,
 	scale,
 	selected = false,
+	inSelection = false,
 	onSelect,
 	onmove,
 	onchange
@@ -32,7 +34,7 @@ function handlePointerDown(event: PointerEvent) {
 	if (event.button !== 0) return;
 	event.stopPropagation();
 
-	onSelect?.();
+	onSelect?.(event.shiftKey || event.metaKey ? 'toggle' : 'replace');
 	isDragging = true;
 	dragStart = {
 		x: event.clientX,
@@ -74,6 +76,7 @@ async function handlePointerUp(event: PointerEvent) {
 	class:required={point.required}
 	class:dragging={isDragging}
 	class:selected
+	class:in-selection={inSelection}
 	style="
 		left: {point.x * 100}%;
 		top: {point.y * 100}%;
@@ -108,6 +111,10 @@ async function handlePointerUp(event: PointerEvent) {
 	.focal-point:hover {
 		transform: scale(1.2);
 		z-index: 25;
+	}
+
+	.focal-point.in-selection {
+		box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2);
 	}
 
 	.focal-point.selected {

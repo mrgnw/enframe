@@ -18,6 +18,7 @@ import {
 	type Frame,
 	nextLocalId,
 	nextSelection,
+	type PointSelectMode,
 	type SelectMode
 } from './types';
 
@@ -64,6 +65,7 @@ export class FramerSession {
 	selectedFrameId = $state<number | null>(null);
 	selectedPointId = $state<number | null>(null);
 	selection = $state<Set<number>>(new Set());
+	pointSelection = $state<Set<number>>(new Set());
 	compositionLabels = $state<Map<number, string>>(new Map());
 	dirty = $state(false);
 	historySeqs = $state<number[]>([]);
@@ -142,18 +144,41 @@ export class FramerSession {
 		this.selection = next.selection;
 		this.selectedFrameId = next.anchor;
 		this.selectedPointId = null;
+		this.pointSelection = new Set();
 	}
 
-	selectPoint(pointId: number | null) {
-		this.selectedPointId = pointId;
+	// The point selection mirrors the frame selection, with 'range' on top: shift in the
+	// panel list extends from the current anchor through the clicked point.
+	selectPoint(pointId: number | null, mode: PointSelectMode = 'replace') {
+		if (pointId === null) {
+			this.selectedPointId = null;
+			this.pointSelection = new Set();
+			return;
+		}
 		this.selectedFrameId = null;
 		this.selection = new Set();
+		if (mode === 'range' && this.selectedPointId !== null) {
+			const from = this.focalPoints.findIndex((p) => p.id === this.selectedPointId);
+			const to = this.focalPoints.findIndex((p) => p.id === pointId);
+			if (from !== -1 && to !== -1) {
+				const [lo, hi] = from < to ? [from, to] : [to, from];
+				const next = new Set(this.pointSelection);
+				for (let i = lo; i <= hi; i++) next.add(this.focalPoints[i].id);
+				this.pointSelection = next;
+				this.selectedPointId = pointId;
+				return;
+			}
+		}
+		const next = nextSelection(this.pointSelection, pointId, mode === 'toggle' ? 'toggle' : 'replace');
+		this.pointSelection = next.selection;
+		this.selectedPointId = next.anchor;
 	}
 
 	deselect() {
 		this.selectedFrameId = null;
 		this.selectedPointId = null;
 		this.selection = new Set();
+		this.pointSelection = new Set();
 	}
 
 	selectNextFrame() {
@@ -167,6 +192,19 @@ export class FramerSession {
 	#cycleFrame(delta: 1 | -1) {
 		if (this.frames.length === 0) return;
 		this.selectFrame(cycleFrameId(this.frames, this.selectedFrameId, delta));
+	}
+
+	selectNextPoint() {
+		this.#cyclePoint(1);
+	}
+
+	selectPrevPoint() {
+		this.#cyclePoint(-1);
+	}
+
+	#cyclePoint(delta: 1 | -1) {
+		if (this.focalPoints.length === 0) return;
+		this.selectPoint(cycleFrameId(this.focalPoints, this.selectedPointId, delta));
 	}
 
 	toggleFrameSelection(frameId: number) {
@@ -248,12 +286,31 @@ export class FramerSession {
 	}
 
 	async deletePoint(pointId: number) {
-		await this.#store?.deletePoint(pointId);
-		if (this.selectedPointId === pointId) this.selectedPointId = null;
-		this.focalPoints = this.focalPoints.filter((p) => p.id !== pointId);
+		return this.deletePoints([pointId]);
+	}
+
+	// One journal entry for the whole batch, so one undo brings every point back.
+	async deletePoints(pointIds: number[]): Promise<number> {
+		const doomed = new Set(pointIds.filter((id) => this.focalPoints.some((p) => p.id === id)));
+		if (doomed.size === 0) return 0;
+		for (const id of doomed) await this.#store?.deletePoint(id);
+		if (this.selectedPointId !== null && doomed.has(this.selectedPointId)) this.selectedPointId = null;
+		this.pointSelection = new Set([...this.pointSelection].filter((id) => !doomed.has(id)));
+		this.focalPoints = this.focalPoints.filter((p) => !doomed.has(p.id));
 		this.#emit();
 		await this.recomputeAutoFrames();
 		this.#capture();
+		return doomed.size;
+	}
+
+	async deleteSelectedPoints(): Promise<number> {
+		const ids =
+			this.pointSelection.size > 0
+				? [...this.pointSelection]
+				: this.selectedPointId !== null
+					? [this.selectedPointId]
+					: [];
+		return this.deletePoints(ids);
 	}
 
 	// A manual drag, resize or ratio change makes the frame the user's: it stops being recomputed.
@@ -391,6 +448,7 @@ export class FramerSession {
 			this.historyPos = seq;
 			this.selectedFrameId = remapId(this.selectedFrameId, restored.frameIds);
 			this.selectedPointId = null;
+			this.pointSelection = new Set();
 			this.selection = remapSelection(this.selection, restored.frameIds);
 			this.frames = restored.frames;
 			this.focalPoints = restored.focalPoints;

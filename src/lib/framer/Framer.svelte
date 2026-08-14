@@ -84,6 +84,11 @@ async function deleteSelection() {
 	if (count > 0) toast.success(`Deleted ${count} frame${count === 1 ? '' : 's'}`);
 }
 
+async function deletePointSelection() {
+	const count = await session.deleteSelectedPoints();
+	if (count > 0) toast.success(`Deleted ${count} point${count === 1 ? '' : 's'}`);
+}
+
 function selectNextFrame() {
 	session.selectNextFrame();
 	if (!previewDismissed) previewOpen = true;
@@ -224,11 +229,17 @@ function handleKeyDown(event: KeyboardEvent) {
 				if (session.selection.size > 0 || session.selectedFrameId != null) {
 					event.preventDefault();
 					deleteSelection();
-				} else if (session.selectedPointId != null) {
+				} else if (session.pointSelection.size > 0 || session.selectedPointId != null) {
 					event.preventDefault();
-					session.deletePoint(session.selectedPointId);
+					deletePointSelection();
 				}
 			}
+		} else if (event.key === '[') {
+			event.preventDefault();
+			session.selectPrevPoint();
+		} else if (event.key === ']') {
+			event.preventDefault();
+			session.selectNextPoint();
 		} else if (event.key === 'f') {
 			event.preventDefault();
 			addFrame();
@@ -269,6 +280,7 @@ function handleKeyDown(event: KeyboardEvent) {
 			selectedFrameId={session.selectedFrameId}
 			selectedPointId={session.selectedPointId}
 			selection={session.selection}
+			pointSelection={session.pointSelection}
 			compositionLabels={session.compositionLabels}
 			{activeGuide}
 			onchange={() => session.touch()}
@@ -276,7 +288,7 @@ function handleKeyDown(event: KeyboardEvent) {
 			onmovepoint={(id, position) => session.movePoint(id, position)}
 			ondeleteframe={(id) => session.deleteFrame(id)}
 			onselectframe={(id) => selectFrame(id)}
-			onselectpoint={(id) => session.selectPoint(id)}
+			onselectpoint={(id, mode) => session.selectPoint(id, mode)}
 			ontoggleselect={(id) => selectFrame(id, 'toggle')}
 			onimageload={(w, h) => session.setImageSize(w, h)}
 			oncanvasclick={handleCanvasClick}
@@ -324,10 +336,11 @@ function handleKeyDown(event: KeyboardEvent) {
 		selectedFrameId={session.selectedFrameId}
 		selectedPointId={session.selectedPointId}
 		selection={session.selection}
+		pointSelection={session.pointSelection}
 		compositionLabels={session.compositionLabels}
 		expanded={panelExpanded}
 		onselectframe={(id, mode) => selectFrame(id, mode)}
-		onselectpoint={(id) => session.selectPoint(id)}
+		onselectpoint={(id, mode) => session.selectPoint(id, mode)}
 		ontoggleselect={(id) => selectFrame(id, 'toggle')}
 		onselectall={() => session.selectAllFrames()}
 		onclearselection={() => session.deselect()}

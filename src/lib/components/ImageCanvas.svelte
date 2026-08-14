@@ -1,6 +1,6 @@
 <script lang="ts">
 import { clipsRequiredPoints } from '$lib/composition';
-import { cycleFrameId, type FocalPoint, type Frame, framesAtPoint } from '$lib/framer/types';
+import { cycleFrameId, type FocalPoint, type Frame, framesAtPoint, type SelectMode } from '$lib/framer/types';
 import CompositionGuide from './CompositionGuide.svelte';
 import DraggableFocalPoint from './DraggableFocalPoint.svelte';
 import ResizableFrame from './ResizableFrame.svelte';
@@ -13,6 +13,7 @@ interface Props {
 	selectedFrameId?: number | null;
 	selectedPointId?: number | null;
 	selection?: Set<number>;
+	pointSelection?: Set<number>;
 	onchange?: () => void;
 	onclaimframe?: (
 		frameId: number,
@@ -21,7 +22,7 @@ interface Props {
 	onmovepoint?: (pointId: number, position: { x: number; y: number }) => Promise<void> | void;
 	ondeleteframe?: (frameId: number) => void;
 	onselectframe?: (frameId: number | null) => void;
-	onselectpoint?: (pointId: number | null) => void;
+	onselectpoint?: (pointId: number | null, mode?: SelectMode) => void;
 	ontoggleselect?: (frameId: number) => void;
 	onimageload?: (width: number, height: number) => void;
 	oncanvasclick?: (normX: number, normY: number, altKey: boolean) => void;
@@ -37,6 +38,7 @@ let {
 	selectedFrameId = null,
 	selectedPointId = null,
 	selection = new Set(),
+	pointSelection = new Set(),
 	onchange,
 	onclaimframe,
 	onmovepoint,
@@ -163,8 +165,8 @@ function handlePointerUp(event: PointerEvent) {
 	dragOrigin = null;
 }
 
-function selectPoint(pointId: number) {
-	onselectpoint?.(pointId);
+function selectPoint(pointId: number, mode: SelectMode) {
+	onselectpoint?.(pointId, mode);
 }
 
 // Frames overlap heavily, so their fills are not hit-testable in the DOM (only the
@@ -285,7 +287,8 @@ function handleKeyDown(event: KeyboardEvent) {
 					imageHeight={renderRect.h}
 					scale={1}
 					selected={selectedPointId === point.id}
-					onSelect={() => selectPoint(point.id)}
+					inSelection={pointSelection.has(point.id)}
+					onSelect={(mode) => selectPoint(point.id, mode)}
 					onmove={(position) => onmovepoint?.(point.id, position)}
 					{onchange}
 				/>

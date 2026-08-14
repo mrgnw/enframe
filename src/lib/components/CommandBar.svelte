@@ -93,6 +93,8 @@ const shortcuts = [
 			{ key: 'Click', label: 'Select frame' },
 			{ key: '\u21e7Click', label: 'Add / remove' },
 			{ key: '\u2318A', label: 'Select all frames' },
+			{ key: '\u21e7Click', label: 'Point range (list)' },
+			{ key: '\u2318Click', label: 'Toggle point' },
 			{ key: 'Esc', label: 'Select none' },
 			{ key: 'Right-click', label: 'Frame actions' },
 			{ key: '\u232b', label: 'Delete selection' }
@@ -118,6 +120,8 @@ const shortcuts = [
 		items: [
 			{ key: ',', label: 'Previous frame' },
 			{ key: '.', label: 'Next frame' },
+			{ key: '[', label: 'Previous point' },
+			{ key: ']', label: 'Next point' },
 			{ key: '1\u20139', label: 'Select frame' },
 			{ key: '0', label: 'Fit / fill' },
 			{ key: 'Scroll', label: 'Zoom' },

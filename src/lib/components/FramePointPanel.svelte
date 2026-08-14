@@ -2,7 +2,7 @@
 import { Pin, Ratio, Trash2 } from '@lucide/svelte';
 import { clipsRequiredPoints } from '$lib/composition';
 import { DESTINATIONS, destinationHasRatio, findDestination } from '$lib/destinations';
-import type { FocalPoint, Frame, SelectMode } from '$lib/framer/types';
+import type { FocalPoint, Frame, PointSelectMode, SelectMode } from '$lib/framer/types';
 
 const PINNED_KEY = 'enframe.framePointPanel.pinned';
 
@@ -19,10 +19,11 @@ interface Props {
 	selectedFrameId?: number | null;
 	selectedPointId?: number | null;
 	selection?: Set<number>;
+	pointSelection?: Set<number>;
 	compositionLabels?: Map<number, string>;
 	expanded?: boolean;
 	onselectframe?: (frameId: number | null, mode?: SelectMode) => void;
-	onselectpoint?: (pointId: number | null) => void;
+	onselectpoint?: (pointId: number | null, mode?: PointSelectMode) => void;
 	ontoggleselect?: (frameId: number) => void;
 	onselectall?: () => void;
 	onclearselection?: () => void;
@@ -40,6 +41,7 @@ let {
 	selectedFrameId = null,
 	selectedPointId = null,
 	selection = new Set(),
+	pointSelection = new Set(),
 	compositionLabels = new Map(),
 	expanded = false,
 	onselectframe,
@@ -95,6 +97,12 @@ function togglePinned() {
 
 function clickFrame(frame: Frame, event: MouseEvent) {
 	onselectframe?.(frame.id, event.shiftKey || event.metaKey || event.ctrlKey ? 'toggle' : 'replace');
+}
+
+// Shift extends a range through the list, cmd toggles one point in or out.
+function clickPoint(point: FocalPoint, event: MouseEvent) {
+	const mode: PointSelectMode = event.shiftKey ? 'range' : event.metaKey || event.ctrlKey ? 'toggle' : 'replace';
+	onselectpoint?.(point.id, mode);
 }
 
 // Right-click acts on what you clicked: a row outside the selection becomes the selection first.
@@ -347,11 +355,11 @@ function isPortrait(frame: Frame): boolean {
 		{#if focalPoints.length > 0}
 			<div class="section-label">Points</div>
 			{#each focalPoints as point, i (point.id)}
-				{@const isSelected = selectedPointId === point.id}
+				{@const isSelected = selectedPointId === point.id || pointSelection.has(point.id)}
 				<div
 					class="panel-row point-row"
 					class:selected={isSelected}
-					onclick={() => onselectpoint?.(point.id)}
+					onclick={(e: MouseEvent) => clickPoint(point, e)}
 					onkeydown={() => {}}
 					role="button"
 					tabindex="0"

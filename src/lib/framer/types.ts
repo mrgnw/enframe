@@ -146,14 +146,14 @@ export function docFromSidecar(raw: Partial<Sidecar>): CropDoc {
 	};
 }
 
-// Step through the frame list, wrapping at both ends. An unknown current id lands on
-// the first frame going forwards and the second-to-last going backwards, which is what
-// falls out of the wrap and keeps `,`/`.` usable after a frame disappears.
-export function cycleFrameId(frames: Frame[], current: number | null, delta: 1 | -1): number | null {
-	if (frames.length === 0) return null;
-	if (current === null) return delta > 0 ? frames[0].id : frames[frames.length - 1].id;
-	const index = frames.findIndex((f) => f.id === current);
-	return frames[(index + delta + frames.length) % frames.length].id;
+// Step through an item list, wrapping at both ends. An unknown current id lands on
+// the first item going forwards and the second-to-last going backwards, which is what
+// falls out of the wrap and keeps `,`/`.` usable after an item disappears.
+export function cycleFrameId(items: { id: number }[], current: number | null, delta: 1 | -1): number | null {
+	if (items.length === 0) return null;
+	if (current === null) return delta > 0 ? items[0].id : items[items.length - 1].id;
+	const index = items.findIndex((f) => f.id === current);
+	return items[(index + delta + items.length) % items.length].id;
 }
 
 // Frames whose box contains the normalised point, topmost first: later frames paint over
@@ -171,6 +171,9 @@ export function framesAtPoint(frames: Frame[], x: number, y: number): Frame[] {
 }
 
 export type SelectMode = 'replace' | 'toggle';
+
+// Points add 'range': in the panel list, shift-click extends from the anchor.
+export type PointSelectMode = SelectMode | 'range';
 
 // One selection drives editing, export and bulk actions. A plain click replaces it, shift
 // or cmd toggles a frame in or out. The anchor is the frame the canvas keeps its handles
