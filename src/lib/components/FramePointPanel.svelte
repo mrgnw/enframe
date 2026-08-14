@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Pin, RotateCw } from '@lucide/svelte';
+import { Pin, Ratio } from '@lucide/svelte';
 import { clipsRequiredPoints } from '$lib/composition';
 import { DESTINATIONS, destinationHasRatio, findDestination } from '$lib/destinations';
 import type { FocalPoint, Frame } from '$lib/framer/types';
@@ -85,7 +85,7 @@ function togglePinned() {
 	localStorage.setItem(PINNED_KEY, String(pinned));
 }
 
-function rotateFrame(frame: Frame) {
+function swapOrientation(frame: Frame) {
 	const imgW = imageWidth || 1;
 	const imgH = imageHeight || 1;
 
@@ -260,8 +260,13 @@ function isPortrait(frame: Frame): boolean {
 					>{frame.label || i + 1}</button>
 				{/if}
 
-					<button class="icon-btn" title="Rotate frame (swap W/H)" onclick={() => { rotateFrame(frame); handleInteraction(); }}>
-						<RotateCw size={12} />
+					<button
+						class="icon-btn"
+						title={portrait ? 'Swap orientation to landscape' : 'Swap orientation to portrait'}
+						aria-label={portrait ? 'Swap orientation to landscape' : 'Swap orientation to portrait'}
+						onclick={() => { swapOrientation(frame); handleInteraction(); }}
+					>
+						<Ratio size={12} />
 					</button>
 
 				<select
