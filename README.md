@@ -118,37 +118,8 @@ It runs the release binary directly, so build it once before the first start:
 cargo build --release --manifest-path src-tauri/Cargo.toml -p enframe-serve
 ```
 
-#### Reaching it from elsewhere
-
-The server binds to loopback, so something has to bridge it. Tailnet-only, no public DNS:
-
-```sh
-tailscale serve --bg 5911
-```
-
-Or a throwaway Cloudflare tunnel, which prints a random `trycloudflare.com` URL:
-
-```sh
-cloudflared tunnel --url http://127.0.0.1:5911
-```
-
-For a stable hostname, create a named tunnel once and route DNS to it:
-
-```sh
-HOSTNAME=enframe.xcc.es
-```
-
-```sh
-cloudflared tunnel create enframe
-```
-
-```sh
-cloudflared tunnel route dns enframe "$HOSTNAME"
-```
-
-```sh
-cloudflared tunnel run --url http://127.0.0.1:5911 enframe
-```
+The server listens on `127.0.0.1:5911`; reach it from elsewhere however you already
+bridge ports (tunnel, tailnet, reverse proxy).
 
 The server reads and writes the same database as the desktop app
 (`~/Library/Application Support/com.enframe.app/enframe.db`) and creates it with all
