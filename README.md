@@ -119,6 +119,13 @@ It runs the release binary directly, so build it once before the first start:
 cargo build --release --manifest-path src-tauri/Cargo.toml -p enframe-serve
 ```
 
+A launchd-managed process inherits none of your terminal's privacy grants, so photos in
+iCloud Drive, Photos, Desktop or Documents are unreadable until you grant the binary
+**Full Disk Access** (System Settings → Privacy & Security → Full Disk Access → add
+`src-tauri/target/release/enframe-serve`). Without it those reads hang rather than fail,
+so `/img` gives up after 60s with a 504. Photos under `~/Pictures` are unaffected, and
+running `bun run serve` from a terminal sidesteps it entirely.
+
 The server listens on `127.0.0.1:5911`; reach it from elsewhere however you already
 bridge ports (tunnel, tailnet, reverse proxy).
 

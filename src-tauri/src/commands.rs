@@ -58,9 +58,26 @@ fn decode_raw(decoder: &dyn Decoder, src: &RawSource) -> Result<image::DynamicIm
         .ok_or_else(|| "RAW develop produced no image".to_string())
 }
 
+const RAW_EXTENSIONS: [&str; 9] = [
+    "arw", "cr2", "cr3", "nef", "dng", "raf", "orf", "rw2", "pef",
+];
+
+// rawler accepts some ordinary JPEGs by content — they carry the TIFF/EXIF structure it
+// sniffs for — and then spends minutes demosaicing what is not sensor data. Trust the
+// extension when there is one; only extension-less files (Lightroom proxies) get probed.
+fn may_be_raw(path: &str) -> bool {
+    match std::path::Path::new(path).extension() {
+        Some(extension) => RAW_EXTENSIONS.contains(&extension.to_ascii_lowercase().to_string_lossy().as_ref()),
+        None => true,
+    }
+}
+
 // Browsers cannot decode camera RAW, so serve mode renders a JPEG rather than shipping
 // the original bytes to an <img>. Returns None when the file is not RAW at all.
 pub fn raw_as_jpeg(path: &str) -> Result<Option<Vec<u8>>, String> {
+    if !may_be_raw(path) {
+        return Ok(None);
+    }
     let file_bytes = fs::read(path).map_err(|e| format!("Read error: {e}"))?;
     let src = RawSource::new_from_shared_vec(Arc::new(file_bytes));
     let Ok(decoder) = rawler::get_decoder(&src) else {
@@ -193,7 +210,23 @@ pub fn crop_and_export(
 
 #[cfg(test)]
 mod tests {
-    use super::preview_is_full_size;
+    use super::{may_be_raw, preview_is_full_size};
+
+    #[test]
+    fn ordinary_images_never_reach_the_raw_decoder() {
+        assert!(!may_be_raw("/photos/a.jpeg"));
+        assert!(!may_be_raw("/photos/a.JPG"));
+        assert!(!may_be_raw("/photos/a.png"));
+        assert!(!may_be_raw("/photos/2022 pt cabo da roca.jpeg"));
+    }
+
+    #[test]
+    fn raw_extensions_and_bare_names_are_probed() {
+        assert!(may_be_raw("/photos/IMG_0001.ARW"));
+        assert!(may_be_raw("/photos/shot.cr3"));
+        assert!(may_be_raw("/photos/shot.dng"));
+        assert!(may_be_raw("/lightroom/proxy-no-extension"));
+    }
 
     #[test]
     fn sony_arw_preview_falls_through_to_develop() {

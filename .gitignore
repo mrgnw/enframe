@@ -24,3 +24,5 @@ tests/fixtures/test.db
 # Test images (large binaries)
 images/
 scripts/lr_backup/
+
+/captures/

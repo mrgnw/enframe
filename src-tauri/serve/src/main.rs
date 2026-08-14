@@ -397,6 +397,20 @@ async fn upload(
     .map(Json)
 }
 
+// A read that never returns leaves the browser tab spinning forever, which is how a
+// launchd-managed server without Full Disk Access fails on an iCloud path. Bound it:
+// slow enough for a genuine iCloud download, finite either way.
+const IMAGE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(60);
+
+async fn deadline<T>(work: impl Future<Output = T>) -> ApiResult<T> {
+    tokio::time::timeout(IMAGE_DEADLINE, work).await.map_err(|_| {
+        (
+            StatusCode::GATEWAY_TIMEOUT,
+            "timed out reading the image; the server may lack permission to read it".to_string(),
+        )
+    })
+}
+
 async fn img(
     State(state): State<AppState>,
     Path(path): Path<String>,
@@ -410,7 +424,10 @@ async fn img(
     let file = state.roots.check_read(&absolute).map_err(denied)?;
 
     let source = file.clone();
-    let raw = blocking(move || app_lib::commands::raw_as_jpeg(&text(source))).await?;
+    let raw = deadline(blocking(move || {
+        app_lib::commands::raw_as_jpeg(&text(source))
+    }))
+    .await??;
 
     // ponytail: decoded on every request; the immutable Cache-Control keeps the browser
     // from asking twice. Add a keyed cache if cold loads of a large library ever hurt.
@@ -425,9 +442,8 @@ async fn img(
             .into_response());
     }
 
-    ServeFile::new(file)
-        .oneshot(request)
-        .await
+    deadline(ServeFile::new(file).oneshot(request))
+        .await?
         .map(IntoResponse::into_response)
         .map_err(fail)
 }
