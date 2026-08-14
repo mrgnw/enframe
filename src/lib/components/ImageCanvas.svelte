@@ -316,6 +316,8 @@ function handleKeyDown(event: KeyboardEvent) {
 		display: block;
 		user-select: none;
 		pointer-events: none;
+		max-width: none;
+		max-height: none;
 	}
 
 	.overlay-container {
