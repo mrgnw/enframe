@@ -156,6 +156,20 @@ export function cycleFrameId(frames: Frame[], current: number | null, delta: 1 |
 	return frames[(index + delta + frames.length) % frames.length].id;
 }
 
+// Frames whose box contains the normalised point, topmost first: later frames paint over
+// earlier ones, so render order reverses into hit order. Feed the result straight to
+// cycleFrameId to step down through a stack of overlapping frames at one spot.
+// ponytail: axis-aligned test, rotation ignored — frames only rotate by 0 today.
+export function framesAtPoint(frames: Frame[], x: number, y: number): Frame[] {
+	const hits: Frame[] = [];
+	for (let i = frames.length - 1; i >= 0; i--) {
+		const frame = frames[i];
+		const inside = x >= frame.x && x <= frame.x + frame.width && y >= frame.y && y <= frame.y + frame.height;
+		if (inside) hits.push(frame);
+	}
+	return hits;
+}
+
 export function nextLocalId(doc: CropDoc): number {
 	let lowest = 0;
 	for (const frame of doc.frames) lowest = Math.min(lowest, frame.id);

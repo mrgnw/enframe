@@ -7,6 +7,7 @@ import {
 	docFromSidecar,
 	docToSidecar,
 	emptyDoc,
+	framesAtPoint,
 	nextLocalId
 } from './types';
 
@@ -115,6 +116,39 @@ describe('cycleFrameId', () => {
 	test('has nothing to select in an empty document', () => {
 		expect(cycleFrameId([], null, 1)).toBeNull();
 		expect(cycleFrameId([], 7, -1)).toBeNull();
+	});
+});
+
+describe('framesAtPoint', () => {
+	// Frame 7 covers x 0.1-0.6, y 0.2-0.825; frame -1 covers the whole image and paints last.
+	test('returns every frame under the point, topmost first', () => {
+		expect(framesAtPoint(DOC.frames, 0.3, 0.4).map((f) => f.id)).toEqual([-1, 7]);
+	});
+
+	test('skips frames the point falls outside of', () => {
+		expect(framesAtPoint(DOC.frames, 0.9, 0.9).map((f) => f.id)).toEqual([-1]);
+	});
+
+	test('counts the edges as inside', () => {
+		expect(framesAtPoint(DOC.frames, 0.1, 0.2).map((f) => f.id)).toEqual([-1, 7]);
+		expect(framesAtPoint(DOC.frames, 0.6, 0.825).map((f) => f.id)).toEqual([-1, 7]);
+	});
+
+	test('finds nothing outside the image', () => {
+		expect(framesAtPoint(DOC.frames, 1.5, 0.5)).toEqual([]);
+		expect(framesAtPoint([], 0.5, 0.5)).toEqual([]);
+	});
+
+	test('cycles through the stack under one point and wraps', () => {
+		const hits = framesAtPoint(DOC.frames, 0.3, 0.4);
+		expect(cycleFrameId(hits, null, 1)).toBe(-1);
+		expect(cycleFrameId(hits, -1, 1)).toBe(7);
+		expect(cycleFrameId(hits, 7, 1)).toBe(-1);
+	});
+
+	test('a selection outside the stack lands on the topmost frame', () => {
+		const hits = framesAtPoint(DOC.frames, 0.9, 0.9);
+		expect(cycleFrameId(hits, 7, 1)).toBe(-1);
 	});
 });
 
