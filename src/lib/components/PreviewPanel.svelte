@@ -1,4 +1,5 @@
 <script lang="ts">
+import { findDestination } from '$lib/destinations';
 import type { Frame } from '$lib/framer/types';
 
 interface Props {
@@ -6,12 +7,10 @@ interface Props {
 	frames: Frame[];
 	selectedFrameId?: number | null;
 	exportSelection?: Set<number>;
-	mode?: 'single' | 'all';
 	imageWidth?: number;
 	imageHeight?: number;
 	onselectframe?: (id: number) => void;
 	ontoggleexport?: (id: number) => void;
-	onmodechange?: (mode: 'single' | 'all') => void;
 	onclose?: () => void;
 }
 
@@ -20,24 +19,24 @@ let {
 	frames,
 	selectedFrameId = null,
 	exportSelection = new Set(),
-	mode = 'all',
 	imageWidth = 0,
 	imageHeight = 0,
 	onselectframe,
 	ontoggleexport,
-	onmodechange,
 	onclose
 }: Props = $props();
 
 let hasExportSelection = $derived(exportSelection.size > 0);
 let selectedFrame = $derived(frames.find((f) => f.id === selectedFrameId));
-let displayFrames = $derived(
-	mode === 'single' && selectedFrame
-		? [selectedFrame]
-		: hasExportSelection
-			? frames.filter((f) => exportSelection.has(f.id))
-			: frames
+let listFrames = $derived(
+	(hasExportSelection ? frames.filter((f) => exportSelection.has(f.id)) : frames).filter(
+		(f) => f.id !== selectedFrameId
+	)
 );
+
+function frameName(frame: Frame) {
+	return findDestination(frame.destination)?.name ?? frame.label ?? `Frame ${frameIndex(frame)}`;
+}
 
 function framePx(frame: Frame) {
 	const w = Math.round(imageWidth * frame.width);
@@ -62,20 +61,26 @@ function frameIndex(frame: Frame) {
 }
 </script>
 
+{#snippet crop(frame: Frame)}
+	<div class="crop-wrapper" style="aspect-ratio: {frame.width / frame.height};">
+		<img
+			src={imageSrc}
+			alt="{frameName(frame)} crop"
+			draggable={false}
+			style="
+				position: absolute;
+				width: {(1 / frame.width) * 100}%;
+				height: {(1 / frame.height) * 100}%;
+				left: {-(frame.x / frame.width) * 100}%;
+				top: {-(frame.y / frame.height) * 100}%;
+			"
+		/>
+	</div>
+{/snippet}
+
 <div class="preview-panel">
 	<div class="panel-header">
-		<div class="mode-tabs">
-			<button
-				class="mode-tab"
-				class:active={mode === 'single'}
-				onclick={() => onmodechange?.('single')}
-			>Selected</button>
-			<button
-				class="mode-tab"
-				class:active={mode === 'all'}
-				onclick={() => onmodechange?.('all')}
-			>{hasExportSelection ? `Export (${exportSelection.size})` : 'All'}</button>
-		</div>
+		<span class="panel-title">{hasExportSelection ? `Export (${exportSelection.size})` : 'Preview'}</span>
 		<button class="close-btn" onclick={onclose} title="Close Preview (V)">
 			<svg width="14" height="14" viewBox="0 0 20 20" fill="none">
 				<path d="M15 5L5 15M5 5l10 10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -84,18 +89,28 @@ function frameIndex(frame: Frame) {
 	</div>
 
 	<div class="panel-body">
-		{#if mode === 'single' && !selectedFrame}
-			<div class="empty-state">Select a frame to preview</div>
-		{:else if displayFrames.length === 0}
-			<div class="empty-state">No frames</div>
-		{:else}
-			<div class="preview-grid" class:single-mode={mode === 'single'}>
-				{#each displayFrames as frame (frame.id)}
+		<div class="hero">
+			{#if selectedFrame}
+				{@const px = framePx(selectedFrame)}
+				<div class="hero-card">
+					{@render crop(selectedFrame)}
+					<div class="hero-info">
+						<span class="hero-name">{frameName(selectedFrame)}</span>
+						<span class="hero-dims">{px.w}&times;{px.h}</span>
+						<span class="frame-ratio">{frameRatio(selectedFrame)}</span>
+					</div>
+				</div>
+			{:else}
+				<div class="empty-state">Select a frame to preview its crop</div>
+			{/if}
+		</div>
+
+		{#if listFrames.length > 0}
+			<div class="preview-grid">
+				{#each listFrames as frame (frame.id)}
 					{@const px = framePx(frame)}
-					{@const aspect = frame.width / frame.height}
 					<button
 						class="preview-card"
-						class:selected={selectedFrameId === frame.id}
 						onclick={(e: MouseEvent) => {
 							if (e.shiftKey || e.metaKey) {
 								ontoggleexport?.(frame.id);
@@ -104,23 +119,7 @@ function frameIndex(frame: Frame) {
 							}
 						}}
 					>
-						<div
-							class="crop-wrapper"
-							style="aspect-ratio: {aspect};"
-						>
-							<img
-								src={imageSrc}
-								alt="Frame {frameIndex(frame)}"
-								draggable={false}
-								style="
-									position: absolute;
-									width: {(1 / frame.width) * 100}%;
-									height: {(1 / frame.height) * 100}%;
-									left: {-(frame.x / frame.width) * 100}%;
-									top: {-(frame.y / frame.height) * 100}%;
-								"
-							/>
-						</div>
+						{@render crop(frame)}
 						<div class="preview-info">
 							<span class="frame-num">{frameIndex(frame)}</span>
 							<span class="frame-dims">{px.w}&times;{px.h}</span>
@@ -153,33 +152,13 @@ function frameIndex(frame: Frame) {
 		flex-shrink: 0;
 	}
 
-	.mode-tabs {
-		display: flex;
-		gap: 2px;
-		background: rgba(255, 255, 255, 0.06);
-		border-radius: 6px;
-		padding: 2px;
-	}
-
-	.mode-tab {
-		padding: 4px 10px;
+	.panel-title {
+		padding-left: 6px;
 		font-size: 11px;
-		font-weight: 500;
-		color: rgba(255, 255, 255, 0.5);
-		background: transparent;
-		border: none;
-		border-radius: 4px;
-		cursor: pointer;
-		transition: color 0.15s, background 0.15s;
-	}
-
-	.mode-tab:hover {
-		color: rgba(255, 255, 255, 0.7);
-	}
-
-	.mode-tab.active {
-		color: rgba(255, 255, 255, 0.9);
-		background: rgba(255, 255, 255, 0.12);
+		font-weight: 600;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		color: rgba(255, 255, 255, 0.45);
 	}
 
 	.close-btn {
@@ -211,19 +190,49 @@ function frameIndex(frame: Frame) {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		height: 100%;
+		padding: 24px 12px;
+		text-align: center;
 		color: rgba(255, 255, 255, 0.3);
 		font-size: 12px;
+		line-height: 1.5;
+	}
+
+	.hero {
+		margin-bottom: 10px;
+	}
+
+	.hero-card {
+		display: flex;
+		flex-direction: column;
+		border: 1px solid rgba(249, 115, 22, 0.5);
+		border-radius: 8px;
+		background: rgba(249, 115, 22, 0.07);
+		overflow: hidden;
+	}
+
+	.hero-info {
+		display: flex;
+		align-items: baseline;
+		gap: 6px;
+		padding: 6px 8px 7px;
+		font-size: 11px;
+		color: rgba(255, 255, 255, 0.5);
+	}
+
+	.hero-name {
+		font-weight: 600;
+		color: rgba(255, 255, 255, 0.92);
+	}
+
+	.hero-dims {
+		flex: 1;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.preview-grid {
 		display: grid;
 		grid-template-columns: 1fr 1fr;
 		gap: 6px;
-	}
-
-	.preview-grid.single-mode {
-		grid-template-columns: 1fr;
 	}
 
 	.preview-card {
@@ -242,11 +251,6 @@ function frameIndex(frame: Frame) {
 	.preview-card:hover {
 		background: rgba(255, 255, 255, 0.08);
 		border-color: rgba(255, 255, 255, 0.15);
-	}
-
-	.preview-card.selected {
-		border-color: rgba(59, 130, 246, 0.7);
-		background: rgba(59, 130, 246, 0.08);
 	}
 
 	.crop-wrapper {

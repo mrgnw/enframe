@@ -45,7 +45,7 @@ type GuideType = (typeof GUIDE_TYPES)[number];
 
 let panelExpanded = $state(false);
 let previewOpen = $state(false);
-let previewMode = $state<'single' | 'all'>('all');
+let previewDismissed = $state(false);
 let activeGuide = $state<GuideType>('off');
 let generateOpen = $state(false);
 
@@ -72,6 +72,32 @@ let progressY = $derived(mouseKnown ? mouseY : typeof window !== 'undefined' ? w
 onMount(() => {
 	void session.start();
 });
+
+// ponytail: selection reveals the preview until the user closes it once; one flag, no per-frame memory.
+function selectFrame(id: number | null) {
+	session.selectFrame(id);
+	if (id != null && !previewDismissed) previewOpen = true;
+}
+
+function selectNextFrame() {
+	session.selectNextFrame();
+	if (!previewDismissed) previewOpen = true;
+}
+
+function selectPrevFrame() {
+	session.selectPrevFrame();
+	if (!previewDismissed) previewOpen = true;
+}
+
+function togglePreview() {
+	previewOpen = !previewOpen;
+	previewDismissed = !previewOpen;
+}
+
+function closePreview() {
+	previewOpen = false;
+	previewDismissed = true;
+}
 
 function handlePointerMove(event: PointerEvent) {
 	mouseX = event.clientX;
@@ -181,10 +207,10 @@ function handleKeyDown(event: KeyboardEvent) {
 	} else if (!isInputFocused() && !generateOpen) {
 		if (event.key === ',') {
 			event.preventDefault();
-			session.selectPrevFrame();
+			selectPrevFrame();
 		} else if (event.key === '.') {
 			event.preventDefault();
-			session.selectNextFrame();
+			selectNextFrame();
 		} else if (event.key === 'Backspace' || event.key === 'Delete') {
 			if (!event.metaKey && !event.ctrlKey) {
 				if (session.selectedFrameId != null) {
@@ -209,7 +235,7 @@ function handleKeyDown(event: KeyboardEvent) {
 			panelExpanded = !panelExpanded;
 		} else if (event.key === 'v') {
 			event.preventDefault();
-			previewOpen = !previewOpen;
+			togglePreview();
 		} else if (event.key === 'a') {
 			event.preventDefault();
 			generateOpen = true;
@@ -241,7 +267,7 @@ function handleKeyDown(event: KeyboardEvent) {
 			onclaimframe={(id, geometry) => session.claimFrame(id, geometry)}
 			onmovepoint={(id, position) => session.movePoint(id, position)}
 			ondeleteframe={(id) => session.deleteFrame(id)}
-			onselectframe={(id) => session.selectFrame(id)}
+			onselectframe={(id) => selectFrame(id)}
 			onselectpoint={(id) => session.selectPoint(id)}
 			ontoggleexport={(id) => session.toggleExportSelection(id)}
 			onimageload={(w, h) => session.setImageSize(w, h)}
@@ -255,13 +281,11 @@ function handleKeyDown(event: KeyboardEvent) {
 			frames={session.frames}
 			selectedFrameId={session.selectedFrameId}
 			exportSelection={session.exportSelection}
-			mode={previewMode}
 			imageWidth={session.imageWidth}
 			imageHeight={session.imageHeight}
-			onselectframe={(id) => session.selectFrame(id)}
+			onselectframe={(id) => selectFrame(id)}
 			ontoggleexport={(id) => session.toggleExportSelection(id)}
-			onmodechange={(m) => (previewMode = m)}
-			onclose={() => (previewOpen = false)}
+			onclose={closePreview}
 		/>
 	{/if}
 </div>
@@ -282,7 +306,7 @@ function handleKeyDown(event: KeyboardEvent) {
 		onsave={save}
 		onexport={runExport}
 		ontoggle={() => (panelExpanded = !panelExpanded)}
-		onpreview={() => (previewOpen = !previewOpen)}
+		onpreview={togglePreview}
 	/>
 	<FramePointPanel
 		frames={session.frames}
@@ -294,7 +318,7 @@ function handleKeyDown(event: KeyboardEvent) {
 		exportSelection={session.exportSelection}
 		compositionLabels={session.compositionLabels}
 		expanded={panelExpanded}
-		onselectframe={(id) => session.selectFrame(id)}
+		onselectframe={(id) => selectFrame(id)}
 		onselectpoint={(id) => session.selectPoint(id)}
 		ontoggleexport={(id) => session.toggleExportSelection(id)}
 		onclaim={(id, geometry) => session.claimFrame(id, geometry)}
@@ -312,8 +336,8 @@ function handleKeyDown(event: KeyboardEvent) {
 	onsave={save}
 	onexport={runExport}
 	onsetoutputdir={() => onsetoutputdir?.()}
-	onnextframe={() => session.selectNextFrame()}
-	onprevframe={() => session.selectPrevFrame()}
+	onnextframe={selectNextFrame}
+	onprevframe={selectPrevFrame}
 	ondeleteframe={() => {
 		if (session.selectedFrameId != null) session.deleteFrame(session.selectedFrameId);
 	}}
@@ -322,7 +346,7 @@ function handleKeyDown(event: KeyboardEvent) {
 	onredo={() => session.redo()}
 	ontoggle={() => (panelExpanded = !panelExpanded)}
 	ondeselect={() => session.deselect()}
-	onpreview={() => (previewOpen = !previewOpen)}
+	onpreview={togglePreview}
 	oncycleguide={cycleGuide}
 	onselectallexport={() => session.selectAllForExport()}
 	onclearexport={() => session.clearExportSelection()}
