@@ -138,6 +138,8 @@ function frameIndex(frame: Frame) {
 		height: 100%;
 		display: flex;
 		flex-direction: column;
+		padding-top: 60px;
+		box-sizing: border-box;
 		background: rgba(0, 0, 0, 0.85);
 		backdrop-filter: blur(12px);
 		border-left: 1px solid rgba(255, 255, 255, 0.08);
@@ -262,6 +264,8 @@ function frameIndex(frame: Frame) {
 
 	.crop-wrapper img {
 		display: block;
+		/* ponytail: tailwind preflight caps images at 100%, which squashes every CSS crop */
+		max-width: none;
 		user-select: none;
 		pointer-events: none;
 	}
