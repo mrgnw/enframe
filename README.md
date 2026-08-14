@@ -126,8 +126,11 @@ iCloud Drive, Photos, Desktop or Documents are unreadable until you grant the bi
 so `/img` gives up after 60s with a 504. Photos under `~/Pictures` are unaffected, and
 running `bun run serve` from a terminal sidesteps it entirely.
 
-The server listens on `127.0.0.1:5911`; reach it from elsewhere however you already
-bridge ports (tunnel, tailnet, reverse proxy).
+`services.toml` passes `--host 0.0.0.0`, so the port answers on every interface — a
+tailnet address reaches it directly with nothing to proxy, and so does anything else on
+the same network. To keep it off the local network, bind the tailnet address instead
+(`--host <tailscale-ip>`); the cost is that `localhost` stops working and the service
+fails to start if it comes up before Tailscale does. Default `127.0.0.1` when run by hand.
 
 The server reads and writes the same database as the desktop app
 (`~/Library/Application Support/com.enframe.app/enframe.db`) and creates it with all
