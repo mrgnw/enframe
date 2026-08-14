@@ -1,8 +1,8 @@
 <script lang="ts">
-import { Pin, Ratio } from '@lucide/svelte';
+import { Pin, Ratio, Trash2 } from '@lucide/svelte';
 import { clipsRequiredPoints } from '$lib/composition';
 import { DESTINATIONS, destinationHasRatio, findDestination } from '$lib/destinations';
-import type { FocalPoint, Frame } from '$lib/framer/types';
+import type { FocalPoint, Frame, SelectMode } from '$lib/framer/types';
 
 const PINNED_KEY = 'enframe.framePointPanel.pinned';
 
@@ -18,12 +18,15 @@ interface Props {
 	imageHeight: number;
 	selectedFrameId?: number | null;
 	selectedPointId?: number | null;
-	exportSelection?: Set<number>;
+	selection?: Set<number>;
 	compositionLabels?: Map<number, string>;
 	expanded?: boolean;
-	onselectframe?: (frameId: number | null) => void;
+	onselectframe?: (frameId: number | null, mode?: SelectMode) => void;
 	onselectpoint?: (pointId: number | null) => void;
-	ontoggleexport?: (frameId: number) => void;
+	ontoggleselect?: (frameId: number) => void;
+	onselectall?: () => void;
+	onclearselection?: () => void;
+	ondeleteselection?: () => void;
 	onclaim?: (frameId: number, geometry: Partial<Frame>) => Promise<void> | void;
 	onlabel?: (frameId: number, label: string) => Promise<void> | void;
 	onchange?: () => void;
@@ -36,18 +39,23 @@ let {
 	imageHeight,
 	selectedFrameId = null,
 	selectedPointId = null,
-	exportSelection = new Set(),
+	selection = new Set(),
 	compositionLabels = new Map(),
 	expanded = false,
 	onselectframe,
 	onselectpoint,
-	ontoggleexport,
+	ontoggleselect,
+	onselectall,
+	onclearselection,
+	ondeleteselection,
 	onclaim,
 	onlabel,
 	onchange
 }: Props = $props();
 
-let hasExportSelection = $derived(exportSelection.size > 0);
+let selectionCount = $derived(selection.size);
+let hasSelection = $derived(selectionCount > 0);
+let menu = $state<{ x: number; y: number } | null>(null);
 
 let panelEl = $state<HTMLDivElement | null>(null);
 let editingLabelId = $state<number | null>(null);
@@ -83,6 +91,23 @@ function handleInteraction() {
 function togglePinned() {
 	pinned = !pinned;
 	localStorage.setItem(PINNED_KEY, String(pinned));
+}
+
+function clickFrame(frame: Frame, event: MouseEvent) {
+	onselectframe?.(frame.id, event.shiftKey || event.metaKey || event.ctrlKey ? 'toggle' : 'replace');
+}
+
+// Right-click acts on what you clicked: a row outside the selection becomes the selection first.
+function openMenu(frame: Frame, event: MouseEvent) {
+	event.preventDefault();
+	if (!selection.has(frame.id)) onselectframe?.(frame.id, 'replace');
+	menu = { x: event.clientX, y: event.clientY };
+	handleInteraction();
+}
+
+function runMenu(action?: () => void) {
+	menu = null;
+	action?.();
 }
 
 function swapOrientation(frame: Frame) {
@@ -197,6 +222,18 @@ function isPortrait(frame: Frame): boolean {
 		aria-label="Frames and points"
 	>
 		<div class="panel-header">
+			{#if hasSelection}
+				<span class="selection-count">{selectionCount} selected</span>
+				<button class="action-btn danger" title="Delete the selected frames (⌫)" onclick={() => ondeleteselection?.()}>
+					<Trash2 size={11} /> Delete
+				</button>
+				<button class="action-btn" title="Clear the selection (Esc)" onclick={() => onclearselection?.()}>None</button>
+			{:else if frames.length > 0}
+				<span class="selection-count muted">Shift-click to select several</span>
+			{/if}
+			{#if frames.length > 0}
+				<button class="action-btn" title="Select every frame (⌘A)" onclick={() => onselectall?.()}>All</button>
+			{/if}
 			<button
 				class="pin-btn"
 				class:active={pinned}
@@ -215,26 +252,27 @@ function isPortrait(frame: Frame): boolean {
 			{@const portrait = isPortrait(frame)}
 			{@const isAuto = frame.is_auto}
 			{@const clipped = clipsRequiredPoints(frame, frame.id, focalPoints)}
-			{@const isExportChecked = !hasExportSelection || exportSelection.has(frame.id)}
+			{@const inSelection = selection.has(frame.id)}
 			<div
 				class="panel-row"
-				class:selected={isSelected}
+				class:selected={isSelected || inSelection}
 				class:auto-frame={isAuto}
 				class:clips-required={clipped}
-				class:export-dimmed={hasExportSelection && !exportSelection.has(frame.id)}
-				onclick={() => onselectframe?.(frame.id)}
+				class:unselected={hasSelection && !inSelection}
+				onclick={(e: MouseEvent) => clickFrame(frame, e)}
+				oncontextmenu={(e: MouseEvent) => openMenu(frame, e)}
 				onkeydown={() => {}}
 				role="button"
 				tabindex="0"
 			>
 				<button
 					class="export-check"
-					class:checked={isExportChecked}
-					class:has-selection={hasExportSelection}
-					title={isExportChecked ? 'Exclude from export' : 'Include in export'}
-					onclick={(e: MouseEvent) => { e.stopPropagation(); ontoggleexport?.(frame.id); }}
+					class:checked={inSelection}
+					class:has-selection={hasSelection}
+					title={inSelection ? 'Remove from selection' : 'Add to selection'}
+					onclick={(e: MouseEvent) => { e.stopPropagation(); ontoggleselect?.(frame.id); }}
 				>
-					{#if hasExportSelection && exportSelection.has(frame.id)}
+					{#if inSelection}
 						<svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
 					{/if}
 				</button>
@@ -324,6 +362,22 @@ function isPortrait(frame: Frame): boolean {
 		{/if}
 		</div>
 	</div>
+
+	{#if menu}
+		<div
+			class="menu-backdrop"
+			onclick={() => (menu = null)}
+			oncontextmenu={(e: MouseEvent) => { e.preventDefault(); menu = null; }}
+			role="presentation"
+		></div>
+		<div class="context-menu" style:left="{menu.x}px" style:top="{menu.y}px" role="menu">
+			<button role="menuitem" onclick={() => runMenu(ondeleteselection)}>
+				<Trash2 size={12} /> Delete {selectionCount} frame{selectionCount === 1 ? '' : 's'}
+			</button>
+			<button role="menuitem" onclick={() => runMenu(onselectall)}>Select all frames</button>
+			<button role="menuitem" onclick={() => runMenu(onclearselection)}>Select none</button>
+		</div>
+	{/if}
 {/if}
 
 <style>
@@ -359,7 +413,94 @@ function isPortrait(frame: Frame): boolean {
 
 	.panel-header {
 		display: flex;
+		align-items: center;
 		justify-content: flex-end;
+		gap: 4px;
+	}
+
+	.selection-count {
+		margin-right: auto;
+		font-size: 10px;
+		font-weight: 600;
+		color: #22c55e;
+		padding-left: 2px;
+	}
+
+	.selection-count.muted {
+		color: rgba(255, 255, 255, 0.3);
+		font-weight: 500;
+	}
+
+	.action-btn {
+		display: flex;
+		align-items: center;
+		gap: 3px;
+		padding: 2px 6px;
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		border-radius: 4px;
+		background: transparent;
+		color: rgba(255, 255, 255, 0.6);
+		font-family: inherit;
+		font-size: 10px;
+		cursor: pointer;
+		transition: background 0.15s, color 0.15s, border-color 0.15s;
+	}
+
+	.action-btn:hover {
+		background: rgba(255, 255, 255, 0.12);
+		color: white;
+		border-color: rgba(255, 255, 255, 0.3);
+	}
+
+	.action-btn.danger {
+		color: #f87171;
+		border-color: rgba(248, 113, 113, 0.35);
+	}
+
+	.action-btn.danger:hover {
+		background: rgba(239, 68, 68, 0.2);
+		color: white;
+	}
+
+	.menu-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 60;
+	}
+
+	.context-menu {
+		position: fixed;
+		z-index: 61;
+		display: flex;
+		flex-direction: column;
+		min-width: 160px;
+		padding: 4px;
+		background: rgba(20, 20, 20, 0.95);
+		backdrop-filter: blur(12px);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 10px;
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+		animation: panel-in 0.1s ease;
+	}
+
+	.context-menu button {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 8px;
+		border: none;
+		border-radius: 6px;
+		background: transparent;
+		color: rgba(255, 255, 255, 0.8);
+		font-family: inherit;
+		font-size: 12px;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.context-menu button:hover {
+		background: rgba(255, 255, 255, 0.12);
+		color: white;
 	}
 
 	.pin-btn {
@@ -443,13 +584,13 @@ function isPortrait(frame: Frame): boolean {
 		border-color: rgba(255, 255, 255, 0.5);
 	}
 
-	.export-check.has-selection.checked {
+	.export-check.checked {
 		border-color: #22c55e;
 		background: #22c55e;
 		color: white;
 	}
 
-	.panel-row.export-dimmed {
+	.panel-row.unselected {
 		opacity: 0.45;
 	}
 

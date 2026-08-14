@@ -12,7 +12,7 @@ interface Props {
 	focalPoints?: FocalPoint[];
 	selectedFrameId?: number | null;
 	selectedPointId?: number | null;
-	exportSelection?: Set<number>;
+	selection?: Set<number>;
 	onchange?: () => void;
 	onclaimframe?: (
 		frameId: number,
@@ -22,7 +22,7 @@ interface Props {
 	ondeleteframe?: (frameId: number) => void;
 	onselectframe?: (frameId: number | null) => void;
 	onselectpoint?: (pointId: number | null) => void;
-	ontoggleexport?: (frameId: number) => void;
+	ontoggleselect?: (frameId: number) => void;
 	onimageload?: (width: number, height: number) => void;
 	oncanvasclick?: (normX: number, normY: number, altKey: boolean) => void;
 	compositionLabels?: Map<number, string>;
@@ -36,14 +36,14 @@ let {
 	focalPoints = $bindable([]),
 	selectedFrameId = null,
 	selectedPointId = null,
-	exportSelection = new Set(),
+	selection = new Set(),
 	onchange,
 	onclaimframe,
 	onmovepoint,
 	ondeleteframe,
 	onselectframe,
 	onselectpoint,
-	ontoggleexport,
+	ontoggleselect,
 	onimageload,
 	oncanvasclick,
 	compositionLabels = new Map(),
@@ -54,7 +54,7 @@ const ZOOM_MIN = 1;
 const ZOOM_MAX = 8;
 const DRAG_THRESHOLD = 3;
 
-let hasExportSelection = $derived(exportSelection.size > 0);
+let hasSelection = $derived(selection.size > 0);
 
 let containerSize = $state({ w: 0, h: 0 });
 let naturalSize = $state({ w: 0, h: 0 });
@@ -186,7 +186,7 @@ function handleOverlayClick(event: PointerEvent) {
 
 	if (event.shiftKey || event.metaKey) {
 		const target = hits.find((f) => f.id === selectedFrameId) ?? hits[0];
-		ontoggleexport?.(target.id);
+		ontoggleselect?.(target.id);
 		return;
 	}
 
@@ -256,7 +256,7 @@ function handleKeyDown(event: KeyboardEvent) {
 				imageHeight={renderRect.h}
 				scale={1}
 				selected={selectedFrameId === frame.id}
-				exportChecked={!hasExportSelection || exportSelection.has(frame.id)}
+				inSelection={!hasSelection || selection.has(frame.id)}
 				compositionLabel={compositionLabels.get(frame.id) ?? ''}
 				clipsRequired={clipsRequiredPoints(frame, frame.id, focalPoints)}
 				onclaim={(geometry) => onclaimframe?.(frame.id, geometry)}

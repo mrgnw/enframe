@@ -21,8 +21,9 @@ interface Props {
 	ondeselect?: () => void;
 	onpreview?: () => void;
 	oncycleguide?: () => void;
-	onselectallexport?: () => void;
-	onclearexport?: () => void;
+	onselectall?: () => void;
+	onclearselection?: () => void;
+	selectionCount?: number;
 }
 
 let {
@@ -42,8 +43,9 @@ let {
 	ondeselect,
 	onpreview,
 	oncycleguide,
-	onselectallexport,
-	onclearexport
+	onselectall,
+	onclearselection,
+	selectionCount = 0
 }: Props = $props();
 
 let open = $state(false);
@@ -82,7 +84,18 @@ const shortcuts = [
 			{ key: 'Esc', label: 'Deselect' },
 			{ key: '\u2318Z', label: 'Undo' },
 			{ key: '\u2318\u21e7Z', label: 'Redo' },
-			{ key: '\u232b', label: 'Delete' }
+			{ key: '\u232b', label: 'Delete selected' }
+		]
+	},
+	{
+		heading: 'Selection',
+		items: [
+			{ key: 'Click', label: 'Select frame' },
+			{ key: '\u21e7Click', label: 'Add / remove' },
+			{ key: '\u2318A', label: 'Select all frames' },
+			{ key: 'Esc', label: 'Select none' },
+			{ key: 'Right-click', label: 'Frame actions' },
+			{ key: '\u232b', label: 'Delete selection' }
 		]
 	},
 	{
@@ -97,8 +110,7 @@ const shortcuts = [
 			{ key: 'O', label: 'Set output dir' },
 			{ key: 'T', label: 'Toggle panel' },
 			{ key: 'V', label: 'Toggle preview' },
-			{ key: 'G', label: 'Cycle guide' },
-			{ key: '\u21e7Click', label: 'Toggle export select' }
+			{ key: 'G', label: 'Cycle guide' }
 		]
 	},
 	{
@@ -206,6 +218,20 @@ const shortcuts = [
 							<Command.Shortcut>Esc</Command.Shortcut>
 						</Command.Item>
 					</Command.Group>
+					<Command.Group heading="Selection">
+						<Command.Item onSelect={() => run(onselectall)}>
+							<span>Select All Frames</span>
+							<Command.Shortcut>&#8984;A</Command.Shortcut>
+						</Command.Item>
+						<Command.Item onSelect={() => run(onclearselection)}>
+							<span>Select None</span>
+							<Command.Shortcut>Esc</Command.Shortcut>
+						</Command.Item>
+						<Command.Item onSelect={() => run(ondeleteframe)}>
+							<span>Delete Selected{selectionCount > 1 ? ` (${selectionCount})` : ''}</span>
+							<Command.Shortcut>&#9003;</Command.Shortcut>
+						</Command.Item>
+					</Command.Group>
 					<Command.Group heading="Navigation">
 						<Command.Item onSelect={() => run(onnextframe)}>
 							<span>Next Frame</span>
@@ -215,10 +241,6 @@ const shortcuts = [
 							<span>Previous Frame</span>
 							<Command.Shortcut>,</Command.Shortcut>
 						</Command.Item>
-						<Command.Item onSelect={() => run(ondeleteframe)}>
-							<span>Delete Frame</span>
-							<Command.Shortcut>&#9003;</Command.Shortcut>
-						</Command.Item>
 					</Command.Group>
 					{#if !standalone}
 						<Command.Group heading="Open">
@@ -227,14 +249,6 @@ const shortcuts = [
 							</Command.LinkItem>
 						</Command.Group>
 					{/if}
-					<Command.Group heading="Export Selection">
-						<Command.Item onSelect={() => run(onselectallexport)}>
-							<span>Export All Frames</span>
-						</Command.Item>
-						<Command.Item onSelect={() => run(onclearexport)}>
-							<span>Clear Export Selection</span>
-						</Command.Item>
-					</Command.Group>
 					<Command.Group heading="Export Format">
 						<Command.Item onSelect={() => { open = false; onsetformat?.('avif'); }}>
 							<span>AVIF</span>

@@ -6,11 +6,11 @@ interface Props {
 	imageSrc: string;
 	frames: Frame[];
 	selectedFrameId?: number | null;
-	exportSelection?: Set<number>;
+	selection?: Set<number>;
 	imageWidth?: number;
 	imageHeight?: number;
 	onselectframe?: (id: number) => void;
-	ontoggleexport?: (id: number) => void;
+	ontoggleselect?: (id: number) => void;
 	onclose?: () => void;
 }
 
@@ -18,18 +18,18 @@ let {
 	imageSrc,
 	frames,
 	selectedFrameId = null,
-	exportSelection = new Set(),
+	selection = new Set(),
 	imageWidth = 0,
 	imageHeight = 0,
 	onselectframe,
-	ontoggleexport,
+	ontoggleselect,
 	onclose
 }: Props = $props();
 
-let hasExportSelection = $derived(exportSelection.size > 0);
+let hasSelection = $derived(selection.size > 0);
 let selectedFrame = $derived(frames.find((f) => f.id === selectedFrameId));
 let listFrames = $derived(
-	(hasExportSelection ? frames.filter((f) => exportSelection.has(f.id)) : frames).filter(
+	(hasSelection ? frames.filter((f) => selection.has(f.id)) : frames).filter(
 		(f) => f.id !== selectedFrameId
 	)
 );
@@ -80,7 +80,7 @@ function frameIndex(frame: Frame) {
 
 <div class="preview-panel">
 	<div class="panel-header">
-		<span class="panel-title">{hasExportSelection ? `Export (${exportSelection.size})` : 'Preview'}</span>
+		<span class="panel-title">{hasSelection ? `Selected (${selection.size})` : 'Preview'}</span>
 		<button class="close-btn" onclick={onclose} title="Close Preview (V)">
 			<svg width="14" height="14" viewBox="0 0 20 20" fill="none">
 				<path d="M15 5L5 15M5 5l10 10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -113,7 +113,7 @@ function frameIndex(frame: Frame) {
 						class="preview-card"
 						onclick={(e: MouseEvent) => {
 							if (e.shiftKey || e.metaKey) {
-								ontoggleexport?.(frame.id);
+								ontoggleselect?.(frame.id);
 							} else {
 								onselectframe?.(frame.id);
 							}

@@ -8,7 +8,7 @@ interface Props {
 	imageHeight: number;
 	scale: number;
 	selected?: boolean;
-	exportChecked?: boolean;
+	inSelection?: boolean;
 	aspectLocked?: boolean;
 	compositionLabel?: string;
 	clipsRequired?: boolean;
@@ -23,7 +23,7 @@ let {
 	imageHeight,
 	scale,
 	selected = false,
-	exportChecked = true,
+	inSelection = true,
 	aspectLocked = false,
 	compositionLabel = '',
 	clipsRequired = false,
@@ -229,8 +229,8 @@ async function handleHandlePointerUp(event: PointerEvent) {
 <div
 	class="frame-overlay"
 	class:selected
-	class:export-checked={exportChecked}
-	class:export-unchecked={!exportChecked}
+	class:in-selection={inSelection}
+	class:out-of-selection={!inSelection}
 	class:dragging={isDragging}
 	class:resizing={isResizing}
 	class:clips-required={clipsRequired}
@@ -282,13 +282,13 @@ async function handleHandlePointerUp(event: PointerEvent) {
 	}
 
 	/* Export-unchecked: grey */
-	.frame-overlay.export-unchecked {
+	.frame-overlay.out-of-selection {
 		border-color: #9ca3af;
 		opacity: 0.5;
 	}
 
-	/* Export-checked: blue */
-	.frame-overlay.export-checked {
+	/* In the selection: blue */
+	.frame-overlay.in-selection {
 		border-color: #3b82f6;
 	}
 
@@ -338,7 +338,7 @@ async function handleHandlePointerUp(event: PointerEvent) {
 		pointer-events: none;
 	}
 
-	.frame-overlay.export-unchecked .frame-label {
+	.frame-overlay.out-of-selection .frame-label {
 		background: #9ca3af;
 	}
 
@@ -369,7 +369,7 @@ async function handleHandlePointerUp(event: PointerEvent) {
 		box-sizing: border-box;
 	}
 
-	.frame-overlay.export-unchecked .handle {
+	.frame-overlay.out-of-selection .handle {
 		border-color: #9ca3af;
 	}
 

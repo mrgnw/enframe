@@ -10,7 +10,7 @@ import ImageCanvas from '$lib/components/ImageCanvas.svelte';
 import PreviewPanel from '$lib/components/PreviewPanel.svelte';
 import { REQUIRED_DESTINATIONS } from '$lib/destinations';
 import { type FramerStore, FramerSession } from './session.svelte';
-import type { CropDoc, ExportFormat, Frame } from './types';
+import type { CropDoc, ExportFormat, Frame, SelectMode } from './types';
 
 type Report = (done: number, total: number) => void;
 
@@ -74,9 +74,14 @@ onMount(() => {
 });
 
 // ponytail: selection reveals the preview until the user closes it once; one flag, no per-frame memory.
-function selectFrame(id: number | null) {
-	session.selectFrame(id);
+function selectFrame(id: number | null, mode: SelectMode = 'replace') {
+	session.selectFrame(id, mode);
 	if (id != null && !previewDismissed) previewOpen = true;
+}
+
+async function deleteSelection() {
+	const count = await session.deleteSelectedFrames();
+	if (count > 0) toast.success(`Deleted ${count} frame${count === 1 ? '' : 's'}`);
 }
 
 function selectNextFrame() {
@@ -201,6 +206,9 @@ function handleKeyDown(event: KeyboardEvent) {
 	} else if ((event.metaKey || event.ctrlKey) && event.key === 'e') {
 		event.preventDefault();
 		runExport();
+	} else if ((event.metaKey || event.ctrlKey) && event.key === 'a' && !isInputFocused()) {
+		event.preventDefault();
+		session.selectAllFrames();
 	} else if (event.key === 'Escape') {
 		event.preventDefault();
 		session.deselect();
@@ -213,9 +221,9 @@ function handleKeyDown(event: KeyboardEvent) {
 			selectNextFrame();
 		} else if (event.key === 'Backspace' || event.key === 'Delete') {
 			if (!event.metaKey && !event.ctrlKey) {
-				if (session.selectedFrameId != null) {
+				if (session.selection.size > 0 || session.selectedFrameId != null) {
 					event.preventDefault();
-					session.deleteFrame(session.selectedFrameId);
+					deleteSelection();
 				} else if (session.selectedPointId != null) {
 					event.preventDefault();
 					session.deletePoint(session.selectedPointId);
@@ -260,7 +268,7 @@ function handleKeyDown(event: KeyboardEvent) {
 			focalPoints={session.focalPoints}
 			selectedFrameId={session.selectedFrameId}
 			selectedPointId={session.selectedPointId}
-			exportSelection={session.exportSelection}
+			selection={session.selection}
 			compositionLabels={session.compositionLabels}
 			{activeGuide}
 			onchange={() => session.touch()}
@@ -269,7 +277,7 @@ function handleKeyDown(event: KeyboardEvent) {
 			ondeleteframe={(id) => session.deleteFrame(id)}
 			onselectframe={(id) => selectFrame(id)}
 			onselectpoint={(id) => session.selectPoint(id)}
-			ontoggleexport={(id) => session.toggleExportSelection(id)}
+			ontoggleselect={(id) => selectFrame(id, 'toggle')}
 			onimageload={(w, h) => session.setImageSize(w, h)}
 			oncanvasclick={handleCanvasClick}
 		/>
@@ -280,11 +288,11 @@ function handleKeyDown(event: KeyboardEvent) {
 			{imageSrc}
 			frames={session.frames}
 			selectedFrameId={session.selectedFrameId}
-			exportSelection={session.exportSelection}
+			selection={session.selection}
 			imageWidth={session.imageWidth}
 			imageHeight={session.imageHeight}
 			onselectframe={(id) => selectFrame(id)}
-			ontoggleexport={(id) => session.toggleExportSelection(id)}
+			ontoggleselect={(id) => selectFrame(id, 'toggle')}
 			onclose={closePreview}
 		/>
 	{/if}
@@ -315,12 +323,15 @@ function handleKeyDown(event: KeyboardEvent) {
 		imageHeight={session.imageHeight}
 		selectedFrameId={session.selectedFrameId}
 		selectedPointId={session.selectedPointId}
-		exportSelection={session.exportSelection}
+		selection={session.selection}
 		compositionLabels={session.compositionLabels}
 		expanded={panelExpanded}
-		onselectframe={(id) => selectFrame(id)}
+		onselectframe={(id, mode) => selectFrame(id, mode)}
 		onselectpoint={(id) => session.selectPoint(id)}
-		ontoggleexport={(id) => session.toggleExportSelection(id)}
+		ontoggleselect={(id) => selectFrame(id, 'toggle')}
+		onselectall={() => session.selectAllFrames()}
+		onclearselection={() => session.deselect()}
+		ondeleteselection={deleteSelection}
 		onclaim={(id, geometry) => session.claimFrame(id, geometry)}
 		onlabel={(id, label) => session.setFrameLabel(id, label)}
 		onchange={() => session.touch()}
@@ -338,9 +349,7 @@ function handleKeyDown(event: KeyboardEvent) {
 	onsetoutputdir={() => onsetoutputdir?.()}
 	onnextframe={selectNextFrame}
 	onprevframe={selectPrevFrame}
-	ondeleteframe={() => {
-		if (session.selectedFrameId != null) session.deleteFrame(session.selectedFrameId);
-	}}
+	ondeleteframe={deleteSelection}
 	onsetformat={(format) => onsetformat?.(format)}
 	onundo={() => session.undo()}
 	onredo={() => session.redo()}
@@ -348,8 +357,9 @@ function handleKeyDown(event: KeyboardEvent) {
 	ondeselect={() => session.deselect()}
 	onpreview={togglePreview}
 	oncycleguide={cycleGuide}
-	onselectallexport={() => session.selectAllForExport()}
-	onclearexport={() => session.clearExportSelection()}
+	onselectall={() => session.selectAllFrames()}
+	onclearselection={() => session.deselect()}
+	selectionCount={session.selection.size}
 />
 
 <style>
