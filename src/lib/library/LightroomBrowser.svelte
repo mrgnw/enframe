@@ -95,8 +95,7 @@ async function doSearch(query: string) {
 	}
 }
 
-function handleSearchInput(e: Event) {
-	const value = (e.target as HTMLInputElement).value;
+export function search(value: string) {
 	searchQuery = value;
 	if (searchTimeout) clearTimeout(searchTimeout);
 	searchTimeout = setTimeout(() => doSearch(value), 300);
@@ -174,12 +173,13 @@ let heading = $derived(
 </script>
 
 <div class="lr-browser">
-	<div class="sidebar">
-		<div class="sidebar-header">Albums</div>
+	<nav class="rail">
+		<h3>Albums</h3>
 		<button class="album-item" class:active={mode === 'recent'} onclick={loadRecent}>
-			Recent
+			<span class="album-name">Recent</span>
+			<span class="album-count">{assets.length}</span>
 		</button>
-		{#each albums as album}
+		{#each albums as album (album.album_id)}
 			<button
 				class="album-item"
 				class:active={selectedAlbum?.album_id === album.album_id}
@@ -189,23 +189,14 @@ let heading = $derived(
 				<span class="album-count">{album.asset_count}</span>
 			</button>
 		{/each}
-	</div>
+	</nav>
 
 	<div class="main">
 		<div class="toolbar">
-			<div class="toolbar-left">
-				<h2>{heading}</h2>
-				{#if !loading}
-					<span class="count">{assets.length} photos</span>
-				{/if}
-			</div>
-			<input
-				type="search"
-				placeholder="Search by filename..."
-				value={searchQuery}
-				oninput={handleSearchInput}
-				class="search-input"
-			/>
+			<h2>{heading}</h2>
+			{#if !loading}
+				<span class="count">{assets.length} photos</span>
+			{/if}
 		</div>
 
 		{#if loading}
@@ -254,30 +245,30 @@ let heading = $derived(
 
 <style>
 	.lr-browser {
+		flex: 1;
 		display: flex;
-		border: 1px solid #333;
-		border-radius: 0.5rem;
+		min-height: 0;
 		overflow: hidden;
-		height: 500px;
-		background: #1a1a1a;
 	}
 
-	.sidebar {
-		width: 200px;
-		min-width: 200px;
-		border-right: 1px solid #333;
+	.rail {
+		width: 208px;
+		flex: none;
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		padding: 0 0.625rem 1rem 1rem;
 		overflow-y: auto;
-		background: #111;
 	}
 
-	.sidebar-header {
-		padding: 0.75rem 1rem;
-		font-size: 0.7rem;
+	.rail h3 {
+		margin: 0;
+		padding: 0.25rem 0.5rem 0.4rem;
+		font-size: 0.66rem;
 		font-weight: 600;
 		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: #888;
-		border-bottom: 1px solid #333;
+		letter-spacing: 0.08em;
+		color: #71717a;
 	}
 
 	.album-item {
@@ -285,17 +276,20 @@ let heading = $derived(
 		justify-content: space-between;
 		align-items: center;
 		width: 100%;
-		padding: 0.4rem 1rem;
+		flex: none;
+		padding: 0.375rem 0.55rem;
 		background: none;
 		border: none;
-		color: #ccc;
+		border-radius: 7px;
+		color: #a1a1aa;
 		font-size: 0.8rem;
 		cursor: pointer;
 		text-align: left;
 	}
 
 	.album-item:hover {
-		background: #222;
+		background: #1e1e1e;
+		color: #e4e4e7;
 	}
 
 	.album-item.active {
@@ -312,7 +306,7 @@ let heading = $derived(
 
 	.album-count {
 		font-size: 0.7rem;
-		color: #888;
+		color: #71717a;
 		margin-left: 0.5rem;
 		flex-shrink: 0;
 	}
@@ -330,19 +324,11 @@ let heading = $derived(
 
 	.toolbar {
 		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 0.5rem 1rem;
-		border-bottom: 1px solid #333;
-		gap: 1rem;
-		flex-shrink: 0;
-	}
-
-	.toolbar-left {
-		display: flex;
 		align-items: baseline;
+		padding: 0 1.25rem 0.5rem;
 		gap: 0.75rem;
 		min-width: 0;
+		flex-shrink: 0;
 	}
 
 	.toolbar h2 {
@@ -360,22 +346,6 @@ let heading = $derived(
 		white-space: nowrap;
 	}
 
-	.search-input {
-		padding: 0.3rem 0.6rem;
-		background: #222;
-		border: 1px solid #444;
-		border-radius: 0.25rem;
-		color: #ddd;
-		font-size: 0.8rem;
-		width: 200px;
-		flex-shrink: 0;
-	}
-
-	.search-input:focus {
-		outline: none;
-		border-color: #2563eb;
-	}
-
 	.status {
 		text-align: center;
 		padding: 3rem;
@@ -389,9 +359,10 @@ let heading = $derived(
 
 	.grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-		gap: 0.75rem;
-		padding: 0.75rem;
+		grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+		align-content: start;
+		gap: 0.875rem;
+		padding: 0 1.25rem 1.25rem;
 		overflow-y: auto;
 		flex: 1;
 	}
@@ -410,8 +381,8 @@ let heading = $derived(
 		position: relative;
 		aspect-ratio: 3/2;
 		overflow: hidden;
-		background: #222;
-		border-radius: 0.25rem;
+		background: #262626;
+		border-radius: 10px;
 	}
 
 	.thumbnail img {

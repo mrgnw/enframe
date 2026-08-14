@@ -37,10 +37,15 @@ onMount(async () => {
 {/if}
 
 <style>
+	/* ponytail: every surface paints its own dark, the shared body default is still light. */
+	:global(body) {
+		background: #161616;
+	}
+
 	.notice {
 		padding: 4rem 2rem;
 		text-align: center;
-		color: #6b7280;
+		color: #a1a1aa;
 	}
 
 	.notice a {

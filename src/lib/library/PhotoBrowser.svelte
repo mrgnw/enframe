@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Aperture, ChevronDown, ChevronUp, Crop, FolderPlus, ImageOff, Link } from '@lucide/svelte';
+import { Crop, FolderPlus, ImageOff, Link } from '@lucide/svelte';
 import { onDestroy, onMount } from 'svelte';
 import { toast } from 'svelte-sonner';
 import { getImageSrc, onDragDrop, pickFiles, stat } from '$lib/bridge';
@@ -50,11 +50,35 @@ function loadImageDimensions(src: string): Promise<{ width: number; height: numb
 	});
 }
 
+type Tab = 'photos' | 'lightroom' | 'watch';
+
+const TAB_KEY = 'enframe.library.tab';
+const TABS: { id: Tab; label: string }[] = [
+	{ id: 'photos', label: 'Photos' },
+	{ id: 'lightroom', label: 'Lightroom' },
+	{ id: 'watch', label: 'Watch folder' }
+];
+
+function storedTab(): Tab {
+	const saved = typeof localStorage === 'undefined' ? null : localStorage.getItem(TAB_KEY);
+	return TABS.some((t) => t.id === saved) ? (saved as Tab) : 'photos';
+}
+
+function selectTab(next: Tab) {
+	tab = next;
+	if (next === 'lightroom') lrQuery = '';
+	try {
+		localStorage.setItem(TAB_KEY, next);
+	} catch {}
+}
+
 let photos = $state<Photo[]>([]);
 let framesByPhoto = $state<Record<number, Frame[]>>({});
 let loading = $state(true);
 let importing = $state(false);
-let showLightroom = $state(false);
+let tab = $state<Tab>(storedTab());
+let lrQuery = $state('');
+let lightroom = $state<LightroomBrowser | null>(null);
 let dragging = $state(false);
 let draggingDir = $state(false);
 let watchDir = $state<string | null>(getWatchDir());
@@ -158,6 +182,7 @@ onMount(async () => {
 			const metadataPaths = paths.filter((p) => p.endsWith('.metadata.json'));
 
 			if (metadataPaths.length > 0) {
+				selectTab('photos');
 				importing = true;
 				try {
 					for (const path of metadataPaths) {
@@ -202,6 +227,7 @@ async function loadPhotos() {
 }
 
 async function importFiles(paths: string[]) {
+	selectTab('photos');
 	importing = true;
 	try {
 		for (const path of paths) {
@@ -233,144 +259,163 @@ async function handleOpenClick() {
 	class:drag-active={dragging && !draggingDir}
 	role="application"
 >
-	<div class="header" data-tauri-drag-region>
-		<h1>Enframe</h1>
+	<div class="appbar" data-tauri-drag-region>
+		<span class="wordmark">Enframe</span>
+
+		<nav class="tabs">
+			{#each TABS as t (t.id)}
+				<button class="tab" class:active={tab === t.id} onclick={() => selectTab(t.id)}>
+					{t.label}
+					{#if t.id === 'photos' && photos.length > 0}
+						<span class="count">{photos.length}</span>
+					{/if}
+				</button>
+			{/each}
+		</nav>
+
 		<div class="actions">
-			<WatchDir
-				{watchDir}
-				onWatchDirChange={(dir) => { watchDir = dir; }}
-				onPhotosImported={loadPhotos}
-				highlighted={dragging && draggingDir}
-			/>
+			{#if tab === 'lightroom'}
+				<input
+					type="search"
+					class="search"
+					placeholder="Search by filename…"
+					value={lrQuery}
+					oninput={(e) => {
+						lrQuery = e.currentTarget.value;
+						lightroom?.search(lrQuery);
+					}}
+				/>
+			{:else}
+				<button
+					class="action-pill open-pill"
+					class:drag-over={dragging && !draggingDir}
+					onclick={handleOpenClick}
+					disabled={importing}
+				>
+					<FolderPlus size={14} />
+					{importing ? 'Importing...' : 'Open'}
+				</button>
 
-			<button
-				class="action-pill open-pill"
-				class:drag-over={dragging && !draggingDir}
-				onclick={handleOpenClick}
-				disabled={importing}
-			>
-				<FolderPlus size={14} />
-				{importing ? 'Importing...' : 'Open'}
-			</button>
-
-			<a class="action-pill" href="/" title="Frame one image without importing it">
-				<Crop size={14} />
-				Single
-			</a>
-
-			<button
-				class="action-pill lr-pill"
-				class:active={showLightroom}
-				onclick={() => (showLightroom = !showLightroom)}
-			>
-				<Aperture size={14} />
-				Lightroom
-				{#if showLightroom}
-					<ChevronUp size={12} />
-				{:else}
-					<ChevronDown size={12} />
-				{/if}
-			</button>
+				<a class="action-pill" href="/" title="Frame one image without importing it">
+					<Crop size={14} />
+					Single
+				</a>
+			{/if}
 		</div>
 	</div>
 
-	{#if showLightroom}
-		<LightroomBrowser onPhotosImported={loadPhotos} />
+	<!-- ponytail: the watch surface stays mounted on every tab so its poll keeps importing. -->
+	<div class="panel watch-panel" class:hidden={tab !== 'watch'}>
+		<WatchDir
+			{watchDir}
+			onWatchDirChange={(dir) => { watchDir = dir; }}
+			onPhotosImported={loadPhotos}
+			highlighted={dragging && draggingDir}
+		/>
+		<p class="hint">
+			{watchDir ? 'New images landing here import themselves.' : 'Pick a folder — or drop one anywhere — and its new images import themselves.'}
+		</p>
+	</div>
+
+	{#if tab === 'lightroom'}
+		<LightroomBrowser bind:this={lightroom} onPhotosImported={loadPhotos} />
 	{/if}
 
-	{#if loading}
-		<div class="loading">Loading photos...</div>
-	{:else if importing}
-		<div class="loading">Importing files...</div>
-	{:else if photos.length === 0}
-		<div class="empty">
-			<p>No photos yet</p>
-			<p class="hint">Drop images here, click Open, or browse Lightroom</p>
-			<p class="hint">Just one image? <a href="/">Frame it without importing</a></p>
-		</div>
-	{:else}
-		<div class="grid">
-			{#each photos as photo (photo.id)}
-				{@const covered = new Set((framesByPhoto[photo.id] ?? []).map((f) => f.destination))}
-				<div
-					class="photo-card"
-					data-id={photo.id}
-					data-missing={missingImages.has(photo.id)}
-				>
-					<a href="/edit/{photo.id}" class="photo-link" class:missing={missingImages.has(photo.id)}>
-						<div class="thumbnail">
-							{#if missingImages.has(photo.id)}
-								<div class="missing-placeholder">
-									<ImageOff size={32} />
-									<span class="missing-text">Image not found</span>
-									<span class="missing-path" title={photo.file_path}>
-										{photo.file_path.split('/').pop()}
-									</span>
-									<button 
-										class="link-btn"
-										onclick={(e) => {
-											e.preventDefault();
-											e.stopPropagation();
-											handleLinkImage(photo.id);
-										}}
-									>
-										<Link size={12} />
-										Link Image
-									</button>
-								</div>
-							{:else}
-								<img 
-									src={getImageSrc(photo.file_path)} 
-									alt={photo.title || 'Photo'} 
-									onerror={() => {
-										missingImages.add(photo.id);
-										missingImages = new Set(missingImages);
-									}}
-								/>
-								{#if framesByPhoto[photo.id]?.length}
-									{@const pframes = framesByPhoto[photo.id]}
-									<div class="frame-overlays">
-										<svg class="frame-dimming" viewBox="0 0 1 1" preserveAspectRatio="none">
-											<defs>
-												<mask id="mask-{photo.id}">
-													<rect x="0" y="0" width="1" height="1" fill="white" />
-													{#each pframes as frame}
-														<rect x={frame.x} y={frame.y} width={frame.width} height={frame.height} fill="black" />
-													{/each}
-												</mask>
-											</defs>
-											<rect x="0" y="0" width="1" height="1" fill="rgba(0,0,0,0.5)" mask="url(#mask-{photo.id})" />
-										</svg>
-										{#each pframes as frame, i}
-											<div
-												class="frame-preview"
-												style="left:{frame.x * 100}%;top:{frame.y * 100}%;width:{frame.width * 100}%;height:{frame.height * 100}%;"
-											>
-												<span class="frame-preview-label">{i + 1}</span>
-											</div>
-										{/each}
+	{#if tab === 'photos'}
+		{#if loading}
+			<div class="loading">Loading photos...</div>
+		{:else if importing}
+			<div class="loading">Importing files...</div>
+		{:else if photos.length === 0}
+			<div class="empty">
+				<p>No photos yet</p>
+				<p class="hint">Drop images here, click Open, or browse Lightroom</p>
+				<p class="hint">Just one image? <a href="/">Frame it without importing</a></p>
+			</div>
+		{:else}
+			<div class="grid">
+				{#each photos as photo (photo.id)}
+					{@const covered = new Set((framesByPhoto[photo.id] ?? []).map((f) => f.destination))}
+					<div
+						class="photo-card"
+						data-id={photo.id}
+						data-missing={missingImages.has(photo.id)}
+					>
+						<a href="/edit/{photo.id}" class="photo-link" class:missing={missingImages.has(photo.id)}>
+							<div class="thumbnail">
+								{#if missingImages.has(photo.id)}
+									<div class="missing-placeholder">
+										<ImageOff size={32} />
+										<span class="missing-text">Image not found</span>
+										<span class="missing-path" title={photo.file_path}>
+											{photo.file_path.split('/').pop()}
+										</span>
+										<button 
+											class="link-btn"
+											onclick={(e) => {
+												e.preventDefault();
+												e.stopPropagation();
+												handleLinkImage(photo.id);
+											}}
+										>
+											<Link size={12} />
+											Link Image
+										</button>
 									</div>
+								{:else}
+									<img 
+										src={getImageSrc(photo.file_path)} 
+										alt={photo.title || 'Photo'} 
+										onerror={() => {
+											missingImages.add(photo.id);
+											missingImages = new Set(missingImages);
+										}}
+									/>
+									{#if framesByPhoto[photo.id]?.length}
+										{@const pframes = framesByPhoto[photo.id]}
+										<div class="frame-overlays">
+											<svg class="frame-dimming" viewBox="0 0 1 1" preserveAspectRatio="none">
+												<defs>
+													<mask id="mask-{photo.id}">
+														<rect x="0" y="0" width="1" height="1" fill="white" />
+														{#each pframes as frame}
+															<rect x={frame.x} y={frame.y} width={frame.width} height={frame.height} fill="black" />
+														{/each}
+													</mask>
+												</defs>
+												<rect x="0" y="0" width="1" height="1" fill="rgba(0,0,0,0.5)" mask="url(#mask-{photo.id})" />
+											</svg>
+											{#each pframes as frame, i}
+												<div
+													class="frame-preview"
+													style="left:{frame.x * 100}%;top:{frame.y * 100}%;width:{frame.width * 100}%;height:{frame.height * 100}%;"
+												>
+													<span class="frame-preview-label">{i + 1}</span>
+												</div>
+											{/each}
+										</div>
+									{/if}
 								{/if}
-							{/if}
-							<div class="dest-badges">
-								{#each DESTINATIONS as destination (destination.slug)}
-									{@const isCovered = covered.has(destination.slug)}
-									<span
-										class="dest-dot"
-										class:required={REQUIRED_DESTINATIONS.includes(destination.slug)}
-										class:covered={isCovered}
-										title="{destination.name}{isCovered ? '' : ' — not covered'}"
-									></span>
-								{/each}
+								<div class="dest-badges">
+									{#each DESTINATIONS as destination (destination.slug)}
+										{@const isCovered = covered.has(destination.slug)}
+										<span
+											class="dest-dot"
+											class:required={REQUIRED_DESTINATIONS.includes(destination.slug)}
+											class:covered={isCovered}
+											title="{destination.name}{isCovered ? '' : ' — not covered'}"
+										></span>
+									{/each}
+								</div>
 							</div>
-						</div>
-						{#if photo.title}
-							<div class="title">{photo.title}</div>
-						{/if}
-					</a>
-				</div>
-			{/each}
-		</div>
+							{#if photo.title}
+								<div class="title">{photo.title}</div>
+							{/if}
+						</a>
+					</div>
+				{/each}
+			</div>
+		{/if}
 	{/if}
 
 	{#if dragging}
@@ -387,9 +432,12 @@ async function handleOpenClick() {
 <style>
 	.photo-browser {
 		position: relative;
-		padding: 2rem;
-		padding-top: 3.5rem;
-		min-height: 100vh;
+		display: flex;
+		flex-direction: column;
+		height: 100vh;
+		overflow: hidden;
+		background: #161616;
+		color: #e4e4e7;
 	}
 
 	.photo-browser.drag-active {
@@ -397,21 +445,93 @@ async function handleOpenClick() {
 		outline-offset: -2px;
 	}
 
-	.header {
+	.appbar {
 		display: flex;
-		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 1.5rem;
+		gap: 1.25rem;
+		padding: 0.75rem 1.25rem 0.75rem 5.5rem;
+		flex: none;
 	}
 
-	.header h1 {
-		margin: 0;
+	.wordmark {
+		font-weight: 600;
+		font-size: 0.95rem;
+	}
+
+	.tabs {
+		display: flex;
+		gap: 2px;
+		padding: 3px;
+		background: #1e1e1e;
+		border: 1px solid #2e2e2e;
+		border-radius: 9px;
+	}
+
+	.tab {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.3rem 0.9rem;
+		background: none;
+		border: none;
+		border-radius: 7px;
+		color: #a1a1aa;
+		font-size: 0.8rem;
+		cursor: pointer;
+	}
+
+	.tab:hover {
+		color: #d4d4d8;
+	}
+
+	.tab.active {
+		background: #262626;
+		color: #fff;
+	}
+
+	.tab .count {
+		font-size: 0.72rem;
+		color: #71717a;
+	}
+
+	.tab.active .count {
+		color: rgba(255, 255, 255, 0.6);
 	}
 
 	.actions {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
+		margin-left: auto;
+	}
+
+	.search {
+		width: 200px;
+		padding: 0.35rem 0.75rem;
+		background: #1e1e1e;
+		border: 1px solid #2e2e2e;
+		border-radius: 8px;
+		color: #e4e4e7;
+		font-size: 0.8rem;
+	}
+
+	.search:focus {
+		outline: none;
+		border-color: #2563eb;
+	}
+
+	.panel {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.75rem;
+		min-height: 0;
+	}
+
+	.panel.hidden {
+		display: none;
 	}
 
 	.action-pill {
@@ -445,11 +565,6 @@ async function handleOpenClick() {
 		background: #1a1a2e;
 	}
 
-	.lr-pill.active {
-		border-color: #2563eb;
-		color: white;
-	}
-
 	.drop-overlay {
 		position: fixed;
 		inset: 0;
@@ -473,9 +588,13 @@ async function handleOpenClick() {
 
 	.loading,
 	.empty {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
 		text-align: center;
-		padding: 4rem 2rem;
-		color: #6b7280;
+		color: #71717a;
 	}
 
 	.hint {
@@ -493,10 +612,13 @@ async function handleOpenClick() {
 	}
 
 	.grid {
+		flex: 1;
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-		align-items: start;
-		gap: 1.5rem;
+		grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+		align-content: start;
+		gap: 1rem;
+		padding: 0.5rem 1.25rem 1.5rem;
+		overflow-y: auto;
 	}
 
 	.photo-card {
