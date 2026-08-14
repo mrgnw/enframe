@@ -222,7 +222,7 @@ const shortcuts = [
 					</Command.Group>
 					{#if !standalone}
 						<Command.Group heading="Open">
-							<Command.LinkItem href="/crop" onSelect={() => (open = false)}>
+							<Command.LinkItem href="/" onSelect={() => (open = false)}>
 								<span>Open Single Image&hellip;</span>
 							</Command.LinkItem>
 						</Command.Group>

@@ -253,7 +253,7 @@ async function handleOpenClick() {
 				{importing ? 'Importing...' : 'Open'}
 			</button>
 
-			<a class="action-pill" href="/crop" title="Frame one image without importing it">
+			<a class="action-pill" href="/" title="Frame one image without importing it">
 				<Crop size={14} />
 				Single
 			</a>
@@ -286,7 +286,7 @@ async function handleOpenClick() {
 		<div class="empty">
 			<p>No photos yet</p>
 			<p class="hint">Drop images here, click Open, or browse Lightroom</p>
-			<p class="hint">Just one image? <a href="/crop">Frame it without importing</a></p>
+			<p class="hint">Just one image? <a href="/">Frame it without importing</a></p>
 		</div>
 	{:else}
 		<div class="grid">

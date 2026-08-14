@@ -32,7 +32,7 @@ onMount(async () => {
 {:else}
 	<div class="notice">
 		<p>No photo library is reachable from here.</p>
-		<p><a href="/crop">Frame a single image instead</a></p>
+		<p><a href="/">Frame a single image instead</a></p>
 	</div>
 {/if}
 
