@@ -12,7 +12,6 @@ interface Props {
 	aspectLocked?: boolean;
 	compositionLabel?: string;
 	clipsRequired?: boolean;
-	onSelect?: (event?: PointerEvent) => void;
 	onclaim?: (geometry: { x: number; y: number; width?: number; height?: number }) => Promise<void> | void;
 	onchange?: () => void;
 }
@@ -28,7 +27,6 @@ let {
 	aspectLocked = false,
 	compositionLabel = '',
 	clipsRequired = false,
-	onSelect,
 	onclaim,
 	onchange
 }: Props = $props();
@@ -41,20 +39,19 @@ let handleOffset = $derived(-handleSize / 2);
 let labelScale = $derived(1 / scale);
 let hs = $derived(`width:${handleSize}px;height:${handleSize}px;border-width:${borderWidth}px;`);
 
+const DRAG_THRESHOLD = 3;
+
 let isDragging = $state(false);
 let isResizing = $state(false);
 let resizeHandle = $state<string | null>(null);
+let dragMoved = false;
 let dragStart = $state({ x: 0, y: 0, frameX: 0, frameY: 0, frameW: 0, frameH: 0 });
 
 function handleFramePointerDown(event: PointerEvent) {
 	if (event.button !== 0) return;
-	event.stopPropagation();
-
-	if (onSelect) onSelect(event);
-
-	if (event.shiftKey || event.metaKey) return;
 
 	isDragging = true;
+	dragMoved = false;
 	dragStart = {
 		x: event.clientX,
 		y: event.clientY,
@@ -70,6 +67,13 @@ function handleFramePointerMove(event: PointerEvent) {
 	if (!isDragging || isResizing) return;
 	event.stopPropagation();
 
+	if (!dragMoved) {
+		const movedX = Math.abs(event.clientX - dragStart.x);
+		const movedY = Math.abs(event.clientY - dragStart.y);
+		if (movedX < DRAG_THRESHOLD && movedY < DRAG_THRESHOLD) return;
+		dragMoved = true;
+	}
+
 	const deltaX = (event.clientX - dragStart.x) / scale / imageWidth;
 	const deltaY = (event.clientY - dragStart.y) / scale / imageHeight;
 
@@ -80,13 +84,16 @@ function handleFramePointerMove(event: PointerEvent) {
 	frame.y = newY;
 }
 
+// A press that never moved is not a drag: let it bubble to the canvas, which cycles the
+// selection to the next frame under the cursor.
 async function handleFramePointerUp(event: PointerEvent) {
 	if (!isDragging) return;
-	event.stopPropagation();
 
 	isDragging = false;
 	(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
+	if (!dragMoved) return;
 
+	event.stopPropagation();
 	await onclaim?.({ x: frame.x, y: frame.y });
 	onchange?.();
 }
@@ -263,8 +270,15 @@ async function handleHandlePointerUp(event: PointerEvent) {
 		border-color: #3b82f6;
 		box-sizing: border-box;
 		cursor: move;
-		pointer-events: auto;
+		pointer-events: none;
 		transition: left 0.3s ease, top 0.3s ease, width 0.3s ease, height 0.3s ease;
+	}
+
+	/* Only the selected frame takes pointer events; the rest would bury each other and
+	   swallow every click. The canvas hit-tests the others against their geometry. */
+	.frame-overlay.selected,
+	.frame-overlay.selected .handle {
+		pointer-events: auto;
 	}
 
 	/* Export-unchecked: grey */

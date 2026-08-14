@@ -1,6 +1,6 @@
 <script lang="ts">
 import { clipsRequiredPoints } from '$lib/composition';
-import type { FocalPoint, Frame } from '$lib/framer/types';
+import { cycleFrameId, type FocalPoint, type Frame, framesAtPoint } from '$lib/framer/types';
 import CompositionGuide from './CompositionGuide.svelte';
 import DraggableFocalPoint from './DraggableFocalPoint.svelte';
 import ResizableFrame from './ResizableFrame.svelte';
@@ -138,6 +138,10 @@ function handlePointerDown(event: PointerEvent) {
 
 function handlePointerMove(event: PointerEvent) {
 	if (!dragOrigin) return;
+	if (event.buttons === 0) {
+		dragOrigin = null;
+		return;
+	}
 
 	const dx = event.clientX - dragOrigin.x;
 	const dy = event.clientY - dragOrigin.y;
@@ -159,28 +163,34 @@ function handlePointerUp(event: PointerEvent) {
 	dragOrigin = null;
 }
 
-function handleFrameClick(frameId: number, event?: PointerEvent) {
-	if (event && (event.shiftKey || event.metaKey)) {
-		ontoggleexport?.(frameId);
-		return;
-	}
-	onselectframe?.(frameId);
-}
-
 function selectPoint(pointId: number) {
 	onselectpoint?.(pointId);
 }
 
+// Frames overlap heavily, so their fills are not hit-testable in the DOM (only the
+// selected frame is, for dragging). Every other click on the overlay is resolved here
+// against frame geometry: a click inside a stack steps to the next frame under the
+// cursor, so a buried frame is reachable by clicking the same spot again.
 function handleOverlayClick(event: PointerEvent) {
-	// Only handle clicks directly on the overlay container (blank canvas area)
-	if (event.target !== event.currentTarget) return;
 	if (dragMoved || renderRect.w === 0 || renderRect.h === 0) return;
 
 	const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
 	const normX = clamp((event.clientX - rect.left) / rect.width, 0, 1);
 	const normY = clamp((event.clientY - rect.top) / rect.height, 0, 1);
 
-	oncanvasclick?.(normX, normY, event.altKey);
+	const hits = framesAtPoint(frames, normX, normY);
+	if (hits.length === 0) {
+		oncanvasclick?.(normX, normY, event.altKey);
+		return;
+	}
+
+	if (event.shiftKey || event.metaKey) {
+		const target = hits.find((f) => f.id === selectedFrameId) ?? hits[0];
+		ontoggleexport?.(target.id);
+		return;
+	}
+
+	onselectframe?.(cycleFrameId(hits, selectedFrameId, 1));
 }
 
 function isInputFocused() {
@@ -249,7 +259,6 @@ function handleKeyDown(event: KeyboardEvent) {
 				exportChecked={!hasExportSelection || exportSelection.has(frame.id)}
 				compositionLabel={compositionLabels.get(frame.id) ?? ''}
 				clipsRequired={clipsRequiredPoints(frame, frame.id, focalPoints)}
-				onSelect={(e) => handleFrameClick(frame.id, e)}
 				onclaim={(geometry) => onclaimframe?.(frame.id, geometry)}
 				{onchange}
 			/>

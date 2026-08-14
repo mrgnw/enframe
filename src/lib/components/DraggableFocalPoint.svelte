@@ -100,23 +100,25 @@ async function handlePointerUp(event: PointerEvent) {
 		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 		cursor: move;
 		pointer-events: auto;
+		/* Above the selected frame (z-index 10) so a point inside a frame stays clickable. */
+		z-index: 20;
 		transition: transform 0.1s;
 	}
 
 	.focal-point:hover {
 		transform: scale(1.2);
-		z-index: 10;
+		z-index: 25;
 	}
 
 	.focal-point.selected {
 		transform: scale(1.3);
-		z-index: 15;
+		z-index: 30;
 		box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.4), 0 4px 8px rgba(0, 0, 0, 0.3);
 	}
 
 	.focal-point.dragging {
 		transform: scale(1.3);
-		z-index: 20;
+		z-index: 35;
 		box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
 	}
 
