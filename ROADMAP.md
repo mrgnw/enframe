@@ -77,7 +77,6 @@ Tauri v2 + SvelteKit 5, with Lightroom catalog integration.
 ### Editor polish
 - "Fit Frame" button to zoom/center the selected frame
 - Cmd+scroll to cycle frames under the cursor
-- Click-without-drag to cycle overlapping frames at a point
 
 ### Tooling / housekeeping
 - Decide: adopt Tailwind/shadcn throughout, or remove the unused setup
