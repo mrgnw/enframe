@@ -181,6 +181,7 @@ function frameIndex(frame: Frame) {
 	.preview-panel.main .preview-grid {
 		grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
 		gap: 10px;
+		align-items: start;
 	}
 
 	.panel-header {

@@ -82,9 +82,10 @@ onMount(() => {
 });
 
 // ponytail: selection reveals the preview until the user closes it once; one flag, no per-frame memory.
+// Only the sidebar auto-opens: the main layout covers the canvas, so it never opens itself.
 function selectFrame(id: number | null, mode: SelectMode = 'replace') {
 	session.selectFrame(id, mode);
-	if (id != null && !previewDismissed) previewOpen = true;
+	if (id != null && !previewDismissed && previewLayout === 'sidebar') previewOpen = true;
 }
 
 async function deleteSelection() {
@@ -99,12 +100,12 @@ async function deletePointSelection() {
 
 function selectNextFrame() {
 	session.selectNextFrame();
-	if (!previewDismissed) previewOpen = true;
+	if (!previewDismissed && previewLayout === 'sidebar') previewOpen = true;
 }
 
 function selectPrevFrame() {
 	session.selectPrevFrame();
-	if (!previewDismissed) previewOpen = true;
+	if (!previewDismissed && previewLayout === 'sidebar') previewOpen = true;
 }
 
 function togglePreview() {
