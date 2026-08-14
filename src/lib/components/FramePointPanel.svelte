@@ -547,6 +547,7 @@ function isPortrait(frame: Frame): boolean {
 		border-radius: 8px;
 		border: 1px solid transparent;
 		cursor: pointer;
+		user-select: none;
 		transition: border-color 0.15s, background 0.15s;
 	}
 
