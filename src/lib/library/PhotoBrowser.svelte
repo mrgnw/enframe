@@ -534,6 +534,22 @@ async function handleOpenClick() {
 		display: none;
 	}
 
+	.watch-panel :global(.watch-pill) {
+		font-size: 0.9rem;
+		padding: 0.6rem 1rem;
+		border-radius: 8px;
+	}
+
+	.watch-panel :global(.drop-hint) {
+		font-size: 0.9rem;
+		color: #a1a1aa;
+	}
+
+	.watch-panel .hint {
+		margin: 0;
+		color: #71717a;
+	}
+
 	.action-pill {
 		display: flex;
 		align-items: center;
