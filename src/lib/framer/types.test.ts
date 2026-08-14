@@ -8,7 +8,8 @@ import {
 	docToSidecar,
 	emptyDoc,
 	framesAtPoint,
-	nextLocalId
+	nextLocalId,
+	nextSelection
 } from './types';
 
 const DOC: CropDoc = {
@@ -164,5 +165,43 @@ describe('nextLocalId', () => {
 	test('never collides with positive database ids', () => {
 		const doc = { ...emptyDoc(), frames: DOC.frames.slice(0, 1) };
 		expect(nextLocalId(doc)).toBe(-1);
+	});
+});
+
+describe('nextSelection', () => {
+	test('a plain click replaces the selection and anchors on the clicked frame', () => {
+		const result = nextSelection(new Set([1, 2, 3]), 5, 'replace');
+		expect([...result.selection]).toEqual([5]);
+		expect(result.anchor).toBe(5);
+	});
+
+	test('toggling adds a frame and anchors on it', () => {
+		const result = nextSelection(new Set([1]), 2, 'toggle');
+		expect([...result.selection]).toEqual([1, 2]);
+		expect(result.anchor).toBe(2);
+	});
+
+	test('toggling a selected frame off falls back to the last one still selected', () => {
+		const result = nextSelection(new Set([1, 2, 3]), 3, 'toggle');
+		expect([...result.selection]).toEqual([1, 2]);
+		expect(result.anchor).toBe(2);
+	});
+
+	test('toggling the last frame off leaves nothing selected', () => {
+		const result = nextSelection(new Set([7]), 7, 'toggle');
+		expect(result.selection.size).toBe(0);
+		expect(result.anchor).toBeNull();
+	});
+
+	test('toggling into an empty selection starts one', () => {
+		const result = nextSelection(new Set(), 4, 'toggle');
+		expect([...result.selection]).toEqual([4]);
+		expect(result.anchor).toBe(4);
+	});
+
+	test('leaves the previous selection untouched', () => {
+		const previous = new Set([1, 2]);
+		nextSelection(previous, 3, 'toggle');
+		expect([...previous]).toEqual([1, 2]);
 	});
 });

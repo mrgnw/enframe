@@ -170,6 +170,26 @@ export function framesAtPoint(frames: Frame[], x: number, y: number): Frame[] {
 	return hits;
 }
 
+export type SelectMode = 'replace' | 'toggle';
+
+// One selection drives editing, export and bulk actions. A plain click replaces it, shift
+// or cmd toggles a frame in or out. The anchor is the frame the canvas keeps its handles
+// on: the clicked frame while it stays selected, otherwise the last one still standing.
+export function nextSelection(
+	selection: ReadonlySet<number>,
+	frameId: number,
+	mode: SelectMode
+): { selection: Set<number>; anchor: number | null } {
+	if (mode === 'replace') return { selection: new Set([frameId]), anchor: frameId };
+	const next = new Set(selection);
+	if (next.has(frameId)) {
+		next.delete(frameId);
+		return { selection: next, anchor: [...next].at(-1) ?? null };
+	}
+	next.add(frameId);
+	return { selection: next, anchor: frameId };
+}
+
 export function nextLocalId(doc: CropDoc): number {
 	let lowest = 0;
 	for (const frame of doc.frames) lowest = Math.min(lowest, frame.id);

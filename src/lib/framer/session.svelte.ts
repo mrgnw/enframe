@@ -10,7 +10,16 @@ import {
 	serializeSnapshot,
 	undoSeq
 } from '../history';
-import { type CropDoc, CROP_DOC_VERSION, cycleFrameId, type FocalPoint, type Frame, nextLocalId } from './types';
+import {
+	type CropDoc,
+	CROP_DOC_VERSION,
+	cycleFrameId,
+	type FocalPoint,
+	type Frame,
+	nextLocalId,
+	nextSelection,
+	type SelectMode
+} from './types';
 
 export interface RestoredHistory {
 	frames: Frame[];
@@ -54,15 +63,17 @@ export class FramerSession {
 	imageHeight = $state(0);
 	selectedFrameId = $state<number | null>(null);
 	selectedPointId = $state<number | null>(null);
-	exportSelection = $state<Set<number>>(new Set());
+	selection = $state<Set<number>>(new Set());
 	compositionLabels = $state<Map<number, string>>(new Map());
 	dirty = $state(false);
 	historySeqs = $state<number[]>([]);
 	historyPos = $state(0);
 
+	// Nothing selected means every frame: the selection narrows the export, it does not gate it.
 	framesToExport = $derived(
-		this.exportSelection.size > 0 ? this.frames.filter((f) => this.exportSelection.has(f.id)) : this.frames
+		this.selection.size > 0 ? this.frames.filter((f) => this.selection.has(f.id)) : this.frames
 	);
+	selectedFrames = $derived(this.frames.filter((f) => this.selection.has(f.id)));
 	canUndo = $derived(undoSeq(this.historySeqs, this.historyPos) !== null);
 	canRedo = $derived(redoSeq(this.historySeqs, this.historyPos) !== null);
 
@@ -122,19 +133,27 @@ export class FramerSession {
 
 	// Selection
 
-	selectFrame(frameId: number | null) {
-		this.selectedFrameId = frameId;
+	selectFrame(frameId: number | null, mode: SelectMode = 'replace') {
+		if (frameId === null) {
+			this.deselect();
+			return;
+		}
+		const next = nextSelection(this.selection, frameId, mode);
+		this.selection = next.selection;
+		this.selectedFrameId = next.anchor;
 		this.selectedPointId = null;
 	}
 
 	selectPoint(pointId: number | null) {
 		this.selectedPointId = pointId;
 		this.selectedFrameId = null;
+		this.selection = new Set();
 	}
 
 	deselect() {
 		this.selectedFrameId = null;
 		this.selectedPointId = null;
+		this.selection = new Set();
 	}
 
 	selectNextFrame() {
@@ -147,25 +166,21 @@ export class FramerSession {
 
 	#cycleFrame(delta: 1 | -1) {
 		if (this.frames.length === 0) return;
-		this.selectedFrameId = cycleFrameId(this.frames, this.selectedFrameId, delta);
+		this.selectFrame(cycleFrameId(this.frames, this.selectedFrameId, delta));
 	}
 
-	toggleExportSelection(frameId: number) {
-		const next = new Set(this.exportSelection);
-		if (next.has(frameId)) {
-			next.delete(frameId);
-		} else {
-			next.add(frameId);
-		}
-		this.exportSelection = next;
+	toggleFrameSelection(frameId: number) {
+		this.selectFrame(frameId, 'toggle');
 	}
 
-	selectAllForExport() {
-		this.exportSelection = new Set(this.frames.map((f) => f.id));
+	selectAllFrames() {
+		this.selection = new Set(this.frames.map((f) => f.id));
+		this.selectedFrameId = this.frames.at(-1)?.id ?? null;
+		this.selectedPointId = null;
 	}
 
-	clearExportSelection() {
-		this.exportSelection = new Set();
+	clearSelection() {
+		this.deselect();
 	}
 
 	// Editing
@@ -184,7 +199,7 @@ export class FramerSession {
 		};
 		try {
 			const id = await this.#insertFrame(frame);
-			this.selectedFrameId = id;
+			this.selectFrame(id);
 			this.#emit();
 			this.#capture();
 			return id;
@@ -209,16 +224,27 @@ export class FramerSession {
 	}
 
 	async deleteFrame(frameId: number) {
-		await this.#store?.deleteFrame(frameId);
-		if (this.selectedFrameId === frameId) this.selectedFrameId = null;
-		if (this.exportSelection.has(frameId)) {
-			const next = new Set(this.exportSelection);
-			next.delete(frameId);
-			this.exportSelection = next;
-		}
-		this.frames = this.frames.filter((f) => f.id !== frameId);
+		return this.deleteFrames([frameId]);
+	}
+
+	// One journal entry for the whole batch, so one undo brings every frame back.
+	async deleteFrames(frameIds: number[]): Promise<number> {
+		const doomed = new Set(frameIds.filter((id) => this.frames.some((f) => f.id === id)));
+		if (doomed.size === 0) return 0;
+		for (const id of doomed) await this.#store?.deleteFrame(id);
+		if (this.selectedFrameId !== null && doomed.has(this.selectedFrameId)) this.selectedFrameId = null;
+		this.selection = new Set([...this.selection].filter((id) => !doomed.has(id)));
+		this.frames = this.frames.filter((f) => !doomed.has(f.id));
 		this.#emit();
 		this.#capture();
+		return doomed.size;
+	}
+
+	// The visible selection is what actions apply to; a lone anchor counts as a selection of one.
+	async deleteSelectedFrames(): Promise<number> {
+		const ids =
+			this.selection.size > 0 ? [...this.selection] : this.selectedFrameId !== null ? [this.selectedFrameId] : [];
+		return this.deleteFrames(ids);
 	}
 
 	async deletePoint(pointId: number) {
@@ -365,7 +391,7 @@ export class FramerSession {
 			this.historyPos = seq;
 			this.selectedFrameId = remapId(this.selectedFrameId, restored.frameIds);
 			this.selectedPointId = null;
-			this.exportSelection = remapSelection(this.exportSelection, restored.frameIds);
+			this.selection = remapSelection(this.selection, restored.frameIds);
 			this.frames = restored.frames;
 			this.focalPoints = restored.focalPoints;
 			this.dirty = false;
