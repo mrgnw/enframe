@@ -74,8 +74,9 @@ bun install
 | Headless serve | The same UI in a browser, behind a tunnel | SQLite over HTTP |
 | Static web build | The standalone framer only, one image at a time | none |
 
-All three come out of this one repo. The library is just one way to pick an image — the
-static build has no backend to pick from, so `/` is the framer itself.
+All three come out of this one repo. `/` is the framer itself everywhere, with the images
+you opened recently under it. The library is just one way to pick an image: it lives at
+`/library`, linked from the home page, and the static build has no backend to link to.
 
 ### Desktop app
 
@@ -166,8 +167,8 @@ The effective roots are logged at boot.
 ### Static web build
 
 No server, no database, nothing to tunnel. `/` opens one image, you frame it in memory,
-and it exports through the canvas and writes a sidecar JSON beside the output. `/edit/:id`
-does not exist here and redirects home.
+and it exports through the canvas and writes a sidecar JSON beside the output. `/library`
+and `/edit/:id` do not exist here and redirect home.
 
 ```sh
 bun run build:web
