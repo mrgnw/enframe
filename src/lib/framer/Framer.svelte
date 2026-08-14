@@ -43,9 +43,17 @@ const session = new FramerSession({
 const GUIDE_TYPES = ['off', 'thirds', 'phi', 'spiral', 'triangle', 'diagonal'] as const;
 type GuideType = (typeof GUIDE_TYPES)[number];
 
+const PREVIEW_LAYOUT_KEY = 'enframe.preview.layout';
+
+function loadPreviewLayout(): 'sidebar' | 'main' {
+	if (typeof localStorage === 'undefined') return 'sidebar';
+	return localStorage.getItem(PREVIEW_LAYOUT_KEY) === 'main' ? 'main' : 'sidebar';
+}
+
 let panelExpanded = $state(false);
 let previewOpen = $state(false);
 let previewDismissed = $state(false);
+let previewLayout = $state<'sidebar' | 'main'>(loadPreviewLayout());
 let activeGuide = $state<GuideType>('off');
 let generateOpen = $state(false);
 
@@ -107,6 +115,15 @@ function togglePreview() {
 function closePreview() {
 	previewOpen = false;
 	previewDismissed = true;
+}
+
+function togglePreviewLayout() {
+	previewLayout = previewLayout === 'sidebar' ? 'main' : 'sidebar';
+	localStorage.setItem(PREVIEW_LAYOUT_KEY, previewLayout);
+	if (!previewOpen) {
+		previewOpen = true;
+		previewDismissed = false;
+	}
 }
 
 function handlePointerMove(event: PointerEvent) {
@@ -255,6 +272,9 @@ function handleKeyDown(event: KeyboardEvent) {
 		} else if (event.key === 'v') {
 			event.preventDefault();
 			togglePreview();
+		} else if (event.key === 'V') {
+			event.preventDefault();
+			togglePreviewLayout();
 		} else if (event.key === 'a') {
 			event.preventDefault();
 			generateOpen = true;
@@ -293,9 +313,26 @@ function handleKeyDown(event: KeyboardEvent) {
 			onimageload={(w, h) => session.setImageSize(w, h)}
 			oncanvasclick={handleCanvasClick}
 		/>
+		{#if previewOpen && previewLayout === 'main'}
+			<div class="preview-main">
+				<PreviewPanel
+					{imageSrc}
+					frames={session.frames}
+					selectedFrameId={session.selectedFrameId}
+					selection={session.selection}
+					imageWidth={session.imageWidth}
+					imageHeight={session.imageHeight}
+					layout="main"
+					onselectframe={(id) => selectFrame(id)}
+					ontoggleselect={(id) => selectFrame(id, 'toggle')}
+					ontogglelayout={togglePreviewLayout}
+					onclose={closePreview}
+				/>
+			</div>
+		{/if}
 	</div>
 
-	{#if previewOpen}
+	{#if previewOpen && previewLayout === 'sidebar'}
 		<PreviewPanel
 			{imageSrc}
 			frames={session.frames}
@@ -305,6 +342,7 @@ function handleKeyDown(event: KeyboardEvent) {
 			imageHeight={session.imageHeight}
 			onselectframe={(id) => selectFrame(id)}
 			ontoggleselect={(id) => selectFrame(id, 'toggle')}
+			ontogglelayout={togglePreviewLayout}
 			onclose={closePreview}
 		/>
 	{/if}
@@ -369,6 +407,7 @@ function handleKeyDown(event: KeyboardEvent) {
 	ontoggle={() => (panelExpanded = !panelExpanded)}
 	ondeselect={() => session.deselect()}
 	onpreview={togglePreview}
+	onpreviewlayout={togglePreviewLayout}
 	oncycleguide={cycleGuide}
 	onselectall={() => session.selectAllFrames()}
 	onclearselection={() => session.deselect()}
@@ -383,9 +422,16 @@ function handleKeyDown(event: KeyboardEvent) {
 	}
 
 	.canvas-area {
+		position: relative;
 		flex: 1;
 		min-width: 0;
 		height: 100%;
+	}
+
+	.preview-main {
+		position: absolute;
+		inset: 0;
+		z-index: 40;
 	}
 
 	.floating-ui {

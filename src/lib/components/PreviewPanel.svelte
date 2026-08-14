@@ -9,8 +9,10 @@ interface Props {
 	selection?: Set<number>;
 	imageWidth?: number;
 	imageHeight?: number;
+	layout?: 'sidebar' | 'main';
 	onselectframe?: (id: number) => void;
 	ontoggleselect?: (id: number) => void;
+	ontogglelayout?: () => void;
 	onclose?: () => void;
 }
 
@@ -21,17 +23,17 @@ let {
 	selection = new Set(),
 	imageWidth = 0,
 	imageHeight = 0,
+	layout = 'sidebar',
 	onselectframe,
 	ontoggleselect,
+	ontogglelayout,
 	onclose
 }: Props = $props();
 
 let hasSelection = $derived(selection.size > 0);
 let selectedFrame = $derived(frames.find((f) => f.id === selectedFrameId));
 let listFrames = $derived(
-	(hasSelection ? frames.filter((f) => selection.has(f.id)) : frames).filter(
-		(f) => f.id !== selectedFrameId
-	)
+	(hasSelection ? frames.filter((f) => selection.has(f.id)) : frames).filter((f) => f.id !== selectedFrameId)
 );
 
 function frameName(frame: Frame) {
@@ -78,9 +80,25 @@ function frameIndex(frame: Frame) {
 	</div>
 {/snippet}
 
-<div class="preview-panel">
+<div class="preview-panel" class:main={layout === 'main'}>
 	<div class="panel-header">
 		<span class="panel-title">{hasSelection ? `Selected (${selection.size})` : 'Preview'}</span>
+		<button
+			class="close-btn"
+			onclick={ontogglelayout}
+			title={layout === 'main' ? 'Preview in sidebar (⇧V)' : 'Preview in main window (⇧V)'}
+		>
+			{#if layout === 'main'}
+				<svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+					<rect x="3" y="4" width="14" height="12" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
+					<path d="M13 4v12" stroke="currentColor" stroke-width="1.5"/>
+				</svg>
+			{:else}
+				<svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+					<path d="M12 4h4v4M8 16H4v-4M16 4l-5 5M4 16l5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+				</svg>
+			{/if}
+		</button>
 		<button class="close-btn" onclick={onclose} title="Close Preview (V)">
 			<svg width="14" height="14" viewBox="0 0 20 20" fill="none">
 				<path d="M15 5L5 15M5 5l10 10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -143,6 +161,26 @@ function frameIndex(frame: Frame) {
 		background: rgba(0, 0, 0, 0.85);
 		backdrop-filter: blur(12px);
 		border-left: 1px solid rgba(255, 255, 255, 0.08);
+	}
+
+	.preview-panel.main {
+		width: 100%;
+		border-left: none;
+		background: rgba(0, 0, 0, 0.92);
+	}
+
+	.preview-panel.main .panel-body {
+		padding: 16px;
+	}
+
+	.preview-panel.main .hero-card {
+		max-width: min(60vh, 640px);
+		margin: 0 auto;
+	}
+
+	.preview-panel.main .preview-grid {
+		grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+		gap: 10px;
 	}
 
 	.panel-header {
