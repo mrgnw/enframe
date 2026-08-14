@@ -207,6 +207,7 @@ function isPortrait(frame: Frame): boolean {
 			</button>
 		</div>
 
+		<div class="panel-body">
 		{#if frames.length > 0}
 			<div class="section-label">Frames</div>
 			{#each frames as frame, i (frame.id)}
@@ -321,6 +322,7 @@ function isPortrait(frame: Frame): boolean {
 				</div>
 			{/each}
 		{/if}
+		</div>
 	</div>
 {/if}
 
@@ -335,9 +337,19 @@ function isPortrait(frame: Frame): boolean {
 		border-radius: 12px;
 		border: 1px solid rgba(255, 255, 255, 0.1);
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-		max-height: 300px;
-		overflow-y: auto;
+		/* ponytail: toolbar above the panel is ~3rem tall, plus the 1rem inset top and bottom */
+		max-height: calc(100dvh - 6rem);
+		min-height: 0;
 		animation: panel-in 0.15s ease;
+	}
+
+	.panel-body {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		min-height: 0;
+		overflow-y: auto;
+		overscroll-behavior: contain;
 	}
 
 	@keyframes panel-in {
@@ -379,7 +391,11 @@ function isPortrait(frame: Frame): boolean {
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		color: rgba(255, 255, 255, 0.4);
-		padding: 2px 4px;
+		padding: 8px 4px 4px;
+		position: sticky;
+		top: -4px;
+		z-index: 1;
+		background: rgba(10, 10, 10, 0.92);
 	}
 
 	.panel-row {
