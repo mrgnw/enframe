@@ -101,11 +101,19 @@ async function handleFramePointerUp(event: PointerEvent) {
 }
 
 // The label sits above the frame box where nothing overlaps it, so it selects its frame
-// directly instead of joining the click-cycling the overlapping fills need.
+// directly instead of joining the click-cycling the overlapping fills need. It stays a
+// drag handle too: the press is forwarded to the frame's own drag, capturing on the label
+// so the move and up events keep arriving here rather than bubbling to the canvas.
 function handleLabelPointerDown(event: PointerEvent) {
 	if (event.button !== 0) return;
 	event.stopPropagation();
 	onselect?.(event.shiftKey || event.metaKey ? 'toggle' : 'replace');
+	handleFramePointerDown(event);
+}
+
+async function handleLabelPointerUp(event: PointerEvent) {
+	event.stopPropagation();
+	await handleFramePointerUp(event);
 }
 
 function handleHandlePointerDown(event: PointerEvent, handle: string) {
@@ -265,7 +273,8 @@ async function handleHandlePointerUp(event: PointerEvent) {
 		class:clip-label={clipsRequired}
 		style="transform: scale({labelScale}); transform-origin: bottom left;"
 		onpointerdown={handleLabelPointerDown}
-		onpointerup={(e: PointerEvent) => e.stopPropagation()}
+		onpointermove={handleFramePointerMove}
+		onpointerup={handleLabelPointerUp}
 	>
 		{isAuto ? frame.label : index + 1}{#if clipsRequired}<span class="clip-warning" title="Crops out a required focal point">&#9888;</span>{/if}{#if compositionLabel}<span class="comp-hint">{compositionLabel}</span>{/if}
 	</div>

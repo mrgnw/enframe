@@ -34,7 +34,12 @@ function handlePointerDown(event: PointerEvent) {
 	if (event.button !== 0) return;
 	event.stopPropagation();
 
-	onSelect?.(event.shiftKey || event.metaKey ? 'toggle' : 'replace');
+	// A modified click is a selection gesture, not a move: arming the drag here would move
+	// (and journal) the very point the user was taking out of the selection.
+	const toggling = event.shiftKey || event.metaKey;
+	onSelect?.(toggling ? 'toggle' : 'replace');
+	if (toggling) return;
+
 	isDragging = true;
 	dragStart = {
 		x: event.clientX,
