@@ -235,7 +235,7 @@ function handleKeyDown(event: KeyboardEvent) {
 	} else if (event.key === 'Escape') {
 		event.preventDefault();
 		session.deselect();
-	} else if (!isInputFocused() && !generateOpen) {
+	} else if (!event.metaKey && !event.ctrlKey && !isInputFocused() && !generateOpen) {
 		if (event.key === ',') {
 			event.preventDefault();
 			selectPrevFrame();
@@ -243,14 +243,14 @@ function handleKeyDown(event: KeyboardEvent) {
 			event.preventDefault();
 			selectNextFrame();
 		} else if (event.key === 'Backspace' || event.key === 'Delete') {
-			if (!event.metaKey && !event.ctrlKey) {
-				if (session.selection.size > 0 || session.selectedFrameId != null) {
-					event.preventDefault();
-					deleteSelection();
-				} else if (session.pointSelection.size > 0 || session.selectedPointId != null) {
-					event.preventDefault();
-					deletePointSelection();
-				}
+			// Points win when one is selected: picking a point no longer clears the frame
+			// selection, so that selection alone can no longer say what delete means.
+			if (session.pointSelection.size > 0) {
+				event.preventDefault();
+				deletePointSelection();
+			} else if (session.selection.size > 0 || session.selectedFrameId != null) {
+				event.preventDefault();
+				deleteSelection();
 			}
 		} else if (event.key === '[') {
 			event.preventDefault();
@@ -270,12 +270,11 @@ function handleKeyDown(event: KeyboardEvent) {
 		} else if (event.key === 't') {
 			event.preventDefault();
 			panelExpanded = !panelExpanded;
-		} else if (event.key === 'v') {
+		} else if (event.key === 'v' || event.key === 'V') {
+			// Test shiftKey rather than the uppercase letter: Caps Lock also yields 'V'.
 			event.preventDefault();
-			togglePreview();
-		} else if (event.key === 'V') {
-			event.preventDefault();
-			togglePreviewLayout();
+			if (event.shiftKey) togglePreviewLayout();
+			else togglePreview();
 		} else if (event.key === 'a') {
 			event.preventDefault();
 			generateOpen = true;
