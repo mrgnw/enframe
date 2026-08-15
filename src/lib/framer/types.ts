@@ -175,6 +175,45 @@ export type SelectMode = 'replace' | 'toggle';
 // Points add 'range': in the panel list, shift-click extends from the anchor.
 export type PointSelectMode = SelectMode | 'range';
 
+// The anchor is the fixed origin a range extends from; it moves only on a plain or
+// toggling click, never on a range extension, so shift-clicking a nearer point shrinks
+// the range instead of growing it. The focus is the point the UI marks as active.
+export interface PointSelection {
+	selection: Set<number>;
+	anchor: number | null;
+	focus: number | null;
+}
+
+// Deleting the anchor must not strand a range extension: fall back to the last still-live
+// selected point so shift-click keeps extending instead of collapsing to one point.
+function rangeOrigin(current: PointSelection, points: { id: number }[]): number | null {
+	if (current.anchor !== null && points.some((p) => p.id === current.anchor)) return current.anchor;
+	for (let i = points.length - 1; i >= 0; i--) {
+		if (current.selection.has(points[i].id)) return points[i].id;
+	}
+	return null;
+}
+
+export function nextPointSelection(
+	current: PointSelection,
+	points: { id: number }[],
+	pointId: number,
+	mode: PointSelectMode
+): PointSelection {
+	if (mode === 'range') {
+		const origin = rangeOrigin(current, points);
+		const from = points.findIndex((p) => p.id === origin);
+		const to = points.findIndex((p) => p.id === pointId);
+		if (from !== -1 && to !== -1) {
+			const [lo, hi] = from < to ? [from, to] : [to, from];
+			const selection = new Set(points.slice(lo, hi + 1).map((p) => p.id));
+			return { selection, anchor: points[from].id, focus: pointId };
+		}
+	}
+	const next = nextSelection(current.selection, pointId, mode === 'toggle' ? 'toggle' : 'replace');
+	return { selection: next.selection, anchor: pointId, focus: next.anchor };
+}
+
 // One selection drives editing, export and bulk actions. A plain click replaces it, shift
 // or cmd toggles a frame in or out. The anchor is the frame the canvas keeps its handles
 // on: the clicked frame while it stays selected, otherwise the last one still standing.

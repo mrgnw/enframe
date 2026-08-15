@@ -17,6 +17,7 @@ import {
 	type FocalPoint,
 	type Frame,
 	nextLocalId,
+	nextPointSelection,
 	nextSelection,
 	type PointSelectMode,
 	type SelectMode
@@ -79,6 +80,7 @@ export class FramerSession {
 	canUndo = $derived(undoSeq(this.historySeqs, this.historyPos) !== null);
 	canRedo = $derived(redoSeq(this.historySeqs, this.historyPos) !== null);
 
+	#pointAnchor: number | null = null;
 	#store?: FramerStore;
 	#onchange?: (doc: CropDoc) => void;
 	#onerror?: (message: string) => void;
@@ -143,42 +145,39 @@ export class FramerSession {
 		const next = nextSelection(this.selection, frameId, mode);
 		this.selection = next.selection;
 		this.selectedFrameId = next.anchor;
-		this.selectedPointId = null;
-		this.pointSelection = new Set();
+		this.#clearPoints();
 	}
 
-	// The point selection mirrors the frame selection, with 'range' on top: shift in the
-	// panel list extends from the current anchor through the clicked point.
+	// Picking a point drops the frame edit anchor but leaves the frame selection alone:
+	// that selection is the export set, and clearing it would silently widen an export
+	// to every frame.
 	selectPoint(pointId: number | null, mode: PointSelectMode = 'replace') {
 		if (pointId === null) {
-			this.selectedPointId = null;
-			this.pointSelection = new Set();
+			this.#clearPoints();
 			return;
 		}
 		this.selectedFrameId = null;
-		this.selection = new Set();
-		if (mode === 'range' && this.selectedPointId !== null) {
-			const from = this.focalPoints.findIndex((p) => p.id === this.selectedPointId);
-			const to = this.focalPoints.findIndex((p) => p.id === pointId);
-			if (from !== -1 && to !== -1) {
-				const [lo, hi] = from < to ? [from, to] : [to, from];
-				const next = new Set(this.pointSelection);
-				for (let i = lo; i <= hi; i++) next.add(this.focalPoints[i].id);
-				this.pointSelection = next;
-				this.selectedPointId = pointId;
-				return;
-			}
-		}
-		const next = nextSelection(this.pointSelection, pointId, mode === 'toggle' ? 'toggle' : 'replace');
+		const next = nextPointSelection(
+			{ selection: this.pointSelection, anchor: this.#pointAnchor, focus: this.selectedPointId },
+			this.focalPoints,
+			pointId,
+			mode
+		);
 		this.pointSelection = next.selection;
-		this.selectedPointId = next.anchor;
+		this.selectedPointId = next.focus;
+		this.#pointAnchor = next.anchor;
 	}
 
 	deselect() {
 		this.selectedFrameId = null;
-		this.selectedPointId = null;
 		this.selection = new Set();
+		this.#clearPoints();
+	}
+
+	#clearPoints() {
+		this.selectedPointId = null;
 		this.pointSelection = new Set();
+		this.#pointAnchor = null;
 	}
 
 	selectNextFrame() {
@@ -214,7 +213,7 @@ export class FramerSession {
 	selectAllFrames() {
 		this.selection = new Set(this.frames.map((f) => f.id));
 		this.selectedFrameId = this.frames.at(-1)?.id ?? null;
-		this.selectedPointId = null;
+		this.#clearPoints();
 	}
 
 	clearSelection() {
@@ -303,14 +302,10 @@ export class FramerSession {
 		return doomed.size;
 	}
 
+	// Every path that focuses a point also puts it in the selection, so the selection alone
+	// is the full answer to "what would delete remove".
 	async deleteSelectedPoints(): Promise<number> {
-		const ids =
-			this.pointSelection.size > 0
-				? [...this.pointSelection]
-				: this.selectedPointId !== null
-					? [this.selectedPointId]
-					: [];
-		return this.deletePoints(ids);
+		return this.deletePoints([...this.pointSelection]);
 	}
 
 	// A manual drag, resize or ratio change makes the frame the user's: it stops being recomputed.
@@ -447,8 +442,7 @@ export class FramerSession {
 			if (!restored) return;
 			this.historyPos = seq;
 			this.selectedFrameId = remapId(this.selectedFrameId, restored.frameIds);
-			this.selectedPointId = null;
-			this.pointSelection = new Set();
+			this.#clearPoints();
 			this.selection = remapSelection(this.selection, restored.frameIds);
 			this.frames = restored.frames;
 			this.focalPoints = restored.focalPoints;
