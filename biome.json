@@ -1,21 +1,47 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.2.0/schema.json",
-  "formatter": {
-    "enabled": true,
-    "indentStyle": "tab",
-    "lineWidth": 120
-  },
-  "linter": {
-    "enabled": true,
-    "rules": {
-      "recommended": true
-    }
-  },
-  "javascript": {
-    "formatter": {
-      "quoteStyle": "single",
-      "trailingCommas": "none",
-      "semicolons": "always"
-    }
-  }
+	"$schema": "https://biomejs.dev/schemas/2.2.0/schema.json",
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"lineWidth": 120
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"recommended": true
+		}
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "single",
+			"trailingCommas": "none",
+			"semicolons": "always"
+		}
+	},
+	"css": {
+		"parser": {
+			"tailwindDirectives": true
+		}
+	},
+	"overrides": [
+		{
+			"includes": ["**/*.svelte"],
+			"linter": {
+				"rules": {
+					"correctness": {
+						"noUnusedVariables": "off",
+						"noUnusedImports": "off"
+					},
+					"style": {
+						"useImportType": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": ["src/lib/components/ui/**"],
+			"linter": { "enabled": false },
+			"formatter": { "enabled": false }
+		}
+	]
 }

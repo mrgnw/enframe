@@ -414,8 +414,7 @@ export class FramerSession {
 			const label = computeFrameLabel(
 				{ x: frame.x, y: frame.y, width: frame.width, height: frame.height },
 				relevant,
-				frameAspect,
-				imageAspect
+				frameAspect
 			);
 			if (label) labels.set(frame.id, label);
 		}

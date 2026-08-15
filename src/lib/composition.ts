@@ -371,12 +371,7 @@ export function computeAutoFrame(
 	};
 }
 
-export function computeFrameLabel(
-	frame: Rect,
-	focalPoints: Point[],
-	targetAspect: number,
-	imageAspect: number
-): string {
+export function computeFrameLabel(frame: Rect, focalPoints: Point[], targetAspect: number): string {
 	if (focalPoints.length === 0) return '';
 	const isLandscape = targetAspect > 1;
 	const weights = isLandscape ? LANDSCAPE_WEIGHTS : PORTRAIT_WEIGHTS;
