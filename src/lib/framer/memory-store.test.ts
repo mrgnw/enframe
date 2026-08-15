@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { HISTORY_CAP, planAppend, serializeSnapshot } from '../history';
 import { MemoryStore } from './memory-store.svelte';
 import { type CropDoc, CROP_DOC_VERSION, emptyDoc, type FocalPoint, type Frame } from './types';

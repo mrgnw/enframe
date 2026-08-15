@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { AUTO_LANDSCAPE_LABEL } from '../composition';
 import {
 	type CropDoc,

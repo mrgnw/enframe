@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { basename, generateFrameFilename, getDefaultExportDir, sidecarJson, sidecarName } from './output';
 import { type CropDoc, CROP_DOC_VERSION, docFromSidecar, type Frame } from './types';
 

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { emptyDoc } from './framer/types';
 import { type Recent, RECENTS_CAP, parseRecents, recentId, relativeTime, withRecent } from './recents';
 

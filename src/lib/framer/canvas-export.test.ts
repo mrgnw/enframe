@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { avifQuality, encodingFor, prepareEncoder } from './canvas-export';
 import type { ExportFormat } from './types';
 

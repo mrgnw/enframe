@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import type { FocalPoint, Frame } from './framer/types';
 import {
 	clampPos,
