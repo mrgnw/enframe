@@ -185,10 +185,6 @@ let dirName = $derived(watchDir?.split('/').pop() ?? '');
 		text-transform: uppercase;
 	}
 
-	.status.watching {
-		color: #4ade80;
-	}
-
 	.status.importing {
 		color: #fbbf24;
 	}
