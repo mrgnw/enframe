@@ -65,3 +65,10 @@ export function getLrAssetPaths(assetIds: string[]): Promise<LrAssetPaths[]> {
 export function bestLocalPath(paths: LrAssetPaths): string | null {
 	return paths.original_path ?? paths.proxy_path ?? paths.preview_path ?? null;
 }
+
+// Thumbnails want the cheapest decodable source, not the best one: the 2560 proxy is a
+// JPEG every renderer handles, while the original is often RAW that the desktop webview
+// cannot decode at all and serve must transcode per tile.
+export function thumbnailPath(paths: LrAssetPaths): string | null {
+	return paths.proxy_path ?? paths.original_path ?? paths.preview_path ?? null;
+}

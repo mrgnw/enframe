@@ -3,6 +3,7 @@ import { onMount } from 'svelte';
 import { importFile } from '$lib/db';
 import {
 	bestLocalPath,
+	thumbnailPath,
 	getLrAssetPaths,
 	type LrAlbum,
 	type LrAsset,
@@ -126,7 +127,7 @@ async function resolveAssetPaths() {
 function thumbnailSrc(asset: LrAsset): string | null {
 	const paths = pathsMap[asset.asset_id];
 	if (!paths) return null;
-	const p = bestLocalPath(paths);
+	const p = thumbnailPath(paths);
 	return p ? getImageSrc(p) : null;
 }
 
