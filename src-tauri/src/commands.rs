@@ -115,6 +115,14 @@ fn raw_thumbnail_blocking(path: &str) -> Result<Option<String>, String> {
     let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
         || -> Result<Option<image::DynamicImage>, String> {
             let Ok(decoder) = rawler::get_decoder(&src) else {
+                // Not RAW after all. Lightroom proxies are extension-less JPEGs the
+                // desktop asset protocol serves without a MIME type, so decode them
+                // here and hand back a payload the webview will actually render.
+                if src.buf().starts_with(&[0xFF, 0xD8]) {
+                    return image::load_from_memory(src.buf())
+                        .map(Some)
+                        .map_err(|e| format!("JPEG decode error: {e}"));
+                }
                 return Ok(None);
             };
             let params = RawDecodeParams::default();

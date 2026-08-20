@@ -237,9 +237,60 @@ pub fn list_lr_recent(limit: Option<i64>) -> Result<Vec<LrAsset>, String> {
     Ok(assets)
 }
 
+fn existing_file(path: PathBuf) -> Option<String> {
+    path.is_file()
+        .then(|| path.to_string_lossy().into_owned())
+}
+
+// The annotation lags the filesystem in both directions while Lightroom syncs: it can
+// reference an original the cloud already evicted, and it can omit files that are
+// sitting on disk. Every returned path is therefore stat-checked, and when the
+// annotation says nothing the deterministic cache layout is tried directly —
+// originals/YYYY/YYYY-MM-DD/<filename> and proxies/2560/<id[..3]>/<id[3..]>.
+fn resolve_original(
+    catalog: &std::path::Path,
+    annotated: Option<String>,
+    filename: Option<&str>,
+    capture_date: Option<&str>,
+) -> Option<String> {
+    if let Some(path) = annotated
+        && let Some(found) = existing_file(PathBuf::from(path))
+    {
+        return Some(found);
+    }
+    let name = filename?;
+    let date = capture_date?;
+    let day = date.get(..10)?;
+    let year = date.get(..4)?;
+    existing_file(catalog.join("originals").join(year).join(day).join(name))
+}
+
+fn resolve_proxy(
+    catalog: &std::path::Path,
+    annotated: Option<String>,
+    asset_id: &str,
+) -> Option<String> {
+    if let Some(path) = annotated
+        && let Some(found) = existing_file(PathBuf::from(path))
+    {
+        return Some(found);
+    }
+    if asset_id.len() < 4 || !asset_id.is_ascii() {
+        return None;
+    }
+    existing_file(
+        catalog
+            .join("proxies")
+            .join("2560")
+            .join(&asset_id[..3])
+            .join(&asset_id[3..]),
+    )
+}
+
 #[tauri::command]
 pub fn get_lr_asset_paths(asset_ids: Vec<String>) -> Result<Vec<LrAssetPaths>, String> {
     let mcat = open_mcat()?;
+    let wfindex = open_wfindex()?;
     let catalog = catalog_path()?;
     let previews_db_path = catalog.join("previews.db");
 
@@ -317,6 +368,26 @@ pub fn get_lr_asset_paths(asset_ids: Vec<String>) -> Result<Vec<LrAssetPaths>, S
                 get_nested_str(local_only, &["xmp_develop", "path"]).map(|s| s.to_string());
         }
 
+        let (filename, capture_date) = wfindex
+            .query_row(
+                "SELECT filename, captureDate FROM assets WHERE assetId = ?1",
+                [asset_id],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                    ))
+                },
+            )
+            .unwrap_or((None, None));
+
+        let original_path = resolve_original(
+            &catalog,
+            original_path,
+            filename.as_deref(),
+            capture_date.as_deref(),
+        );
+        let proxy_path = resolve_proxy(&catalog, proxy_path, asset_id);
         let preview_path = preview_map.get(asset_id).cloned();
 
         results.push(LrAssetPaths {

@@ -126,10 +126,17 @@ async function resolveAssetPaths() {
 	}
 }
 
-// The desktop webview cannot decode RAW, and the asset protocol serves the bytes as-is,
-// so RAW-only assets go through the raw_thumbnail command instead. A few workers drain
-// the queue so two hundred tiles never mean two hundred concurrent decodes; each result
-// lands in rawThumbs and the tile re-renders on its own.
+// The desktop webview cannot render two kinds of local file: RAW (undecodable) and the
+// extension-less Lightroom proxies (served without a MIME type), so both go through the
+// raw_thumbnail command instead. A few workers drain the queue so two hundred tiles
+// never mean two hundred concurrent decodes; each result lands in rawThumbs and the
+// tile re-renders on its own.
+function needsDevelop(path: string): boolean {
+	if (isRawName(path)) return true;
+	const slash = path.lastIndexOf('/');
+	return path.lastIndexOf('.') <= slash;
+}
+
 const RAW_THUMB_WORKERS = 3;
 let rawThumbs = $state<Record<string, string>>({});
 let rawThumbRun = 0;
@@ -140,7 +147,7 @@ async function developRawThumbnails(paths: Record<string, LrAssetPaths>) {
 	const queue = Object.entries(paths)
 		.map(([assetId, p]) => ({ assetId, path: thumbnailPath(p) }))
 		.filter((entry): entry is { assetId: string; path: string } => {
-			return entry.path !== null && isRawName(entry.path) && !(entry.assetId in rawThumbs);
+			return entry.path !== null && needsDevelop(entry.path) && !(entry.assetId in rawThumbs);
 		});
 	await Promise.all(
 		Array.from({ length: RAW_THUMB_WORKERS }, async () => {
@@ -159,7 +166,7 @@ function thumbnailSrc(asset: LrAsset): string | null {
 	if (!paths) return null;
 	const p = thumbnailPath(paths);
 	if (!p) return null;
-	if (isTauri() && isRawName(p)) return rawThumbs[asset.asset_id] ?? null;
+	if (isTauri() && needsDevelop(p)) return rawThumbs[asset.asset_id] ?? null;
 	return getImageSrc(p);
 }
 
