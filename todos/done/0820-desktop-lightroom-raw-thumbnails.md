@@ -26,3 +26,5 @@ Notes:
 - Revoke blob URLs on destroy or the grid leaks the decoded JPEGs.
 - The pano that panics rawler (`IMG_0001-Pano.dng`, >50000px guard) will hit the same
   panic here — treat a failed invoke as "no preview", never crash the tile loop.
+
+branch: ux-improvements
