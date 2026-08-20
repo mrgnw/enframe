@@ -13,7 +13,8 @@ import {
 	listLrRecent,
 	searchLrAssets
 } from '$lib/lightroom';
-import { getImageSrc } from '$lib/bridge';
+import { getImageSrc, invoke, isTauri } from '$lib/bridge';
+import { isRawName } from '$lib/framer/raw';
 
 interface Props {
 	onPhotosImported?: () => void;
@@ -117,6 +118,7 @@ async function resolveAssetPaths() {
 			}
 		}
 		pathsMap = newMap;
+		void developRawThumbnails(newMap);
 	} catch (err) {
 		console.error('Failed to resolve paths:', err);
 	} finally {
@@ -124,11 +126,41 @@ async function resolveAssetPaths() {
 	}
 }
 
+// The desktop webview cannot decode RAW, and the asset protocol serves the bytes as-is,
+// so RAW-only assets go through the raw_thumbnail command instead. A few workers drain
+// the queue so two hundred tiles never mean two hundred concurrent decodes; each result
+// lands in rawThumbs and the tile re-renders on its own.
+const RAW_THUMB_WORKERS = 3;
+let rawThumbs = $state<Record<string, string>>({});
+let rawThumbRun = 0;
+
+async function developRawThumbnails(paths: Record<string, LrAssetPaths>) {
+	if (!isTauri()) return;
+	const run = ++rawThumbRun;
+	const queue = Object.entries(paths)
+		.map(([assetId, p]) => ({ assetId, path: thumbnailPath(p) }))
+		.filter((entry): entry is { assetId: string; path: string } => {
+			return entry.path !== null && isRawName(entry.path) && !(entry.assetId in rawThumbs);
+		});
+	await Promise.all(
+		Array.from({ length: RAW_THUMB_WORKERS }, async () => {
+			while (queue.length > 0 && run === rawThumbRun) {
+				const next = queue.shift();
+				if (!next) return;
+				const jpeg = await invoke<string | null>('raw_thumbnail', { path: next.path }).catch(() => null);
+				if (jpeg) rawThumbs[next.assetId] = `data:image/jpeg;base64,${jpeg}`;
+			}
+		})
+	);
+}
+
 function thumbnailSrc(asset: LrAsset): string | null {
 	const paths = pathsMap[asset.asset_id];
 	if (!paths) return null;
 	const p = thumbnailPath(paths);
-	return p ? getImageSrc(p) : null;
+	if (!p) return null;
+	if (isTauri() && isRawName(p)) return rawThumbs[asset.asset_id] ?? null;
+	return getImageSrc(p);
 }
 
 async function handleImport(asset: LrAsset) {

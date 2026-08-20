@@ -1,8 +1,8 @@
 import { canvasBlob } from './canvas-export';
 
-// Matches the extensions the Rust inbox scanner accepts, so a file the desktop app
-// would ingest is a file the browser will try to develop.
-export const RAW_EXTENSIONS = ['arw', 'cr2', 'cr3', 'dng', 'nef', 'raf'] as const;
+// Matches RAW_EXTENSIONS in src-tauri/src/commands.rs, so every file the Rust side
+// treats as RAW is a file the frontend routes through a RAW decoder.
+export const RAW_EXTENSIONS = ['arw', 'cr2', 'cr3', 'dng', 'nef', 'raf', 'orf', 'rw2', 'pef'] as const;
 
 export function isRawName(name: string): boolean {
 	const dot = name.lastIndexOf('.');

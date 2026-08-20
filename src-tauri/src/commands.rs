@@ -92,6 +92,88 @@ pub fn raw_as_jpeg(path: &str) -> Result<Option<Vec<u8>>, String> {
     Ok(Some(jpeg))
 }
 
+// Thumbnails accept any embedded preview: a 1616px Sony preview that is too small for
+// the editor is more than a 300px grid tile needs, and it skips the demosaic entirely.
+// Full decode only when a RAW carries no preview, downscaled so the IPC payload stays
+// bounded. Base64 because Tauri serializes Vec<u8> as a JSON number array.
+// Async so the seconds-long decode runs off the main thread; a sync command would
+// beachball the window for every tile.
+#[tauri::command]
+pub async fn raw_thumbnail(path: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || raw_thumbnail_blocking(&path))
+        .await
+        .map_err(|e| format!("thumbnail task: {e}"))?
+}
+
+fn raw_thumbnail_blocking(path: &str) -> Result<Option<String>, String> {
+    if !may_be_raw(path) {
+        return Ok(None);
+    }
+    let file_bytes = fs::read(path).map_err(|e| format!("Read error: {e}"))?;
+    let src = RawSource::new_from_shared_vec(Arc::new(file_bytes));
+
+    let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        || -> Result<Option<image::DynamicImage>, String> {
+            let Ok(decoder) = rawler::get_decoder(&src) else {
+                return Ok(None);
+            };
+            let params = RawDecodeParams::default();
+            if let Ok(Some(preview)) = decoder.preview_image(&src, &params) {
+                return Ok(Some(preview));
+            }
+            decode_raw(decoder.as_ref(), &src).map(Some)
+        },
+    ));
+
+    let image = match decoded {
+        Ok(Ok(Some(image))) => image,
+        Ok(Ok(None)) => return Ok(None),
+        Ok(Err(e)) => return Err(e),
+        // rawler panics outright on absurd dimensions (stitched panoramas); an empty
+        // tile beats taking the whole grid down.
+        Err(_) => return Ok(None),
+    };
+
+    let thumb = image.thumbnail(1024, 1024);
+    let mut jpeg = Vec::new();
+    thumb
+        .to_rgb8()
+        .write_to(&mut Cursor::new(&mut jpeg), image::ImageFormat::Jpeg)
+        .map_err(|e| format!("JPEG encode error: {e}"))?;
+    Ok(Some(base64::engine::general_purpose::STANDARD.encode(jpeg)))
+}
+
+#[cfg(test)]
+mod raw_thumbnail_tests {
+    use super::*;
+
+    #[test]
+    fn a_plain_extension_is_not_raw() {
+        assert_eq!(raw_thumbnail_blocking("/tmp/x.jpeg"), Ok(None));
+    }
+
+    // Needs a real camera file; skipped wherever none exists.
+    #[test]
+    fn an_arw_yields_a_jpeg_data_payload() {
+        let candidates = [
+            std::path::PathBuf::from(std::env::var("HOME").unwrap())
+                .join("Pictures/samples/IMG_0001.ARW"),
+        ];
+        let Some(arw) = candidates.iter().find(|p| p.exists()) else {
+            eprintln!("no ARW fixture on this machine, skipping");
+            return;
+        };
+        let encoded = raw_thumbnail_blocking(&arw.to_string_lossy())
+            .expect("decode should succeed")
+            .expect("an ARW always carries an embedded preview");
+        let jpeg = base64::engine::general_purpose::STANDARD
+            .decode(&encoded)
+            .expect("payload is base64");
+        assert_eq!(&jpeg[0..2], &[0xFF, 0xD8], "payload is a JPEG");
+        assert!(jpeg.len() < 1_500_000, "thumbnail payload stays bounded");
+    }
+}
+
 #[tauri::command]
 pub fn get_screenshot_mode() -> Option<i64> {
     std::env::var("SCREENSHOT_PHOTO_ID")
