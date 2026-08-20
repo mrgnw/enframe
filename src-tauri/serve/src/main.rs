@@ -4,14 +4,16 @@ mod roots;
 use axum::Json;
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, Path, Query, Request, State};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Path, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use roots::Roots;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::net::SocketAddr;
 use std::path::{Path as FsPath, PathBuf};
 use std::sync::{Arc, Mutex};
 use tower::ServiceExt as _;
@@ -217,18 +219,65 @@ fn confine(roots: &Roots, body: &mut Value, key: &str, access: Access) -> ApiRes
     Ok(())
 }
 
+// The single list of commands that write to a path the caller chose. Confinement and the
+// local-only policy both read it, so a command cannot gain a caller-chosen write without
+// becoming local-only in the same edit.
+fn write_key(command: &str) -> Option<&'static str> {
+    match command {
+        "save_image" => Some("path"),
+        "crop_and_export" => Some("outputPath"),
+        _ => None,
+    }
+}
+
 fn confine_command(roots: &Roots, command: &str, body: &mut Value) -> ApiResult<()> {
     match command {
-        "save_image" => confine(roots, body, "path", Access::Write),
-        "crop_and_export" => {
-            confine(roots, body, "sourcePath", Access::Read)?;
-            confine(roots, body, "outputPath", Access::Write)
-        }
-        "scan_inbox" => confine(roots, body, "directory", Access::Read),
+        "crop_and_export" => confine(roots, body, "sourcePath", Access::Read)?,
+        "scan_inbox" => confine(roots, body, "directory", Access::Read)?,
         // The Lightroom commands take ids and queries, and read the library through
         // a root that has to be allowlisted for them to work at all.
-        _ => Ok(()),
+        _ => {}
     }
+    match write_key(command) {
+        Some(key) => confine(roots, body, key, Access::Write),
+        None => Ok(()),
+    }
+}
+
+// A remote caller keeps the reading and framing loop: the database, image and text reads,
+// and uploads, which land on a path the server picks. Refused are the routes that choose a
+// path on the server's behalf — the file browser behind the picker, the watch folder scan
+// that ingests from a directory the caller names, and every caller-chosen write.
+fn local_only(path: &str) -> bool {
+    let Some(command) = path.strip_prefix("/api/") else {
+        return false;
+    };
+    // Decoded exactly as the Path extractor decodes it, so an escape cannot be spelled.
+    let command = percent_encoding::percent_decode_str(command).decode_utf8_lossy();
+    write_key(&command).is_some() || matches!(command.as_ref(), "ls" | "scan_inbox")
+}
+
+// No connection info means the peer is unknown, which is not the machine itself.
+fn from_loopback(request: &Request) -> bool {
+    request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .is_some_and(|ConnectInfo(peer)| peer.ip().is_loopback())
+}
+
+async fn guard(request: Request, next: Next) -> Response {
+    let path = request.uri().path();
+    if local_only(path) && !from_loopback(&request) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({
+                "error": format!("{path} is local-only"),
+                "detail": "this route picks a path on the server, so it answers loopback only",
+            })),
+        )
+            .into_response();
+    }
+    next.run(request).await
 }
 
 async fn api(
@@ -578,6 +627,24 @@ fn build_roots(options: &Options, pictures: &FsPath, library: Vec<PathBuf>) -> R
     )
 }
 
+fn router(state: AppState, web: &FsPath) -> Router {
+    let spa = ServeDir::new(web).fallback(ServeFile::new(web.join("index.html")));
+    Router::new()
+        .route("/sql/select", post(sql_select))
+        .route("/sql/execute", post(sql_execute))
+        .route("/api/read_text", get(read_text))
+        .route("/api/stat", get(stat))
+        .route("/api/ls", get(ls))
+        .route("/api/upload", post(upload))
+        .route("/api/{command}", post(api))
+        .route("/img/{*path}", get(img))
+        .fallback_service(spa)
+        .layer(DefaultBodyLimit::max(MAX_BODY))
+        // Outermost, so a refused route never reads the body it was sent.
+        .layer(middleware::from_fn(guard))
+        .with_state(state)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), String> {
     let options = options()?;
@@ -599,19 +666,7 @@ async fn main() -> Result<(), String> {
         roots: Arc::new(roots),
     };
 
-    let spa = ServeDir::new(&options.web).fallback(ServeFile::new(options.web.join("index.html")));
-    let app = Router::new()
-        .route("/sql/select", post(sql_select))
-        .route("/sql/execute", post(sql_execute))
-        .route("/api/read_text", get(read_text))
-        .route("/api/stat", get(stat))
-        .route("/api/ls", get(ls))
-        .route("/api/upload", post(upload))
-        .route("/api/{command}", post(api))
-        .route("/img/{*path}", get(img))
-        .fallback_service(spa)
-        .layer(DefaultBodyLimit::max(MAX_BODY))
-        .with_state(state.clone());
+    let app = router(state.clone(), &options.web);
 
     let address = format!("{}:{}", options.host, options.port);
     let listener = tokio::net::TcpListener::bind(&address)
@@ -628,7 +683,202 @@ async fn main() -> Result<(), String> {
         println!("  write    {}", root.display());
     }
 
-    axum::serve(listener, app.into_make_service())
-        .await
-        .map_err(|e| e.to_string())
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+
+    const LOCAL_ONLY: [&str; 4] = [
+        "/api/ls",
+        "/api/scan_inbox",
+        "/api/save_image",
+        "/api/crop_and_export",
+    ];
+
+    const REMOTE_SAFE: [&str; 14] = [
+        "/sql/select",
+        "/sql/execute",
+        "/api/read_text",
+        "/api/stat",
+        "/api/upload",
+        "/api/get_screenshot_mode",
+        "/api/get_lightroom_library_path",
+        "/api/list_lr_albums",
+        "/api/list_lr_album_assets",
+        "/api/search_lr_assets",
+        "/api/list_lr_recent",
+        "/api/get_lr_asset_paths",
+        "/img/Users/someone/Pictures/photo.jpg",
+        "/library",
+    ];
+
+    #[test]
+    fn every_local_only_route_is_classified() {
+        for path in LOCAL_ONLY {
+            assert!(local_only(path), "{path} should be local-only");
+        }
+    }
+
+    #[test]
+    fn the_reading_and_framing_loop_stays_remote() {
+        for path in REMOTE_SAFE {
+            assert!(!local_only(path), "{path} should be remote-safe");
+        }
+    }
+
+    // Confinement and the policy share write_key, so a caller-chosen write is local-only
+    // by construction rather than by remembering to list it twice.
+    #[test]
+    fn every_caller_chosen_write_is_local_only() {
+        for path in REMOTE_SAFE {
+            let command = path.strip_prefix("/api/").unwrap_or("");
+            assert_eq!(write_key(command), None, "{path} writes a chosen path");
+        }
+        assert_eq!(write_key("save_image"), Some("path"));
+        assert_eq!(write_key("crop_and_export"), Some("outputPath"));
+    }
+
+    // Axum matches the encoded path but Path hands the handler the decoded one, so the
+    // policy decodes too.
+    #[test]
+    fn percent_encoding_does_not_escape_the_policy() {
+        assert!(local_only("/api/save%5Fimage"));
+        assert!(local_only("/api/%6Cs"));
+    }
+
+    struct Sandbox {
+        base: PathBuf,
+    }
+
+    impl Sandbox {
+        fn new(name: &str) -> Self {
+            let base = std::env::temp_dir()
+                .canonicalize()
+                .unwrap()
+                .join(format!("enframe_serve_{}_{name}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&base);
+            std::fs::create_dir_all(&base).unwrap();
+            Self { base }
+        }
+
+        fn app(&self) -> Router {
+            let inbox = self.base.join("inbox");
+            std::fs::create_dir_all(&inbox).unwrap();
+            let connection = db::open(&self.base.join("enframe.db")).unwrap();
+            let roots = Roots::new(vec![self.base.clone()], vec![inbox.clone()]).unwrap();
+            let state = AppState {
+                conn: Arc::new(Mutex::new(connection)),
+                browse: self.base.clone(),
+                roots: Arc::new(roots),
+                inbox,
+            };
+            router(state, &self.base)
+        }
+    }
+
+    impl Drop for Sandbox {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.base);
+        }
+    }
+
+    fn from(peer: &str, mut request: Request) -> Request {
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(peer.parse::<SocketAddr>().unwrap()));
+        request
+    }
+
+    async fn status(app: &Router, request: Request) -> StatusCode {
+        app.clone().oneshot(request).await.unwrap().status()
+    }
+
+    fn get_ls() -> Request {
+        Request::builder()
+            .uri("/api/ls")
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    fn post_json(uri: &str, body: &str) -> Request {
+        Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn the_file_browser_answers_loopback_only() {
+        let sandbox = Sandbox::new("browser");
+        let app = sandbox.app();
+
+        assert_eq!(
+            status(&app, from("127.0.0.1:52001", get_ls())).await,
+            StatusCode::OK
+        );
+        assert_eq!(
+            status(&app, from("100.64.0.7:52001", get_ls())).await,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            status(&app, from("192.168.1.20:52001", get_ls())).await,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(status(&app, get_ls()).await, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn a_remote_write_is_refused_and_writes_nothing() {
+        let sandbox = Sandbox::new("write");
+        let target = sandbox.base.join("inbox/saved.png");
+        let body = format!("{{\"path\":{:?},\"data\":\"\"}}", text(target.clone()));
+        let app = sandbox.app();
+
+        let refused = post_json("/api/save_image", &body);
+        assert_eq!(
+            status(&app, from("100.64.0.7:52001", refused)).await,
+            StatusCode::FORBIDDEN
+        );
+        assert!(!target.exists(), "a refused write must not touch the disk");
+
+        // The same request from loopback is inside a write root and goes through, so the
+        // refusal above was the policy and not the roots.
+        let allowed = post_json("/api/save_image", &body);
+        assert_eq!(
+            status(&app, from("127.0.0.1:52001", allowed)).await,
+            StatusCode::OK
+        );
+        assert!(target.exists());
+    }
+
+    #[tokio::test]
+    async fn the_database_stays_open_to_remote_callers() {
+        let sandbox = Sandbox::new("sql");
+        let app = sandbox.app();
+
+        let select = post_json("/sql/select", "{\"sql\":\"SELECT 1 AS one\",\"values\":[]}");
+        assert_eq!(
+            status(&app, from("100.64.0.7:52001", select)).await,
+            StatusCode::OK
+        );
+
+        let execute = post_json(
+            "/sql/execute",
+            "{\"sql\":\"CREATE TABLE IF NOT EXISTS t (a)\",\"values\":[]}",
+        );
+        assert_eq!(
+            status(&app, from("100.64.0.7:52001", execute)).await,
+            StatusCode::OK
+        );
+    }
 }
