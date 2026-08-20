@@ -54,6 +54,6 @@ pub fn scan_inbox(directory: String) -> Result<Vec<InboxFile>, String> {
         });
     }
 
-    files.sort_by(|a, b| b.modified.cmp(&a.modified));
+    files.sort_by_key(|f| std::cmp::Reverse(f.modified));
     Ok(files)
 }

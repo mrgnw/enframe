@@ -290,33 +290,31 @@ pub fn get_lr_asset_paths(asset_ids: Vec<String>) -> Result<Vec<LrAssetPaths>, S
         let mut proxy_path: Option<String> = None;
         let mut xmp_path: Option<String> = None;
 
-        if let Some(blob) = annotation {
-            if let Ok(data) = rmp_serde::from_slice::<rmpv::Value>(&blob) {
-                if let Some(local_only) = data.as_map().and_then(|m| {
-                    m.iter()
-                        .find(|(k, _)| k.as_str() == Some("_localOnly"))
-                        .map(|(_, v)| v)
-                }) {
-                    if let Some(files) = local_only.as_map().and_then(|m| {
-                        m.iter()
-                            .find(|(k, _)| k.as_str() == Some("files"))
-                            .map(|(_, v)| v)
-                    }) {
-                        // original.master.relativePath
-                        original_path =
-                            get_nested_str(files, &["original", "master", "relativePath"])
-                                .map(|rp| format!("/{rp}"));
+        if let Some(blob) = annotation
+            && let Ok(data) = rmp_serde::from_slice::<rmpv::Value>(&blob)
+            && let Some(local_only) = data.as_map().and_then(|m| {
+                m.iter()
+                    .find(|(k, _)| k.as_str() == Some("_localOnly"))
+                    .map(|(_, v)| v)
+            })
+        {
+            if let Some(files) = local_only.as_map().and_then(|m| {
+                m.iter()
+                    .find(|(k, _)| k.as_str() == Some("files"))
+                    .map(|(_, v)| v)
+            }) {
+                // original.master.relativePath
+                original_path = get_nested_str(files, &["original", "master", "relativePath"])
+                    .map(|rp| format!("/{rp}"));
 
-                        // proxy.2560.relativePath
-                        proxy_path = get_nested_str(files, &["proxy", "2560", "relativePath"])
-                            .map(|rp| format!("/{rp}"));
-                    }
-
-                    // xmp_develop.path (absolute already)
-                    xmp_path =
-                        get_nested_str(local_only, &["xmp_develop", "path"]).map(|s| s.to_string());
-                }
+                // proxy.2560.relativePath
+                proxy_path = get_nested_str(files, &["proxy", "2560", "relativePath"])
+                    .map(|rp| format!("/{rp}"));
             }
+
+            // xmp_develop.path (absolute already)
+            xmp_path =
+                get_nested_str(local_only, &["xmp_develop", "path"]).map(|s| s.to_string());
         }
 
         let preview_path = preview_map.get(asset_id).cloned();

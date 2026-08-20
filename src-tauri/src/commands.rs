@@ -108,6 +108,10 @@ pub fn save_image(path: String, data: String) -> Result<(), String> {
     Ok(())
 }
 
+// The flat argument list is the invoke contract: export.ts passes these by name and
+// serve's dispatcher forwards them positionally, so grouping them into a struct would
+// change both callers for no behavioral gain.
+#[expect(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn crop_and_export(
     source_path: String,
