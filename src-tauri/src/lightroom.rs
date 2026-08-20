@@ -275,13 +275,16 @@ pub fn get_lr_asset_paths(asset_ids: Vec<String>) -> Result<Vec<LrAssetPaths>, S
     let mut results = Vec::with_capacity(asset_ids.len());
 
     for asset_id in &asset_ids {
+        // Lightroom writes the msgpack annotation with TEXT storage class, so ask for the
+        // raw bytes: `get::<Vec<u8>>` only accepts a Blob and would silently yield None.
         let annotation: Option<Vec<u8>> = mcat
 			.query_row(
 				"SELECT annotation FROM docs WHERE fullDocId = ?1 AND type = 'asset' AND deleted = 0",
 				[asset_id],
-				|row| row.get(0),
+				|row| Ok(row.get_ref(0)?.as_bytes().ok().map(<[u8]>::to_vec)),
 			)
-			.ok();
+			.ok()
+			.flatten();
 
         let mut original_path: Option<String> = None;
         let mut proxy_path: Option<String> = None;
