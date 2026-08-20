@@ -12,17 +12,24 @@ reachable over a network at all, versus only from the machine itself.
 
 ## Ideas to explore
 
-**Split the API by trust, not by user.** Some operations are inherently local-only and
-would lose nothing by being refused over a non-loopback connection:
+**Split the API by trust, not by user.** *Shipped:* a `local_only` route list checked
+against `ConnectInfo<SocketAddr>` refuses `/api/ls`, `/api/scan_inbox`, `save_image`, and
+`crop_and_export` with a 403 off loopback, leaving the database, image reads, and inbox
+uploads remote-usable.
+
+The operations that were inherently local-only and lost nothing by being refused over a
+non-loopback connection:
 
 - setting the watch folder (`WatchDir`) — picking a directory to ingest from is an
   administrative act; the remote UI can use one already configured
-- `--read-root` / `--write-root` equivalents, if root management ever becomes runtime
+- `--read-root` / `--write-root` equivalents, if root management ever becomes runtime —
+  still open, since roots are start-up only today
 - `save_image` / `crop_and_export` writing to arbitrary allowlisted paths
 - the server-side file browser (`/api/ls`) that backs the remote picker
 
-A per-route `local_only` flag checked against the peer address is cheap and needs no
-credentials. Framing: the *reading and framing* loop is safe to expose; the
+The flag turned out cheaper than a per-route field: one `local_only(path)` in a
+middleware, sharing its list of caller-chosen writes with the root confinement so the two
+cannot drift. Framing held: the *reading and framing* loop is safe to expose; the
 *reconfiguration* surface is not.
 
 **A config file only writable locally.** Something like `~/Library/Application Support/

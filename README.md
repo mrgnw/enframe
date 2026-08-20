@@ -174,6 +174,13 @@ bun run serve --read-root "$PHOTOS" --write-root "$PHOTOS"
 
 The effective roots are logged at boot.
 
+Some routes answer only to the machine itself. Whichever address the server is bound to,
+a connection from anywhere but a loopback address is refused a 403 for the server-side
+file browser (`/api/ls`), the watch-folder scan (`/api/scan_inbox`), and the two commands
+that write to a path the caller names (`save_image`, `crop_and_export`) — a tailnet or LAN
+address counts as remote. Reading and framing is untouched: the database, images, text
+sidecars, and dropping files into the inbox all work over the network as before.
+
 ### Static web build
 
 No server, no database, nothing to tunnel. `/` opens one image, you frame it in memory,
