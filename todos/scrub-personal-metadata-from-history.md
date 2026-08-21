@@ -11,5 +11,7 @@ None of it is a credential — the GUID is useless without Adobe auth — but it
 personal metadata. Already pushed, so scrubbing means rewriting branch history
 (or squash-merging the branch and deleting it).
 
-Options when picked up: parameterize the scripts via env var / first CLI arg,
-squash-merge `ux-improvements` so the raw history never lands on `main`.
+`ux-improvements` was fast-forwarded into `main` on 2026-08-21, so a history scrub
+now means rewriting `main`. The forward-looking fix is a content scrub: parameterize
+the scripts via env var / first CLI arg and drop the hard-coded GUID and filenames
+(they also appear in `todos/cloud-only-lightroom-thumbnails.md`).
