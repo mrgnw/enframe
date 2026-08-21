@@ -1,6 +1,6 @@
 <script lang="ts">
 import { Crop, FolderPlus, ImageOff, Link } from '@lucide/svelte';
-import { onDestroy, onMount } from 'svelte';
+import { onDestroy, onMount, tick } from 'svelte';
 import { toast } from 'svelte-sonner';
 import { getImageSrc, onDragDrop, pickFiles, stat } from '$lib/bridge';
 import {
@@ -13,9 +13,8 @@ import {
 	updatePhoto
 } from '$lib/db';
 import { DESTINATIONS, REQUIRED_DESTINATIONS } from '$lib/destinations';
-import { getWatchDir, persistWatchDir } from '$lib/watch';
+import FolderBrowser from './FolderBrowser.svelte';
 import LightroomBrowser from './LightroomBrowser.svelte';
-import WatchDir from './WatchDir.svelte';
 
 const IMAGE_EXTS = new Set([
 	'jpg',
@@ -50,13 +49,13 @@ function loadImageDimensions(src: string): Promise<{ width: number; height: numb
 	});
 }
 
-type Tab = 'photos' | 'lightroom' | 'watch';
+type Tab = 'photos' | 'lightroom' | 'folders';
 
 const TAB_KEY = 'enframe.library.tab';
 const TABS: { id: Tab; label: string }[] = [
 	{ id: 'photos', label: 'Photos' },
 	{ id: 'lightroom', label: 'Lightroom' },
-	{ id: 'watch', label: 'Watch folder' }
+	{ id: 'folders', label: 'Folders' }
 ];
 
 function storedTab(): Tab {
@@ -79,9 +78,9 @@ let importing = $state(false);
 let tab = $state<Tab>(storedTab());
 let lrQuery = $state('');
 let lightroom = $state<LightroomBrowser | null>(null);
+let folderBrowser = $state<FolderBrowser | null>(null);
 let dragging = $state(false);
 let draggingDir = $state(false);
-let watchDir = $state<string | null>(getWatchDir());
 let missingImages = $state<Set<number>>(new Set());
 let unlisten: (() => void) | null = null;
 
@@ -144,13 +143,14 @@ onMount(async () => {
 			dragging = false;
 			draggingDir = false;
 
-			// Handle folder drop (watch dir)
+			// Handle folder drop (bookmark it, never import)
 			if (paths.length === 1) {
 				try {
 					const info = await stat(paths[0]);
 					if (info.isDirectory) {
-						watchDir = paths[0];
-						persistWatchDir(paths[0]);
+						selectTab('folders');
+						await tick();
+						folderBrowser?.openFolder(paths[0]);
 						return;
 					}
 				} catch {}
@@ -304,18 +304,9 @@ async function handleOpenClick() {
 		</div>
 	</div>
 
-	<!-- ponytail: the watch surface stays mounted on every tab so its poll keeps importing. -->
-	<div class="panel watch-panel" class:hidden={tab !== 'watch'}>
-		<WatchDir
-			{watchDir}
-			onWatchDirChange={(dir) => { watchDir = dir; }}
-			onPhotosImported={loadPhotos}
-			highlighted={dragging && draggingDir}
-		/>
-		<p class="hint">
-			{watchDir ? 'New images landing here import themselves.' : 'Pick a folder — or drop one anywhere — and its new images import themselves.'}
-		</p>
-	</div>
+	{#if tab === 'folders'}
+		<FolderBrowser bind:this={folderBrowser} onPhotosImported={loadPhotos} />
+	{/if}
 
 	{#if tab === 'lightroom'}
 		<LightroomBrowser bind:this={lightroom} onPhotosImported={loadPhotos} />
@@ -421,7 +412,7 @@ async function handleOpenClick() {
 	{#if dragging}
 		<div class="drop-overlay">
 			{#if draggingDir}
-				<span class="drop-label">Drop to set watch folder</span>
+				<span class="drop-label">Drop to bookmark folder</span>
 			{:else}
 				<span class="drop-label">Drop to import</span>
 			{/if}
@@ -518,36 +509,6 @@ async function handleOpenClick() {
 	.search:focus {
 		outline: none;
 		border-color: #2563eb;
-	}
-
-	.panel {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		gap: 0.75rem;
-		min-height: 0;
-	}
-
-	.panel.hidden {
-		display: none;
-	}
-
-	.watch-panel :global(.watch-pill) {
-		font-size: 0.9rem;
-		padding: 0.6rem 1rem;
-		border-radius: 8px;
-	}
-
-	.watch-panel :global(.drop-hint) {
-		font-size: 0.9rem;
-		color: #a1a1aa;
-	}
-
-	.watch-panel .hint {
-		margin: 0;
-		color: #71717a;
 	}
 
 	.action-pill {
