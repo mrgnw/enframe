@@ -452,12 +452,15 @@ async fn upload(
 const IMAGE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(60);
 
 async fn deadline<T>(work: impl Future<Output = T>) -> ApiResult<T> {
-    tokio::time::timeout(IMAGE_DEADLINE, work).await.map_err(|_| {
-        (
-            StatusCode::GATEWAY_TIMEOUT,
-            "timed out reading the image; the server may lack permission to read it".to_string(),
-        )
-    })
+    tokio::time::timeout(IMAGE_DEADLINE, work)
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::GATEWAY_TIMEOUT,
+                "timed out reading the image; the server may lack permission to read it"
+                    .to_string(),
+            )
+        })
 }
 
 async fn img(
@@ -484,7 +487,10 @@ async fn img(
         return Ok((
             [
                 (header::CONTENT_TYPE, "image/jpeg"),
-                (header::CACHE_CONTROL, "private, max-age=31536000, immutable"),
+                (
+                    header::CACHE_CONTROL,
+                    "private, max-age=31536000, immutable",
+                ),
             ],
             jpeg,
         )
@@ -602,7 +608,11 @@ fn is_specific_enough(path: &FsPath) -> bool {
     }
 }
 
-fn build_roots(options: &Options, pictures: &FsPath, library: Vec<PathBuf>) -> Result<Roots, String> {
+fn build_roots(
+    options: &Options,
+    pictures: &FsPath,
+    library: Vec<PathBuf>,
+) -> Result<Roots, String> {
     let database = options
         .database
         .parent()
