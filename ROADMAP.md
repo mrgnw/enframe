@@ -21,7 +21,7 @@ Tauri v2 + SvelteKit 5, with Lightroom catalog integration.
 - Lightroom catalog reader in Rust — albums, search, dynamic catalog discovery,
   asset-path resolution, LR proxy preview
 - Drag-drop / file import with image dimensions captured on insert
-- Inbox folder watcher that auto-imports new photos
+- Bookmarked folders: browse a folder's images and import only the ones selected
 - Metadata JSON re-import recreates photo + frames + focal points
 
 ### Editor
@@ -92,7 +92,8 @@ Tauri v2 + SvelteKit 5, with Lightroom catalog integration.
 
 ### Throughput
 - Batch apply a set of frames/ratios across many selected photos
-- Watch-folder → auto-export pipeline (extends the inbox watcher into full output)
+- Folder → auto-export pipeline: pick a bookmarked folder, frame and export the
+  selection in one pass
 - Export queue with progress, cancel, and per-photo results
 
 ### Reliability & DX
