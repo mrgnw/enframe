@@ -245,16 +245,17 @@ fn confine_command(roots: &Roots, command: &str, body: &mut Value) -> ApiResult<
 }
 
 // A remote caller keeps the reading and framing loop: the database, image and text reads,
-// and uploads, which land on a path the server picks. Refused are the routes that choose a
-// path on the server's behalf — the file browser behind the picker, the watch folder scan
-// that ingests from a directory the caller names, and every caller-chosen write.
+// uploads that land on a path the server picks, and listing one named folder, which
+// confinement already bounds to a read root. Refused is every caller-chosen write, and
+// the file browser — not because it can escape the roots, it cannot, but because
+// enumerating the tree is discovery rather than framing.
 fn local_only(path: &str) -> bool {
     let Some(command) = path.strip_prefix("/api/") else {
         return false;
     };
     // Decoded exactly as the Path extractor decodes it, so an escape cannot be spelled.
     let command = percent_encoding::percent_decode_str(command).decode_utf8_lossy();
-    write_key(&command).is_some() || matches!(command.as_ref(), "ls" | "scan_inbox")
+    write_key(&command).is_some() || command == "ls"
 }
 
 // No connection info means the peer is unknown, which is not the machine itself.
@@ -706,19 +707,15 @@ mod tests {
     use super::*;
     use axum::body::Body;
 
-    const LOCAL_ONLY: [&str; 4] = [
-        "/api/ls",
-        "/api/scan_inbox",
-        "/api/save_image",
-        "/api/crop_and_export",
-    ];
+    const LOCAL_ONLY: [&str; 3] = ["/api/ls", "/api/save_image", "/api/crop_and_export"];
 
-    const REMOTE_SAFE: [&str; 14] = [
+    const REMOTE_SAFE: [&str; 15] = [
         "/sql/select",
         "/sql/execute",
         "/api/read_text",
         "/api/stat",
         "/api/upload",
+        "/api/scan_inbox",
         "/api/get_screenshot_mode",
         "/api/get_lightroom_library_path",
         "/api/list_lr_albums",
@@ -869,6 +866,35 @@ mod tests {
             StatusCode::OK
         );
         assert!(target.exists());
+    }
+
+    // Listing a bookmarked folder is a read, so it answers remotely — but only inside a
+    // read root. Confinement, not the peer address, is what bounds where a caller can look.
+    #[tokio::test]
+    async fn a_remote_folder_scan_is_confined_to_a_read_root() {
+        let sandbox = Sandbox::new("scan");
+        let app = sandbox.app();
+
+        let inside = format!("{{\"directory\":{:?}}}", text(sandbox.base.join("inbox")));
+        assert_eq!(
+            status(
+                &app,
+                from("100.64.0.7:52001", post_json("/api/scan_inbox", &inside))
+            )
+            .await,
+            StatusCode::OK
+        );
+
+        let outside = std::env::temp_dir().canonicalize().unwrap();
+        let escape = format!("{{\"directory\":{:?}}}", text(outside));
+        assert_eq!(
+            status(
+                &app,
+                from("100.64.0.7:52001", post_json("/api/scan_inbox", &escape))
+            )
+            .await,
+            StatusCode::FORBIDDEN
+        );
     }
 
     #[tokio::test]
