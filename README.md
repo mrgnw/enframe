@@ -102,16 +102,19 @@ bun run sveltekit:build
 bun run serve
 ```
 
-That runs in the foreground and stops when the terminal closes. To keep it running across
-logouts and reboots, `services.toml` registers it with [kagaya](https://ky.xcc.es):
+That runs in the foreground and stops when the terminal closes. To keep it running after
+the terminal closes, `pitchfork.toml` registers it with
+[pitchfork](https://pitchfork.jdx.dev):
 
 ```sh
-ky add && ky start
+pitchfork start serve
 ```
 
 ```sh
-ky status
+pitchfork status serve
 ```
+
+It does not start at login; add `boot_start = true` to `pitchfork.toml` if you want that.
 
 It runs the release binary directly, so build it once before the first start:
 
@@ -119,14 +122,14 @@ It runs the release binary directly, so build it once before the first start:
 cargo build --release --manifest-path src-tauri/Cargo.toml -p enframe-serve
 ```
 
-A launchd-managed process inherits none of your terminal's privacy grants, so photos in
+A supervised process inherits none of your terminal's privacy grants, so photos in
 iCloud Drive, Photos, Desktop or Documents are unreadable until you grant the binary
 **Full Disk Access** (System Settings → Privacy & Security → Full Disk Access → add
 `src-tauri/target/release/enframe-serve`). Without it those reads hang rather than fail,
 so `/img` gives up after 60s with a 504. Photos under `~/Pictures` are unaffected, and
 running `bun run serve` from a terminal sidesteps it entirely.
 
-`services.toml` passes `--host 0.0.0.0`, so the port answers on every interface — a
+`pitchfork.toml` passes `--host 0.0.0.0`, so the port answers on every interface — a
 tailnet address reaches it directly with nothing to proxy, and so does anything else on
 the same network. To keep it off the local network, bind the tailnet address instead
 (`--host <tailscale-ip>`); the cost is that `localhost` stops working and the service

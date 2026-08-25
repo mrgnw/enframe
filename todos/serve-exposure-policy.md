@@ -2,7 +2,7 @@
 
 ## Why
 
-`services.toml` runs serve with `--host 0.0.0.0` so a tailnet address reaches it without a
+`pitchfork.toml` runs serve with `--host 0.0.0.0` so a tailnet address reaches it without a
 proxy. That also answers on the local network, and serve has no authentication. Today the
 only thing bounding the damage is the filesystem root allowlist (`src-tauri/serve/src/roots.rs`)
 and the SQL authorizer — a remote caller still gets the full API surface, including writes.

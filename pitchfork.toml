@@ -1,0 +1,8 @@
+#:schema https://pitchfork.jdx.dev/schema.json
+namespace = "enframe"
+
+[daemons.serve]
+run = "exec ./src-tauri/target/release/enframe-serve --host 0.0.0.0"
+retry = true
+port = 5911
+ready_port = 5911

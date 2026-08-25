@@ -1,3 +1,0 @@
-[serve]
-run = "src-tauri/target/release/enframe-serve --host 0.0.0.0"
-ports = [5911]
