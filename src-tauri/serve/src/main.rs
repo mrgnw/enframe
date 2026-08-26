@@ -659,6 +659,8 @@ fn router(state: AppState, web: &FsPath) -> Router {
 #[tokio::main]
 async fn main() -> Result<(), String> {
     let options = options()?;
+    // Before anything opens the database: one writer, and the loser is told where to connect.
+    let _ownership = db::take_ownership(&options.database, options.port)?;
     let connection = db::open(&options.database)?;
     std::fs::create_dir_all(&options.inbox)
         .map_err(|e| format!("create {}: {e}", options.inbox.display()))?;

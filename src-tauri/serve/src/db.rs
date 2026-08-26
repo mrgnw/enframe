@@ -6,9 +6,16 @@ use rusqlite::types::{ToSqlOutput, Value as SqlValue, ValueRef};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha384};
 use std::collections::HashSet;
+use std::fs::{File, OpenOptions};
+use std::io::Write;
+use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 
 const MAX_ROWS: usize = 100_000;
+
+// Long enough to outlast any single write this app makes, short enough that a wedged
+// holder surfaces as an error rather than a hang.
+const BUSY_TIMEOUT_MS: u32 = 5_000;
 
 // The desktop app stores its database under the Tauri app-config dir for the
 // bundle identifier, so read the identifier from the same config the app builds from.
@@ -29,13 +36,62 @@ pub fn default_path() -> Result<PathBuf, String> {
     Ok(base.join(identifier).join("enframe.db"))
 }
 
+// One writer per database, structurally. SQLite's own locking only contends per
+// transaction, so it would happily let a second server start and interleave writes with
+// the first. An advisory lock held for the whole process lifetime refuses the second
+// server outright, and the port written into the lock file tells it who to connect to.
+#[derive(Debug)]
+pub struct Ownership {
+    // The lock lives on the open descriptor: dropping this file releases it.
+    _file: File,
+}
+
+fn lock_path(database: &Path) -> PathBuf {
+    let mut name = database.file_name().unwrap_or_default().to_os_string();
+    name.push(".lock");
+    database.with_file_name(name)
+}
+
+pub fn take_ownership(database: &Path, port: u16) -> Result<Ownership, String> {
+    if let Some(parent) = database.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
+    }
+    let path = lock_path(database);
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(|e| format!("open {}: {e}", path.display()))?;
+
+    // SAFETY: the descriptor is valid and owned by `file`, which outlives this call.
+    let taken = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0;
+    if !taken {
+        let holder = std::fs::read_to_string(&path).unwrap_or_default();
+        let holder = holder.trim();
+        let holder = if holder.is_empty() { "unknown" } else { holder };
+        return Err(format!(
+            "another enframe server already owns {}, serving on port {holder}; connect to it instead of starting a second one",
+            database.display()
+        ));
+    }
+
+    file.set_len(0).map_err(|e| e.to_string())?;
+    write!(file, "{port}").map_err(|e| e.to_string())?;
+    file.flush().map_err(|e| e.to_string())?;
+    Ok(Ownership { _file: file })
+}
+
 pub fn open(path: &Path) -> Result<Connection, String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
     }
     let mut conn = Connection::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
-    conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")
-        .map_err(|e| e.to_string())?;
+    conn.execute_batch(&format!(
+        "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = {BUSY_TIMEOUT_MS};"
+    ))
+    .map_err(|e| e.to_string())?;
     migrate(&mut conn)?;
     confine(&conn);
     Ok(conn)
@@ -224,6 +280,25 @@ mod tests {
             select(&conn, "SELECT count(*) AS n FROM photos", &[]).unwrap(),
             serde_json::json!([{ "n": 0 }])
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // flock is held by the open descriptor, not the process, so two descriptors here
+    // contend exactly as two servers would.
+    #[test]
+    fn a_second_server_is_refused_and_told_the_holder_port() {
+        let dir = std::env::temp_dir().join(format!("enframe_serve_lock_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let database = dir.join("enframe.db");
+
+        let held = take_ownership(&database, 5911).unwrap();
+        let refused = take_ownership(&database, 5912).unwrap_err();
+        assert!(refused.contains("5911"), "{refused}");
+
+        // Releasing ownership lets the next server take it, so a restart is not blocked.
+        drop(held);
+        take_ownership(&database, 5912).unwrap();
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 
