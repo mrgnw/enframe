@@ -4,8 +4,8 @@
 	"version": "0.1.0",
 	"identifier": "com.enframe.app",
 	"build": {
-		"beforeBuildCommand": "bun run sveltekit:build",
-		"beforeDevCommand": "bun run sveltekit:dev",
+		"beforeBuildCommand": "bun run sidecar && bun run sveltekit:build",
+		"beforeDevCommand": "bun run sidecar && bun run sveltekit:dev",
 		"devUrl": "http://localhost:5910",
 		"frontendDist": "../build"
 	},
@@ -22,16 +22,11 @@
 			}
 		],
 		"security": {
-			"csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'",
+			"csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:5911; img-src 'self' asset: http://asset.localhost http://127.0.0.1:5911 data:; style-src 'self' 'unsafe-inline'",
 			"assetProtocol": {
 				"enable": true,
 				"scope": ["**"]
 			}
-		}
-	},
-	"plugins": {
-		"sql": {
-			"preload": ["sqlite:enframe.db"]
 		}
 	},
 	"bundle": {
@@ -43,7 +38,7 @@
 		"longDescription": "",
 		"icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
 		"resources": [],
-		"externalBin": [],
+		"externalBin": ["binaries/enframe-serve"],
 		"linux": {
 			"deb": {
 				"depends": []
