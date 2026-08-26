@@ -5,7 +5,7 @@ use axum::Json;
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{ConnectInfo, DefaultBodyLimit, Path, Query, Request, State};
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -17,6 +17,7 @@ use std::net::SocketAddr;
 use std::path::{Path as FsPath, PathBuf};
 use std::sync::{Arc, Mutex};
 use tower::ServiceExt as _;
+use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 
 const DEFAULT_PORT: u16 = 5911;
@@ -638,6 +639,28 @@ fn build_roots(
     )
 }
 
+// The native shell loads from its own origin, so every call it makes to the instance it
+// connected to is cross-origin — even on loopback. Naming the app's own origins lets the
+// shell through while a stranger's web page still cannot read the library over loopback.
+// The last one is the dev server this project's frontend runs on.
+const APP_ORIGINS: [&str; 3] = [
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "http://localhost:5910",
+];
+
+fn cors() -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(
+            APP_ORIGINS
+                .iter()
+                .map(|origin| HeaderValue::from_static(origin))
+                .collect::<Vec<_>>(),
+        )
+        .allow_methods([Method::GET, Method::POST])
+        .allow_headers([header::CONTENT_TYPE, HeaderName::from_static("x-filename")])
+}
+
 fn router(state: AppState, web: &FsPath) -> Router {
     let spa = ServeDir::new(web).fallback(ServeFile::new(web.join("index.html")));
     Router::new()
@@ -653,6 +676,9 @@ fn router(state: AppState, web: &FsPath) -> Router {
         .layer(DefaultBodyLimit::max(MAX_BODY))
         // Outermost, so a refused route never reads the body it was sent.
         .layer(middleware::from_fn(guard))
+        // Outside the guard, because a preflight carries no body and reveals nothing;
+        // the request it clears still meets the guard.
+        .layer(cors())
         .with_state(state)
 }
 
@@ -896,6 +922,47 @@ mod tests {
             )
             .await,
             StatusCode::FORBIDDEN
+        );
+    }
+
+    // The native shell is cross-origin to the instance it connects to, so its preflight
+    // has to clear; a stranger's page must get no such clearance.
+    #[tokio::test]
+    async fn only_the_app_origins_clear_a_preflight() {
+        let sandbox = Sandbox::new("cors");
+        let app = sandbox.app();
+
+        let preflight = |origin: &str| {
+            Request::builder()
+                .method("OPTIONS")
+                .uri("/sql/select")
+                .header(header::ORIGIN, origin)
+                .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "content-type")
+                .body(Body::empty())
+                .unwrap()
+        };
+
+        for origin in APP_ORIGINS {
+            let response = app.clone().oneshot(preflight(origin)).await.unwrap();
+            assert_eq!(
+                response
+                    .headers()
+                    .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                    .map(|v| v.to_str().unwrap().to_string()),
+                Some(origin.to_string())
+            );
+        }
+
+        let response = app
+            .clone()
+            .oneshot(preflight("https://stranger.example"))
+            .await
+            .unwrap();
+        assert!(
+            !response
+                .headers()
+                .contains_key(header::ACCESS_CONTROL_ALLOW_ORIGIN)
         );
     }
 
