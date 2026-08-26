@@ -2,7 +2,9 @@ interface TauriInternals {
 	convertFileSrc(filePath: string, protocol?: string): string;
 }
 
-export function isTauri(): boolean {
+// Window chrome, native dialogs and path-carrying drag-drop: a runtime capability, and
+// deliberately not the same question as where the data lives.
+export function hasNativeShell(): boolean {
 	return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
@@ -10,8 +12,22 @@ function internals(): TauriInternals {
 	return (window as unknown as { __TAURI_INTERNALS__: TauriInternals }).__TAURI_INTERNALS__;
 }
 
+// The instance that owns the database. A browser is served by it, so its base is the
+// empty string; the native shell asks the Rust side, which has already probed for a
+// running instance and spawned the bundled server when none answered.
+let connectionPromise: Promise<string> | null = null;
+
+function connection(): Promise<string> {
+	if (!connectionPromise) {
+		connectionPromise = hasNativeShell()
+			? import('@tauri-apps/api/core').then((core) => core.invoke<string>('connection_url'))
+			: Promise.resolve('');
+	}
+	return connectionPromise;
+}
+
 async function request(path: string, init?: RequestInit): Promise<Response> {
-	const response = await fetch(path, init);
+	const response = await fetch(`${await connection()}${path}`, init);
 	if (!response.ok) {
 		const detail = await response.text();
 		throw new Error(detail || `${response.status} ${response.statusText}`);
@@ -27,8 +43,11 @@ function postJson(path: string, body: unknown): Promise<Response> {
 	});
 }
 
+// ponytail: commands stay on the native shell, which reaches the same filesystem the
+// connected instance does while the connection is local. Phase 2 routes them through the
+// connection once paths mean what they mean on the server.
 export async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-	if (isTauri()) {
+	if (hasNativeShell()) {
 		const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
 		return tauriInvoke<T>(command, args);
 	}
@@ -52,32 +71,27 @@ const httpDb: Db = {
 	}
 };
 
-let dbPromise: Promise<Db> | null = null;
-
-async function loadDb(): Promise<Db> {
-	if (!isTauri()) return httpDb;
-	const { default: Database } = await import('@tauri-apps/plugin-sql');
-	return Database.load('sqlite:enframe.db');
+// One writer: whoever owns the database serves it, and every frontend is a client of it.
+export async function getDb(): Promise<Db> {
+	return httpDb;
 }
 
-export function getDb(): Promise<Db> {
-	if (!dbPromise) {
-		dbPromise = loadDb().catch((err) => {
-			console.error('[bridge] database load FAILED:', err);
-			dbPromise = null;
-			throw err;
-		});
-	}
-	return dbPromise;
+// ponytail: one probe stands in for the whole backend, the library UI needs all of it or none.
+export async function libraryReachable(): Promise<boolean> {
+	const response = await postJson('/sql/select', {
+		sql: 'SELECT 1 FROM photos LIMIT 1',
+		values: []
+	}).catch(() => null);
+	return response !== null;
 }
 
 export function getImageSrc(path: string): string {
-	if (isTauri()) return internals().convertFileSrc(path);
+	if (hasNativeShell()) return internals().convertFileSrc(path);
 	return `/img/${encodeURIComponent(path)}`;
 }
 
 export async function readTextFile(path: string): Promise<string> {
-	if (isTauri()) {
+	if (hasNativeShell()) {
 		const { readTextFile: tauriReadTextFile } = await import('@tauri-apps/plugin-fs');
 		return tauriReadTextFile(path);
 	}
@@ -95,7 +109,7 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 export async function writeFile(path: string, bytes: Uint8Array): Promise<void> {
-	if (isTauri()) {
+	if (hasNativeShell()) {
 		const { writeFile: tauriWriteFile } = await import('@tauri-apps/plugin-fs');
 		await tauriWriteFile(path, bytes);
 		return;
@@ -104,7 +118,7 @@ export async function writeFile(path: string, bytes: Uint8Array): Promise<void> 
 }
 
 export async function stat(path: string): Promise<{ isDirectory: boolean }> {
-	if (isTauri()) {
+	if (hasNativeShell()) {
 		const { stat: tauriStat } = await import('@tauri-apps/plugin-fs');
 		return tauriStat(path);
 	}
@@ -132,7 +146,7 @@ export async function listDirectory(dir?: string): Promise<Listing> {
 }
 
 export async function pickDirectory(title: string): Promise<string | null> {
-	if (!isTauri()) {
+	if (!hasNativeShell()) {
 		const { browserPick } = await import('./picker');
 		const selected = await browserPick({ title, directory: true });
 		return selected?.[0] ?? null;
@@ -147,7 +161,7 @@ export async function pickFiles(options: {
 	multiple?: boolean;
 	extensions?: string[];
 }): Promise<string[] | null> {
-	if (!isTauri()) {
+	if (!hasNativeShell()) {
 		const { browserPick } = await import('./picker');
 		return browserPick(options);
 	}
@@ -223,7 +237,7 @@ function browserDragDrop(handler: (payload: DragDropPayload) => void): () => voi
 }
 
 export async function onDragDrop(handler: (payload: DragDropPayload) => void): Promise<() => void> {
-	if (!isTauri()) return browserDragDrop(handler);
+	if (!hasNativeShell()) return browserDragDrop(handler);
 	const { getCurrentWebview } = await import('@tauri-apps/api/webview');
 	return getCurrentWebview().onDragDropEvent((event) => handler(event.payload));
 }

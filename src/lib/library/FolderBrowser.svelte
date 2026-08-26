@@ -2,7 +2,7 @@
 import { FolderPlus, X } from '@lucide/svelte';
 import { onMount } from 'svelte';
 import { toast } from 'svelte-sonner';
-import { getImageSrc, invoke, isTauri, pickDirectory } from '$lib/bridge';
+import { getImageSrc, invoke, hasNativeShell, pickDirectory } from '$lib/bridge';
 import { importFile } from '$lib/db';
 import { type FolderFile, getFolders, persistFolders, scanFolder } from '$lib/folders';
 import { isRawName } from '$lib/framer/raw';
@@ -80,7 +80,7 @@ const RAW_THUMB_WORKERS = 3;
 let rawThumbs = $state<Record<string, string>>({});
 
 async function developRawThumbnails(batch: FolderFile[], run: number) {
-	if (!isTauri()) return;
+	if (!hasNativeShell()) return;
 	const queue = batch.filter((f) => isRawName(f.path) && !(f.path in rawThumbs));
 	await Promise.all(
 		Array.from({ length: RAW_THUMB_WORKERS }, async () => {

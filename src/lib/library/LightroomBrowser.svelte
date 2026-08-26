@@ -13,7 +13,7 @@ import {
 	listLrRecent,
 	searchLrAssets
 } from '$lib/lightroom';
-import { getImageSrc, invoke, isTauri } from '$lib/bridge';
+import { getImageSrc, invoke, hasNativeShell } from '$lib/bridge';
 import { isRawName } from '$lib/framer/raw';
 
 interface Props {
@@ -142,7 +142,7 @@ let rawThumbs = $state<Record<string, string>>({});
 let rawThumbRun = 0;
 
 async function developRawThumbnails(paths: Record<string, LrAssetPaths>) {
-	if (!isTauri()) return;
+	if (!hasNativeShell()) return;
 	const run = ++rawThumbRun;
 	const queue = Object.entries(paths)
 		.map(([assetId, p]) => ({ assetId, path: thumbnailPath(p) }))
@@ -166,7 +166,7 @@ function thumbnailSrc(asset: LrAsset): string | null {
 	if (!paths) return null;
 	const p = thumbnailPath(paths);
 	if (!p) return null;
-	if (isTauri() && needsDevelop(p)) return rawThumbs[asset.asset_id] ?? null;
+	if (hasNativeShell() && needsDevelop(p)) return rawThumbs[asset.asset_id] ?? null;
 	return getImageSrc(p);
 }
 

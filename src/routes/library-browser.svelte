@@ -1,19 +1,8 @@
 <script lang="ts">
 import { onMount } from 'svelte';
 import { goto } from '$app/navigation';
-import { invoke, isTauri } from '$lib/bridge';
+import { invoke, libraryReachable } from '$lib/bridge';
 import PhotoBrowser from '$lib/library/PhotoBrowser.svelte';
-
-// ponytail: one probe stands in for the whole backend, the library UI needs all of it or none.
-async function libraryReachable(): Promise<boolean> {
-	if (isTauri()) return true;
-	const response = await fetch('/sql/select', {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ sql: 'SELECT 1 FROM photos LIMIT 1', values: [] })
-	}).catch(() => null);
-	return response?.ok === true;
-}
 
 let reachable = $state<boolean | null>(null);
 

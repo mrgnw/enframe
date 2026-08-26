@@ -1,7 +1,7 @@
 <script lang="ts">
 import { onMount } from 'svelte';
 import { toast } from 'svelte-sonner';
-import { getImageSrc, isTauri, onDragDrop, pickFiles, readTextFile } from '$lib/bridge';
+import { getImageSrc, hasNativeShell, onDragDrop, pickFiles, readTextFile } from '$lib/bridge';
 import { cropToBlob, encodingFor, loadImage, prepareEncoder } from '$lib/framer/canvas-export';
 import {
 	download,
@@ -64,7 +64,7 @@ let destination = $derived(
 
 onMount(() => {
 	recents = loadRecents();
-	if (!isTauri()) return;
+	if (!hasNativeShell()) return;
 	let unlisten: (() => void) | null = null;
 	void onDragDrop((payload) => {
 		if (payload.type === 'enter') dragging = true;
@@ -247,7 +247,7 @@ function applySidecarText(text: string) {
 }
 
 async function chooseImage() {
-	if (isTauri()) {
+	if (hasNativeShell()) {
 		const selected = await pickFiles({ title: 'Open image', multiple: true });
 		if (selected) await openNative(selected);
 		return;
@@ -267,7 +267,7 @@ function handleDragLeave(event: DragEvent) {
 async function handleDrop(event: DragEvent) {
 	event.preventDefault();
 	dragging = false;
-	if (isTauri()) return;
+	if (hasNativeShell()) return;
 	const files = Array.from(event.dataTransfer?.files ?? []);
 	await openPicked(files.map((file) => ({ file, handle: null })));
 }
@@ -454,7 +454,7 @@ function setFormat(next: ExportFormat) {
 			</div>
 			<p class="fine">
 				Nothing is imported and nothing leaves this machine.
-				{#if !fileSystemAccess && !isTauri()}
+				{#if !fileSystemAccess && !hasNativeShell()}
 					Exports arrive in your downloads folder.
 				{/if}
 			</p>
