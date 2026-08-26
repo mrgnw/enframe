@@ -1,3 +1,7 @@
+---
+branch: one-writer-instance-connection
+---
+
 # One writer: instances that connect to each other
 
 ## Why
@@ -112,9 +116,16 @@ native dialog. One encode path, two endings, no new transport.
 
 Ordered so each is independently verifiable, not to reduce scope.
 
-1. **One writer, same machine.** App always talks HTTP; sidecar spawned when no instance
-   answers; database ownership lock; `busy_timeout`. Kills the two-writer problem on its
-   own.
+1. **One writer, same machine.** ✅ done. App always talks HTTP; sidecar spawned when no
+   instance answers; database ownership lock; `busy_timeout`. Kills the two-writer
+   problem on its own.
+
+   Two things the design did not anticipate. The native shell is cross-origin to the
+   instance it connects to even over loopback, so serve now allows exactly the app's own
+   origins. And `invoke` stayed on the native shell: routing it through the connection
+   would confine `crop_and_export`, `save_image` and `scan_inbox` to serve's roots, which
+   regresses exporting anywhere before phase 3 exists to fix it. Only the database moved,
+   which is the whole of the two-writer problem.
 2. **Remote targets.** Connection UI (default `127.0.0.1:5911`, remembered instances, URL
    field on failure), path vocabulary, `raw_thumbnail` in serve, policy change.
 3. **Export destination choice.**
