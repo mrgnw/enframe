@@ -4,9 +4,8 @@ mod roots;
 use axum::Json;
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::{ConnectInfo, DefaultBodyLimit, Path, Query, Request, State};
+use axum::extract::{DefaultBodyLimit, Path, Query, Request, State};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header};
-use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use roots::Roots;
@@ -115,6 +114,12 @@ struct DirectoryArgs {
     directory: String,
 }
 
+// One path, whether it arrives as a query string or in a JSON body.
+#[derive(Deserialize)]
+struct PathArg {
+    path: String,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AlbumAssetsArgs {
@@ -149,11 +154,17 @@ fn encode<T: Serialize>(result: Result<T, String>) -> Result<Value, String> {
 }
 
 fn dispatch(command: &str, body: Value) -> Result<Value, String> {
-    use app_lib::commands::{crop_and_export, get_screenshot_mode, save_image};
+    use app_lib::commands::{
+        crop_and_export, get_screenshot_mode, raw_thumbnail_blocking, save_image,
+    };
     use app_lib::{inbox, lightroom};
 
     match command {
         "get_screenshot_mode" => encode(Ok(get_screenshot_mode())),
+        "raw_thumbnail" => {
+            let a: PathArg = args(body)?;
+            encode(raw_thumbnail_blocking(&a.path))
+        }
         "save_image" => {
             let a: SaveImageArgs = args(body)?;
             encode(save_image(a.path, a.data))
@@ -199,6 +210,18 @@ fn dispatch(command: &str, body: Value) -> Result<Value, String> {
     }
 }
 
+// Roots are the only boundary. There was a second one — routes that pick a path on the
+// server answered loopback only — and it could not survive an app connecting to an
+// instance on another machine: to serve, that app is an off-loopback caller, so it would
+// have browsed the library and then been refused every export. Without identity there is
+// no telling that app from a stranger, and this project has ruled out authentication.
+//
+// What is left is what always did the real work: canonicalised read and write roots that
+// no `..` or symlink escapes, SQLITE_LIMIT_ATTACHED at zero, an authorizer that denies
+// ATTACH and PRAGMA, and a deadline on image reads. What is given up is the guarantee
+// that a network caller cannot make the server write anywhere at all, even inside a write
+// root. Who can reach the port is the operator's business, and stating one boundary
+// plainly beats keeping two that disagree.
 enum Access {
     Read,
     Write,
@@ -220,9 +243,8 @@ fn confine(roots: &Roots, body: &mut Value, key: &str, access: Access) -> ApiRes
     Ok(())
 }
 
-// The single list of commands that write to a path the caller chose. Confinement and the
-// local-only policy both read it, so a command cannot gain a caller-chosen write without
-// becoming local-only in the same edit.
+// The single list of commands that write to a path the caller chose, so every such write
+// is checked against the write roots in one place.
 fn write_key(command: &str) -> Option<&'static str> {
     match command {
         "save_image" => Some("path"),
@@ -235,6 +257,7 @@ fn confine_command(roots: &Roots, command: &str, body: &mut Value) -> ApiResult<
     match command {
         "crop_and_export" => confine(roots, body, "sourcePath", Access::Read)?,
         "scan_inbox" => confine(roots, body, "directory", Access::Read)?,
+        "raw_thumbnail" => confine(roots, body, "path", Access::Read)?,
         // The Lightroom commands take ids and queries, and read the library through
         // a root that has to be allowlisted for them to work at all.
         _ => {}
@@ -243,43 +266,6 @@ fn confine_command(roots: &Roots, command: &str, body: &mut Value) -> ApiResult<
         Some(key) => confine(roots, body, key, Access::Write),
         None => Ok(()),
     }
-}
-
-// A remote caller keeps the reading and framing loop: the database, image and text reads,
-// uploads that land on a path the server picks, and listing one named folder, which
-// confinement already bounds to a read root. Refused is every caller-chosen write, and
-// the file browser — not because it can escape the roots, it cannot, but because
-// enumerating the tree is discovery rather than framing.
-fn local_only(path: &str) -> bool {
-    let Some(command) = path.strip_prefix("/api/") else {
-        return false;
-    };
-    // Decoded exactly as the Path extractor decodes it, so an escape cannot be spelled.
-    let command = percent_encoding::percent_decode_str(command).decode_utf8_lossy();
-    write_key(&command).is_some() || command == "ls"
-}
-
-// No connection info means the peer is unknown, which is not the machine itself.
-fn from_loopback(request: &Request) -> bool {
-    request
-        .extensions()
-        .get::<ConnectInfo<SocketAddr>>()
-        .is_some_and(|ConnectInfo(peer)| peer.ip().is_loopback())
-}
-
-async fn guard(request: Request, next: Next) -> Response {
-    let path = request.uri().path();
-    if local_only(path) && !from_loopback(&request) {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({
-                "error": format!("{path} is local-only"),
-                "detail": "this route picks a path on the server, so it answers loopback only",
-            })),
-        )
-            .into_response();
-    }
-    next.run(request).await
 }
 
 async fn api(
@@ -291,16 +277,11 @@ async fn api(
     blocking(move || dispatch(&command, body)).await.map(Json)
 }
 
-#[derive(Deserialize)]
-struct PathQuery {
-    path: String,
-}
-
 // ponytail: the root check runs on the async thread — it is one realpath(2).
 // Move it into spawn_blocking if roots ever point at a network mount.
 async fn read_text(
     State(state): State<AppState>,
-    Query(query): Query<PathQuery>,
+    Query(query): Query<PathArg>,
 ) -> ApiResult<String> {
     let path = state.roots.check_read(&query.path).map_err(denied)?;
     blocking(move || std::fs::read_to_string(&path).map_err(|e| e.to_string())).await
@@ -314,7 +295,7 @@ struct Stat {
 
 async fn stat(
     State(state): State<AppState>,
-    Query(query): Query<PathQuery>,
+    Query(query): Query<PathArg>,
 ) -> ApiResult<Json<Stat>> {
     let path = state.roots.check_read(&query.path).map_err(denied)?;
     blocking(move || {
@@ -674,10 +655,6 @@ fn router(state: AppState, web: &FsPath) -> Router {
         .route("/img/{*path}", get(img))
         .fallback_service(spa)
         .layer(DefaultBodyLimit::max(MAX_BODY))
-        // Outermost, so a refused route never reads the body it was sent.
-        .layer(middleware::from_fn(guard))
-        // Outside the guard, because a preflight carries no body and reveals nothing;
-        // the request it clears still meets the guard.
         .layer(cors())
         .with_state(state)
 }
@@ -734,59 +711,17 @@ async fn main() -> Result<(), String> {
 mod tests {
     use super::*;
     use axum::body::Body;
+    use axum::extract::ConnectInfo;
 
-    const LOCAL_ONLY: [&str; 3] = ["/api/ls", "/api/save_image", "/api/crop_and_export"];
-
-    const REMOTE_SAFE: [&str; 15] = [
-        "/sql/select",
-        "/sql/execute",
-        "/api/read_text",
-        "/api/stat",
-        "/api/upload",
-        "/api/scan_inbox",
-        "/api/get_screenshot_mode",
-        "/api/get_lightroom_library_path",
-        "/api/list_lr_albums",
-        "/api/list_lr_album_assets",
-        "/api/search_lr_assets",
-        "/api/list_lr_recent",
-        "/api/get_lr_asset_paths",
-        "/img/Users/someone/Pictures/photo.jpg",
-        "/library",
-    ];
-
+    // write_key is confinement's list alone now, and naming a command here is what puts
+    // its destination through check_write.
     #[test]
-    fn every_local_only_route_is_classified() {
-        for path in LOCAL_ONLY {
-            assert!(local_only(path), "{path} should be local-only");
-        }
-    }
-
-    #[test]
-    fn the_reading_and_framing_loop_stays_remote() {
-        for path in REMOTE_SAFE {
-            assert!(!local_only(path), "{path} should be remote-safe");
-        }
-    }
-
-    // Confinement and the policy share write_key, so a caller-chosen write is local-only
-    // by construction rather than by remembering to list it twice.
-    #[test]
-    fn every_caller_chosen_write_is_local_only() {
-        for path in REMOTE_SAFE {
-            let command = path.strip_prefix("/api/").unwrap_or("");
-            assert_eq!(write_key(command), None, "{path} writes a chosen path");
-        }
+    fn the_caller_chosen_writes_are_the_ones_checked_against_the_write_roots() {
         assert_eq!(write_key("save_image"), Some("path"));
         assert_eq!(write_key("crop_and_export"), Some("outputPath"));
-    }
-
-    // Axum matches the encoded path but Path hands the handler the decoded one, so the
-    // policy decodes too.
-    #[test]
-    fn percent_encoding_does_not_escape_the_policy() {
-        assert!(local_only("/api/save%5Fimage"));
-        assert!(local_only("/api/%6Cs"));
+        assert_eq!(write_key("scan_inbox"), None);
+        assert_eq!(write_key("raw_thumbnail"), None);
+        assert_eq!(write_key("list_lr_albums"), None);
     }
 
     struct Sandbox {
@@ -825,6 +760,9 @@ mod tests {
         }
     }
 
+    // The peer address still reaches the router — main serves with connect info — and is
+    // now deliberately consulted by nothing. Every test below hands the router an
+    // off-loopback peer, so a reinstated address test would fail these outright.
     fn from(peer: &str, mut request: Request) -> Request {
         request
             .extensions_mut()
@@ -836,9 +774,14 @@ mod tests {
         app.clone().oneshot(request).await.unwrap().status()
     }
 
-    fn get_ls() -> Request {
+    fn get_ls(dir: &str) -> Request {
+        let query = if dir.is_empty() {
+            String::new()
+        } else {
+            format!("?dir={dir}")
+        };
         Request::builder()
-            .uri("/api/ls")
+            .uri(format!("/api/ls{query}"))
             .body(Body::empty())
             .unwrap()
     }
@@ -852,48 +795,65 @@ mod tests {
             .unwrap()
     }
 
+    // The file browser used to answer loopback only, which meant an app connected to
+    // another machine could never pick a file on it. It answers anyone now, and the read
+    // root is what stops the walk.
     #[tokio::test]
-    async fn the_file_browser_answers_loopback_only() {
+    async fn the_file_browser_answers_a_remote_caller_inside_the_read_roots() {
         let sandbox = Sandbox::new("browser");
         let app = sandbox.app();
+        let inside = text(sandbox.base.clone());
 
         assert_eq!(
-            status(&app, from("127.0.0.1:52001", get_ls())).await,
+            status(&app, from("100.64.0.7:52001", get_ls(""))).await,
             StatusCode::OK
         );
         assert_eq!(
-            status(&app, from("100.64.0.7:52001", get_ls())).await,
-            StatusCode::FORBIDDEN
+            status(&app, from("192.168.1.20:52001", get_ls(&inside))).await,
+            StatusCode::OK
         );
+        // No connection info at all — an unknown peer is no longer a refused one.
+        assert_eq!(status(&app, get_ls("")).await, StatusCode::OK);
+
+        let outside = text(std::env::temp_dir().canonicalize().unwrap());
         assert_eq!(
-            status(&app, from("192.168.1.20:52001", get_ls())).await,
+            status(&app, from("100.64.0.7:52001", get_ls(&outside))).await,
             StatusCode::FORBIDDEN
         );
-        assert_eq!(status(&app, get_ls()).await, StatusCode::FORBIDDEN);
     }
 
+    // A remote write lands where the write roots allow and nowhere else. This is the whole
+    // of the trade: exporting from a connected app works, and the roots carry the boundary
+    // that the peer address used to share.
     #[tokio::test]
-    async fn a_remote_write_is_refused_and_writes_nothing() {
+    async fn a_remote_write_lands_in_a_write_root_and_nowhere_else() {
         let sandbox = Sandbox::new("write");
-        let target = sandbox.base.join("inbox/saved.png");
-        let body = format!("{{\"path\":{:?},\"data\":\"\"}}", text(target.clone()));
         let app = sandbox.app();
 
-        let refused = post_json("/api/save_image", &body);
+        let target = sandbox.base.join("inbox/saved.png");
+        let allowed = format!("{{\"path\":{:?},\"data\":\"\"}}", text(target.clone()));
         assert_eq!(
-            status(&app, from("100.64.0.7:52001", refused)).await,
-            StatusCode::FORBIDDEN
-        );
-        assert!(!target.exists(), "a refused write must not touch the disk");
-
-        // The same request from loopback is inside a write root and goes through, so the
-        // refusal above was the policy and not the roots.
-        let allowed = post_json("/api/save_image", &body);
-        assert_eq!(
-            status(&app, from("127.0.0.1:52001", allowed)).await,
+            status(
+                &app,
+                from("100.64.0.7:52001", post_json("/api/save_image", &allowed))
+            )
+            .await,
             StatusCode::OK
         );
         assert!(target.exists());
+
+        // Readable but not writable: the same caller cannot climb out of the write root.
+        let escape = sandbox.base.join("outside_the_inbox.png");
+        let refused = format!("{{\"path\":{:?},\"data\":\"\"}}", text(escape.clone()));
+        assert_eq!(
+            status(
+                &app,
+                from("100.64.0.7:52001", post_json("/api/save_image", &refused))
+            )
+            .await,
+            StatusCode::FORBIDDEN
+        );
+        assert!(!escape.exists(), "a refused write must not touch the disk");
     }
 
     // Listing a bookmarked folder is a read, so it answers remotely — but only inside a
@@ -922,6 +882,38 @@ mod tests {
             )
             .await,
             StatusCode::FORBIDDEN
+        );
+    }
+
+    // RAW tiles were placeholders for every client but the desktop app, because only the
+    // app had the command. Serve has it now, and confinement bounds which files it decodes.
+    #[tokio::test]
+    async fn a_thumbnail_is_confined_to_a_read_root() {
+        let sandbox = Sandbox::new("thumb");
+        let app = sandbox.app();
+
+        // A file that exists but sits outside every root, so the refusal is confinement
+        // rather than a path that simply could not be resolved.
+        let outside = std::env::temp_dir()
+            .canonicalize()
+            .unwrap()
+            .join(format!("enframe_outside_{}.arw", std::process::id()));
+        std::fs::write(&outside, b"not really a raw").unwrap();
+        let escape = format!("{{\"path\":{:?}}}", text(outside.clone()));
+        assert_eq!(
+            status(&app, post_json("/api/raw_thumbnail", &escape)).await,
+            StatusCode::FORBIDDEN
+        );
+        let _ = std::fs::remove_file(&outside);
+
+        // Inside a read root the same command answers; a non-RAW extension thumbnails
+        // to null rather than failing.
+        let inside = sandbox.base.join("tile.jpeg");
+        std::fs::write(&inside, b"x").unwrap();
+        let allowed = format!("{{\"path\":{:?}}}", text(inside));
+        assert_eq!(
+            status(&app, post_json("/api/raw_thumbnail", &allowed)).await,
+            StatusCode::OK
         );
     }
 

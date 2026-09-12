@@ -1,7 +1,8 @@
 <script lang="ts">
 import { onMount } from 'svelte';
 import { goto } from '$app/navigation';
-import { invoke, libraryReachable } from '$lib/bridge';
+import { currentConnection, hasNativeShell, invoke, libraryReachable } from '$lib/bridge';
+import ConnectionBar from '$lib/library/ConnectionBar.svelte';
 import PhotoBrowser from '$lib/library/PhotoBrowser.svelte';
 
 let reachable = $state<boolean | null>(null);
@@ -20,7 +21,11 @@ onMount(async () => {
 	<PhotoBrowser />
 {:else}
 	<div class="notice">
-		<p>No photo library is reachable from here.</p>
+		<p>No photo library answered at <code>{currentConnection() || 'this address'}</code>.</p>
+		{#if hasNativeShell()}
+			<p class="hint">Point this app at another instance:</p>
+			<ConnectionBar />
+		{/if}
 		<p><a href="/">Frame a single image instead</a></p>
 	</div>
 {/if}
@@ -39,5 +44,14 @@ onMount(async () => {
 
 	.notice a {
 		color: #60a5fa;
+	}
+
+	.notice code {
+		color: #e4e4e7;
+	}
+
+	.notice .hint {
+		font-size: 0.8rem;
+		color: #71717a;
 	}
 </style>

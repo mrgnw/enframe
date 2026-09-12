@@ -22,7 +22,7 @@
 			}
 		],
 		"security": {
-			"csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:5911; img-src 'self' asset: http://asset.localhost http://127.0.0.1:5911 data:; style-src 'self' 'unsafe-inline'",
+			"csp": "default-src 'self'; connect-src 'self' http: https:; img-src 'self' asset: http://asset.localhost http: https: data:; style-src 'self' 'unsafe-inline'",
 			"assetProtocol": {
 				"enable": true,
 				"scope": ["**"]

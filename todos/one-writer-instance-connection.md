@@ -105,12 +105,9 @@ native dialog. One encode path, two endings, no new transport.
 
 ## Gaps to close
 
-- **`raw_thumbnail` is missing from serve's `dispatch()`** — registered in `lib.rs` for the
-  desktop app only, which is why RAW tiles fall back to placeholders in the browser. A
-  remotely-connected app would have the same hole.
-- **`busy_timeout`** unset in `serve/src/db.rs`.
-- **`tauri-plugin-sql`** can leave the app once the frontend always talks HTTP; migrations
-  already single-source from `app_lib::migrations::MIGRATIONS`, so only the executor goes.
+- ~~**`raw_thumbnail` is missing from serve's `dispatch()`**~~ — closed in phase 2.
+- ~~**`busy_timeout`** unset in `serve/src/db.rs`~~ — closed in phase 1.
+- ~~**`tauri-plugin-sql`**~~ — left the app in phase 1.
 
 ## Phases
 
@@ -126,9 +123,33 @@ Ordered so each is independently verifiable, not to reduce scope.
    would confine `crop_and_export`, `save_image` and `scan_inbox` to serve's roots, which
    regresses exporting anywhere before phase 3 exists to fix it. Only the database moved,
    which is the whole of the two-writer problem.
-2. **Remote targets.** Connection UI (default `127.0.0.1:5911`, remembered instances, URL
-   field on failure), path vocabulary, `raw_thumbnail` in serve, policy change.
-3. **Export destination choice.**
+2. **Remote targets.** ✅ done. Connection UI (default `127.0.0.1:5911`, remembered
+   instances, URL field on failure), path vocabulary, `raw_thumbnail` in serve, policy
+   change.
+
+   The overloaded boolean turned out to have a third meaning, and it is the one that
+   matters: not *is there a window frame* but *does this client reach the same disk as the
+   instance it is connected to*. `sharesFilesystem()` answers it, and every path-shaped
+   helper reads it. `hasNativeShell()` survives for what it actually names — window chrome,
+   the webview context menu, which drag-drop event source to use, and whether a downscaled
+   thumbnail command exists at all.
+
+   Two things the design did not anticipate. The CSP named the default instance literally
+   (`connect-src http://127.0.0.1:5911`), so every other instance would have been refused
+   before a request left the webview; it allows `http:` and `https:` now, with `default-src
+   'self'` still confining what code runs. And a native drop hands over paths on *this*
+   machine, which a remote instance cannot see — those uploads now, ending where a browser
+   drop already ended.
+
+   `raw_thumbnail` in serve turned out to serve the remotely-connected shell, not the
+   browser: a browser has no such command and takes `/img`, where the server decodes the
+   RAW. The folder browser was waiting on thumbnails nothing was developing, which is the
+   real reason its RAW tiles were placeholders — fixed by sending it down `/img` like the
+   Lightroom grid.
+
+3. **Export destination choice.** Now the visible gap: connected elsewhere, `writeFile`
+   goes to `/api/save_image` and lands in the server's write roots. Exporting back to the
+   machine you are sitting at needs the per-export choice this phase deferred.
 
 ## Risks
 

@@ -135,10 +135,12 @@ the same network. To keep it off the local network, bind the tailnet address ins
 (`--host <tailscale-ip>`); the cost is that `localhost` stops working and the service
 fails to start if it comes up before Tailscale does. Default `127.0.0.1` when run by hand.
 
-The server reads and writes the same database as the desktop app
+The server owns the same database the desktop app connects to
 (`~/Library/Application Support/com.enframe.app/enframe.db`) and creates it with all
-migrations applied if it does not exist yet. It has **no authentication** — it binds to
-loopback only, and exposing it is the tunnel's job.
+migrations applied if it does not exist yet. It takes an exclusive lock on that database
+at startup, so a second server against the same file refuses to start and names the port
+of the one already serving it. It has **no authentication**: who can reach the port is
+yours to decide, with a tunnel, a firewall, or `--host`.
 
 Overrides, as flags or environment variables:
 
@@ -177,12 +179,13 @@ bun run serve --read-root "$PHOTOS" --write-root "$PHOTOS"
 
 The effective roots are logged at boot.
 
-Some routes answer only to the machine itself. Whichever address the server is bound to,
-a connection from anywhere but a loopback address is refused a 403 for the server-side
-file browser (`/api/ls`), the watch-folder scan (`/api/scan_inbox`), and the two commands
-that write to a path the caller names (`save_image`, `crop_and_export`) — a tailnet or LAN
-address counts as remote. Reading and framing is untouched: the database, images, text
-sidecars, and dropping files into the inbox all work over the network as before.
+The roots are the whole boundary. Every caller gets the same API surface no matter which
+address it connects from, and what bounds a request is where the path lands, not who sent
+it: reads must resolve inside a read root, writes inside a write root. An earlier version
+also refused a handful of routes off loopback, which was dropped when the app gained the
+ability to connect to an instance on another machine — that app is an off-loopback caller
+too, so the address test would have let it browse a library and then refused it every
+export. Widen the roots and you widen what any caller can reach.
 
 ### Static web build
 

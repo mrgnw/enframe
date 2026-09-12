@@ -12,22 +12,133 @@ function internals(): TauriInternals {
 	return (window as unknown as { __TAURI_INTERNALS__: TauriInternals }).__TAURI_INTERNALS__;
 }
 
-// The instance that owns the database. A browser is served by it, so its base is the
-// empty string; the native shell asks the Rust side, which has already probed for a
-// running instance and spawned the bundled server when none answered.
-let connectionPromise: Promise<string> | null = null;
+const DEFAULT_PORT = 5911;
+const CONNECTION_KEY = 'enframe.connection';
+const KNOWN_KEY = 'enframe.connections';
+const MAX_KNOWN = 8;
 
-function connection(): Promise<string> {
-	if (!connectionPromise) {
-		connectionPromise = hasNativeShell()
-			? import('@tauri-apps/api/core').then((core) => core.invoke<string>('connection_url'))
-			: Promise.resolve('');
+// The instance that owns the database, as a base URL. A browser is served by that instance
+// and cannot reach another one across origins, so its base is the empty string. The native
+// shell defaults to the loopback instance the Rust side probed for or spawned, and can be
+// pointed at any instance the user names.
+let base: string | null = null;
+
+// Resolved once by the root layout, before anything renders, so the path-shaped helpers
+// below can stay synchronous.
+export async function resolveConnection(): Promise<string> {
+	if (base !== null) return base;
+	if (!hasNativeShell()) {
+		base = '';
+		return base;
 	}
-	return connectionPromise;
+	const saved = stored(CONNECTION_KEY);
+	if (saved) {
+		base = saved;
+		return base;
+	}
+	const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+	base = await tauriInvoke<string>('connection_url');
+	return base;
+}
+
+function connection(): string {
+	if (base === null) {
+		throw new Error('connection used before resolveConnection() — the root layout awaits it');
+	}
+	return base;
+}
+
+export function currentConnection(): string {
+	return connection();
+}
+
+const LOOPBACK = ['127.0.0.1', 'localhost', '::1', '[::1]'];
+
+// The empty base is a browser served by its own instance, which has no filesystem to
+// share whether or not that instance is on this machine.
+export function isLocalInstance(url: string): boolean {
+	if (url === '') return false;
+	return LOOPBACK.includes(new URL(url).hostname);
+}
+
+// Whether this client reaches the same disk the connected instance does. Every path-shaped
+// decision turns on this rather than on whether there is a window frame: a native shell
+// pointed at another machine has no more access to that machine's files than a browser tab
+// does, and must speak the server's vocabulary instead.
+export function sharesFilesystem(): boolean {
+	return hasNativeShell() && isLocalInstance(connection());
+}
+
+function stored(key: string): string | null {
+	try {
+		return localStorage.getItem(key);
+	} catch {
+		return null;
+	}
+}
+
+// A bare host means this app's port, not the web's — `192.168.1.9` is the useful thing to
+// be able to type. An explicit scheme is left alone, so a tunnel on 443 still works.
+export function normalizeConnection(url: string): string {
+	const trimmed = url.trim().replace(/\/+$/, '');
+	if (!trimmed) return '';
+	const hasScheme = /^https?:\/\//i.test(trimmed);
+	const parsed = new URL(hasScheme ? trimmed : `http://${trimmed}`);
+	if (!hasScheme && !parsed.port) parsed.port = String(DEFAULT_PORT);
+	return `${parsed.protocol}//${parsed.host}`;
+}
+
+export function knownConnections(): string[] {
+	try {
+		const saved: unknown = JSON.parse(stored(KNOWN_KEY) ?? '[]');
+		if (!Array.isArray(saved)) return [];
+		return saved.filter((value): value is string => typeof value === 'string').slice(0, MAX_KNOWN);
+	} catch {
+		return [];
+	}
+}
+
+function remember(url: string) {
+	const next = [url, ...knownConnections().filter((known) => known !== url)].slice(0, MAX_KNOWN);
+	try {
+		localStorage.setItem(KNOWN_KEY, JSON.stringify(next));
+		localStorage.setItem(CONNECTION_KEY, url);
+	} catch {}
+}
+
+async function answers(candidate: string): Promise<boolean> {
+	const response = await fetch(`${candidate}/sql/select`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ sql: 'SELECT 1 FROM photos LIMIT 1', values: [] })
+	}).catch(() => null);
+	return response?.ok ?? false;
+}
+
+// Probes before committing, so a typo cannot strand the app pointing at nothing. The
+// caller reloads: every list on screen belongs to the instance we just left.
+export async function connectTo(url: string): Promise<string> {
+	const candidate = normalizeConnection(url);
+	if (!candidate) throw new Error('enter an address like 192.168.1.9 or 100.64.0.7:5911');
+	if (!(await answers(candidate))) {
+		throw new Error(`no enframe instance answered at ${candidate}`);
+	}
+	remember(candidate);
+	base = candidate;
+	return candidate;
+}
+
+// Back to whatever this machine serves, forgetting the remembered target.
+export async function connectToLocalInstance(): Promise<string> {
+	try {
+		localStorage.removeItem(CONNECTION_KEY);
+	} catch {}
+	base = null;
+	return resolveConnection();
 }
 
 async function request(path: string, init?: RequestInit): Promise<Response> {
-	const response = await fetch(`${await connection()}${path}`, init);
+	const response = await fetch(`${connection()}${path}`, init);
 	if (!response.ok) {
 		const detail = await response.text();
 		throw new Error(detail || `${response.status} ${response.statusText}`);
@@ -43,11 +154,11 @@ function postJson(path: string, body: unknown): Promise<Response> {
 	});
 }
 
-// ponytail: commands stay on the native shell, which reaches the same filesystem the
-// connected instance does while the connection is local. Phase 2 routes them through the
-// connection once paths mean what they mean on the server.
+// On the machine that owns the data, commands run in-process and reach any path the user
+// can. Connected elsewhere they go to the instance that owns the data, where the roots
+// bound them — the paths they carry only mean anything there.
 export async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-	if (hasNativeShell()) {
+	if (sharesFilesystem()) {
 		const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
 		return tauriInvoke<T>(command, args);
 	}
@@ -77,21 +188,17 @@ export async function getDb(): Promise<Db> {
 }
 
 // ponytail: one probe stands in for the whole backend, the library UI needs all of it or none.
-export async function libraryReachable(): Promise<boolean> {
-	const response = await postJson('/sql/select', {
-		sql: 'SELECT 1 FROM photos LIMIT 1',
-		values: []
-	}).catch(() => null);
-	return response !== null;
+export function libraryReachable(): Promise<boolean> {
+	return answers(connection());
 }
 
 export function getImageSrc(path: string): string {
-	if (hasNativeShell()) return internals().convertFileSrc(path);
-	return `/img/${encodeURIComponent(path)}`;
+	if (sharesFilesystem()) return internals().convertFileSrc(path);
+	return `${connection()}/img/${encodeURIComponent(path)}`;
 }
 
 export async function readTextFile(path: string): Promise<string> {
-	if (hasNativeShell()) {
+	if (sharesFilesystem()) {
 		const { readTextFile: tauriReadTextFile } = await import('@tauri-apps/plugin-fs');
 		return tauriReadTextFile(path);
 	}
@@ -109,7 +216,7 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 export async function writeFile(path: string, bytes: Uint8Array): Promise<void> {
-	if (hasNativeShell()) {
+	if (sharesFilesystem()) {
 		const { writeFile: tauriWriteFile } = await import('@tauri-apps/plugin-fs');
 		await tauriWriteFile(path, bytes);
 		return;
@@ -118,7 +225,7 @@ export async function writeFile(path: string, bytes: Uint8Array): Promise<void> 
 }
 
 export async function stat(path: string): Promise<{ isDirectory: boolean }> {
-	if (hasNativeShell()) {
+	if (sharesFilesystem()) {
 		const { stat: tauriStat } = await import('@tauri-apps/plugin-fs');
 		return tauriStat(path);
 	}
@@ -145,8 +252,11 @@ export async function listDirectory(dir?: string): Promise<Listing> {
 	return response.json() as Promise<Listing>;
 }
 
+// Picking a photo means picking one the instance can open, so the server-side picker is
+// the right dialog whenever the files live on another machine — the native one would
+// return paths that mean nothing there.
 export async function pickDirectory(title: string): Promise<string | null> {
-	if (!hasNativeShell()) {
+	if (!sharesFilesystem()) {
 		const { browserPick } = await import('./picker');
 		const selected = await browserPick({ title, directory: true });
 		return selected?.[0] ?? null;
@@ -161,7 +271,7 @@ export async function pickFiles(options: {
 	multiple?: boolean;
 	extensions?: string[];
 }): Promise<string[] | null> {
-	if (!hasNativeShell()) {
+	if (!sharesFilesystem()) {
 		const { browserPick } = await import('./picker');
 		return browserPick(options);
 	}
@@ -236,8 +346,31 @@ function browserDragDrop(handler: (payload: DragDropPayload) => void): () => voi
 	};
 }
 
+// A native drop hands us paths on this machine, which the instance that owns the data
+// cannot see when it lives elsewhere. Same ending as a browser drop: send the bytes and
+// let the server name the file.
+async function uploadLocal(path: string): Promise<string> {
+	const { readFile } = await import('@tauri-apps/plugin-fs');
+	const bytes = await readFile(path);
+	const name = path.split('/').pop() || 'dropped';
+	const response = await request('/api/upload', {
+		method: 'POST',
+		headers: { 'x-filename': encodeURIComponent(name) },
+		body: new Blob([bytes as BlobPart])
+	});
+	const uploaded = (await response.json()) as { path: string };
+	return uploaded.path;
+}
+
 export async function onDragDrop(handler: (payload: DragDropPayload) => void): Promise<() => void> {
 	if (!hasNativeShell()) return browserDragDrop(handler);
 	const { getCurrentWebview } = await import('@tauri-apps/api/webview');
-	return getCurrentWebview().onDragDropEvent((event) => handler(event.payload));
+	return getCurrentWebview().onDragDropEvent((event) => {
+		const payload = event.payload as DragDropPayload;
+		if (payload.type !== 'drop' || sharesFilesystem()) {
+			handler(payload);
+			return;
+		}
+		void Promise.all(payload.paths.map(uploadLocal)).then((paths) => handler({ ...payload, paths }));
+	});
 }

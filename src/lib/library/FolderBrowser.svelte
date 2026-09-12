@@ -94,8 +94,12 @@ async function developRawThumbnails(batch: FolderFile[], run: number) {
 	);
 }
 
+// A shell — local or connected elsewhere — asks for a downscaled thumbnail. A browser has
+// no such command, so it takes the /img route, where the server decodes the RAW instead.
+// Without the shell test a browser waited on thumbnails nothing was developing, and every
+// RAW tile stayed a placeholder.
 function thumbnailSrc(file: FolderFile): string | null {
-	if (isRawName(file.path)) return rawThumbs[file.path] ?? null;
+	if (hasNativeShell() && isRawName(file.path)) return rawThumbs[file.path] ?? null;
 	return getImageSrc(file.path);
 }
 

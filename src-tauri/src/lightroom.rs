@@ -238,8 +238,7 @@ pub fn list_lr_recent(limit: Option<i64>) -> Result<Vec<LrAsset>, String> {
 }
 
 fn existing_file(path: PathBuf) -> Option<String> {
-    path.is_file()
-        .then(|| path.to_string_lossy().into_owned())
+    path.is_file().then(|| path.to_string_lossy().into_owned())
 }
 
 // The annotation lags the filesystem in both directions while Lightroom syncs: it can
@@ -364,8 +363,7 @@ pub fn get_lr_asset_paths(asset_ids: Vec<String>) -> Result<Vec<LrAssetPaths>, S
             }
 
             // xmp_develop.path (absolute already)
-            xmp_path =
-                get_nested_str(local_only, &["xmp_develop", "path"]).map(|s| s.to_string());
+            xmp_path = get_nested_str(local_only, &["xmp_develop", "path"]).map(|s| s.to_string());
         }
 
         let (filename, capture_date) = wfindex

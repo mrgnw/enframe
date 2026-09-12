@@ -12,10 +12,18 @@ reachable over a network at all, versus only from the machine itself.
 
 ## Ideas to explore
 
-**Split the API by trust, not by user.** *Shipped:* a `local_only` route list checked
-against `ConnectInfo<SocketAddr>` refuses `/api/ls`, `save_image`, and `crop_and_export`
-with a 403 off loopback, leaving the database, image reads, inbox uploads, and folder
-listing remote-usable.
+**Split the API by trust, not by user.** *Shipped, then removed 2026-08-26.* A `local_only`
+route list checked against `ConnectInfo<SocketAddr>` refused `/api/ls`, `save_image`, and
+`crop_and_export` with a 403 off loopback, leaving the database, image reads, inbox
+uploads, and folder listing remote-usable.
+
+It came out in phase 2 of [one-writer-instance-connection](one-writer-instance-connection.md).
+Once the app can connect to an instance on another machine, that app is an off-loopback
+caller: it would have browsed the library and then been refused every export, and without
+identity there is no telling it from a stranger. Roots are the only boundary now. The rest
+of this section is kept as the record of what the address test was reasoning about — the
+capability-reduction ideas below are still live, and are the ones worth pursuing, because
+they narrow what *any* caller can do rather than guessing at who is calling.
 
 The operations that were inherently local-only and lost nothing by being refused over a
 non-loopback connection:
@@ -35,13 +43,12 @@ administrative act when the watch folder was the only caller; the bookmarked-fol
 made it the read path behind ordinary browsing, and it has always been confined to a read
 root, so a remote caller can only list a directory it already knows inside the allowlist.
 
-**Still open — the remote picker.** `/api/ls` is also root-confined (`check_read` on the
-requested dir, parent link restricted to read roots), so the original "it browses the
-server" framing overstated it: it cannot escape the roots either. It stays local-only on
-the narrower ground that enumerating the tree is *discovery*, not framing. The cost is
-that a remote browser cannot add a folder bookmark at all — bookmarks live in
-`localStorage`, so a remote client starts with an empty list and no way to fill it. Either
-free `ls` (still root-confined) or give the remote UI another way to name a folder.
+**The remote picker — resolved by freeing it.** `/api/ls` is root-confined (`check_read`
+on the requested dir, parent link restricted to read roots), so the "it browses the server"
+framing always overstated it: it cannot escape the roots either. It was kept local-only on
+the narrower ground that enumerating the tree is *discovery*, not framing, at the cost of a
+remote browser having no way to add a folder bookmark at all. Freed with the rest of the
+address test.
 
 **A config file only writable locally.** Something like `~/Library/Application Support/
 com.enframe.app/serve.toml`, read at startup, declaring which interfaces to bind, which

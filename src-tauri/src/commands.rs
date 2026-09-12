@@ -67,7 +67,9 @@ const RAW_EXTENSIONS: [&str; 9] = [
 // extension when there is one; only extension-less files (Lightroom proxies) get probed.
 fn may_be_raw(path: &str) -> bool {
     match std::path::Path::new(path).extension() {
-        Some(extension) => RAW_EXTENSIONS.contains(&extension.to_ascii_lowercase().to_string_lossy().as_ref()),
+        Some(extension) => {
+            RAW_EXTENSIONS.contains(&extension.to_ascii_lowercase().to_string_lossy().as_ref())
+        }
         None => true,
     }
 }
@@ -105,7 +107,8 @@ pub async fn raw_thumbnail(path: String) -> Result<Option<String>, String> {
         .map_err(|e| format!("thumbnail task: {e}"))?
 }
 
-fn raw_thumbnail_blocking(path: &str) -> Result<Option<String>, String> {
+// Public so serve can offer the same thumbnail without a Tauri runtime to spawn on.
+pub fn raw_thumbnail_blocking(path: &str) -> Result<Option<String>, String> {
     if !may_be_raw(path) {
         return Ok(None);
     }
@@ -163,10 +166,8 @@ mod raw_thumbnail_tests {
     // Needs a real camera file; skipped wherever none exists.
     #[test]
     fn an_arw_yields_a_jpeg_data_payload() {
-        let candidates = [
-            std::path::PathBuf::from(std::env::var("HOME").unwrap())
-                .join("Pictures/samples/IMG_0001.ARW"),
-        ];
+        let candidates = [std::path::PathBuf::from(std::env::var("HOME").unwrap())
+            .join("Pictures/samples/IMG_0001.ARW")];
         let Some(arw) = candidates.iter().find(|p| p.exists()) else {
             eprintln!("no ARW fixture on this machine, skipping");
             return;

@@ -1,8 +1,17 @@
 <script lang="ts">
-import { Crop, FolderPlus, ImageOff, Link } from '@lucide/svelte';
+import { Crop, FolderPlus, ImageOff, Link, Server } from '@lucide/svelte';
 import { onDestroy, onMount, tick } from 'svelte';
 import { toast } from 'svelte-sonner';
-import { getImageSrc, onDragDrop, pickFiles, stat } from '$lib/bridge';
+import {
+	connectToLocalInstance,
+	currentConnection,
+	getImageSrc,
+	hasNativeShell,
+	onDragDrop,
+	pickFiles,
+	sharesFilesystem,
+	stat
+} from '$lib/bridge';
 import {
 	type Frame,
 	importFile,
@@ -38,6 +47,14 @@ const IMAGE_EXTS = new Set([
 function isImagePath(path: string): boolean {
 	const ext = path.split('.').pop()?.toLowerCase() ?? '';
 	return IMAGE_EXTS.has(ext);
+}
+
+// A window showing someone else's library should say so, and be one click from coming home.
+const remoteHost = hasNativeShell() && !sharesFilesystem() ? new URL(currentConnection()).host : null;
+
+async function useThisMachine() {
+	await connectToLocalInstance();
+	location.reload();
 }
 
 function loadImageDimensions(src: string): Promise<{ width: number; height: number }> {
@@ -274,6 +291,16 @@ async function handleOpenClick() {
 		</nav>
 
 		<div class="actions">
+			{#if remoteHost}
+				<button
+					class="action-pill remote-pill"
+					onclick={useThisMachine}
+					title="Connected to {remoteHost} — click to use this machine's library"
+				>
+					<Server size={14} />
+					{remoteHost}
+				</button>
+			{/if}
 			{#if tab === 'lightroom'}
 				<input
 					type="search"
@@ -540,6 +567,11 @@ async function handleOpenClick() {
 	.open-pill.drag-over {
 		border-color: #2563eb;
 		background: #1a1a2e;
+	}
+
+	.remote-pill {
+		color: #60a5fa;
+		border-color: #1e3a5f;
 	}
 
 	.drop-overlay {
