@@ -28,7 +28,7 @@
 		"sidecar": "bash scripts/sidecar.sh",
 		"sveltekit:dev": "vite dev",
 		"sveltekit:build": "vite build",
-		"build:web": "ENFRAME_TARGET=web vite build",
+		"build:web": "ENFRAME_TARGET=web vite build && node scripts/worker-manifest.mjs build-web",
 		"deploy:web": "bun run build:web && wrangler deploy",
 		"sveltekit:preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",

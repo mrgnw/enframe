@@ -14,6 +14,11 @@ export default {
 			assets: outDir,
 			fallback: 'index.html'
 		}),
+		// Registered by hand in the root layout: the desktop shell serves from tauri://
+		// where a worker cannot register, and everything it would cache is already local.
+		serviceWorker: {
+			register: false
+		},
 		alias: {
 			$lib: 'src/lib',
 			$home: web ? 'src/lib/framer/Standalone.svelte' : 'src/routes/home-default.svelte',

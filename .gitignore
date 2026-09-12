@@ -27,3 +27,8 @@ images/
 scripts/lr_backup/
 
 /captures/
+
+# Machine-local
+/.stfolder/
+/.ruff_cache/
+.claude/settings.local.json
