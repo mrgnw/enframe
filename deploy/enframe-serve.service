@@ -1,0 +1,27 @@
+# Systemd unit for serve mode on a headless Linux host.
+#
+#   sudo cp deploy/enframe-serve.service /etc/systemd/system/
+#   sudo systemctl enable --now enframe-serve
+#
+# Change User and the two paths for another host. The binary is built by
+# scripts/sidecar.sh, not by cargo directly — the app crate's build script
+# needs the staged sidecar and an existing build/ directory.
+
+[Unit]
+Description=Enframe image framing web server
+After=network.target
+
+[Service]
+User=m
+WorkingDirectory=/home/m/dev/enframe
+ExecStart=/home/m/dev/enframe/src-tauri/target/release/enframe-serve --web build-web
+Restart=on-failure
+RestartSec=2
+
+# The server reads photos from the user's home, so ProtectHome is not an option;
+# these cost nothing it needs.
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

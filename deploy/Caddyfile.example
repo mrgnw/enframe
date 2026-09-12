@@ -1,0 +1,26 @@
+# Serve mode behind Caddy: TLS from a DNS-01 certificate, and reachable only
+# from the tailnet. Add this to your Caddyfile and point the hostname's A record
+# at the host's Tailscale address.
+#
+# Serve has no authentication of its own, so something has to decide who reaches
+# the port. Here it is the source-address gate below; a firewall or `--host`
+# would do as well.
+
+enf.example.com {
+	tls {
+		dns cloudflare {env.CF_DNS_TOKEN}
+		resolvers 1.1.1.1
+	}
+
+	# 100.64.0.0/10 is the CGNAT range Tailscale assigns. Anything else — including
+	# the host's own public interface — gets 403 before it reaches the proxy.
+	@outside not remote_ip 100.64.0.0/10 127.0.0.1 ::1
+	respond @outside 403
+
+	# Hashed assets are immutable, but the worker keeps its name across deploys, so
+	# it has to be revalidated or an update can take a week to land.
+	header /service-worker.js Cache-Control "no-cache"
+
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:5911
+}

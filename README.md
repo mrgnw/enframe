@@ -187,11 +187,44 @@ ability to connect to an instance on another machine — that app is an off-loop
 too, so the address test would have let it browse a library and then refused it every
 export. Widen the roots and you widen what any caller can reach.
 
+#### On a Linux host
+
+`pitchfork.toml` and the Full Disk Access note above are macOS concerns. On a headless
+Linux server, `deploy/enframe-serve.service` runs the same binary under systemd:
+
+```sh
+sudo cp deploy/enframe-serve.service /etc/systemd/system/
+```
+
+```sh
+sudo systemctl enable --now enframe-serve
+```
+
+Build the binary with `scripts/sidecar.sh` rather than cargo directly. The app crate's
+build script refuses to run until both the staged sidecar binary and a `build/` directory
+exist, and the error it gives for the second one names `frontendDist`, which is a long way
+from the cause.
+
+That unit leaves the server on `127.0.0.1` and puts TLS and the address gate in front of
+it instead — `deploy/Caddyfile.example` is that half, terminating HTTPS on a DNS-01
+certificate and answering 403 to anything outside the tailnet range, the host's own public
+interface included. Serve still has no authentication of its own; this only decides who
+reaches the port.
+
 ### Static web build
 
 No server, no database, nothing to tunnel. `/` opens one image, you frame it in memory,
 and it exports through the canvas and writes a sidecar JSON beside the output. `/library`
 and `/edit/:id` do not exist here and redirect home.
+
+Once it has loaded, it keeps working without the network. A service worker precaches the
+shell and the wasm codecs, so a reload offline still opens the app and a RAW opened for
+the first time offline still develops. Only the AVIF encoder variant that can actually run
+on the origin is stored, which is the difference between 8.8 and 5.4 MiB. A manifest makes
+it installable, and a pill in the corner reports the install while it happens.
+
+None of that reaches the desktop build, which serves from `tauri://` where a worker cannot
+register and whose assets are already on disk.
 
 ```sh
 bun run build:web
