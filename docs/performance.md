@@ -169,6 +169,36 @@ End to end, Girona to `.avif`, 9 runs: **2.86 s** (from 3.42–3.57 s), with dec
 - **Optical flow from the previous keypoints** (pyramidal Lucas-Kanade): fast, but it assumes small motion between photos. These photos are seconds apart from a moving train and switch lenses, so it would need SIFT as a fallback anyway.
 - **Cache features across runs**: this is where earlier knowledge pays off most. Features are now a pure function of the photo, so a cache keyed by file path, mtime and `TRACK_EDGE` would make re-runs after a new mark skip SIFT entirely. See idea 0.
 
+## Bounded memory
+
+```sh
+uv run analysis/memory_scaling.py
+```
+
+Peak memory used to grow with the photo count, because every decoded photo was held from load to render and the AVIF encoder took the whole clip at once. Peak RSS (the whole process, from `/usr/bin/time -l`), first N Girona photos, transparent padding, AVIF out:
+
+| photos | before | streaming, no keep | streaming + keep (current) |
+|-|-|-|-|
+| 10 | 1107 MB | 1136 MB | about 1.1 GB |
+| 20 | 1173 MB | 1144 MB | |
+| 40 | 1666 MB | 1192 MB | |
+| 57 | 1926 MB | 1158 MB | 1560–1570 MB |
+
+The current version:
+
+- **Tracking consumes photos as the threads finish them** (`load_photos` yields in order). It keeps only each photo's features, never its pixels, so the tracking pass holds about `PREPARE_AHEAD` small results, whatever the photo count.
+- **Decoded photos are kept for render only within `KEEP_SHARE` (a quarter) of physical RAM**: 6 GB on this Mac. Photos past the budget are decoded again at render. With a 25 MB budget, 55 of 57 Girona photos were decoded twice and the rects were still identical.
+- **The AVIF encoder pulls one frame at a time** through `StreamedClip`, a multi-frame `Image` whose `tobytes()` takes the next placed frame. ffmpeg outputs were already streamed.
+- **Result queues are 3x the thread count deep.** Results come back in order, so a queue only as deep as the workers left threads idle behind one slow photo. That version took 3.74 s; the deeper queue took it back to 3.23 s, and the keep budget to 2.80 s.
+
+What still scales: a few numbers per photo (sizes, hits, crop rects), and the per-photo working set times the threads. On paper, for 48 MP photos (146 MB of RGB each), the worst case is about 6 GB of kept photos, plus 6 decode + SIFT threads at about 0.4 GB each, plus 8 render threads and 24 queued clip frames at photo size: about 14 GB. That fits in 24 GB, but it is an estimate, not a measurement. Pillow refuses images over 179 MP (`DecompressionBombError`), and pinframe reports that as a message.
+
+## Reliability
+
+- Input is checked against the photo headers before any decoding: at least two photos with distinct names, readable headers, `--box` with 4 numbers, every `--at` naming a photo once (and not the first), points and boxes inside their photo, a positive zoom and `--fps`, a valid `--pad` colour, a supported `--out` extension in an existing folder, `--vf` only with ffmpeg outputs, and ffmpeg on `PATH` when needed. Bad input stops in well under a second.
+- Errors the user can fix exit with `pinframe: <what to do>` and code 1 through `fail()`, even under `python -O`. Tracking failures say what to do next: draw a bigger first box, mark more photos, or use `--pad`. Asserts remain only for invariants.
+- The clip and its `.json` are written under hidden `.<name>.partial.<ext>` names and renamed together. A failed encode, tested with `--vf nosuchfilter`, leaves the previous clip and `.json` byte-identical, with no partial files.
+
 ## Further ideas, ranked
 
 0. **For click-to-mark, skip the clip and cache features between runs.**
