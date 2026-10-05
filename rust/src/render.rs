@@ -1,6 +1,6 @@
 //! Places each photo's crop into the clip frame and streams the frames, in order, to an encoder.
 
-use crate::pixels::{Image, saturate_u8};
+use crate::pixels::{saturate_u8, Image};
 use crate::track::Rect;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{Condvar, Mutex};
@@ -24,23 +24,21 @@ pub fn ordered<T: Send>(
 	let (ready, room) = (Condvar::new(), Condvar::new());
 	std::thread::scope(|scope| {
 		for _ in 0..threads {
-			scope.spawn(|| {
-				loop {
-					let i = {
-						let mut s = state.lock().unwrap();
-						while s.next_task < n && s.next_task >= s.next_take + ahead {
-							s = room.wait(s).unwrap();
-						}
-						if s.next_task >= n {
-							return;
-						}
-						s.next_task += 1;
-						s.next_task - 1
-					};
-					let result = work(i);
-					state.lock().unwrap().done.insert(i, result);
-					ready.notify_all();
-				}
+			scope.spawn(|| loop {
+				let i = {
+					let mut s = state.lock().unwrap();
+					while s.next_task < n && s.next_task >= s.next_take + ahead {
+						s = room.wait(s).unwrap();
+					}
+					if s.next_task >= n {
+						return;
+					}
+					s.next_task += 1;
+					s.next_task - 1
+				};
+				let result = work(i);
+				state.lock().unwrap().done.insert(i, result);
+				ready.notify_all();
 			});
 		}
 		for i in 0..n {

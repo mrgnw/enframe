@@ -11,19 +11,20 @@ mod render;
 mod sift;
 mod track;
 
-use profile::{Work, step, work};
-use render::{Keep, ordered, place};
+use profile::{step, work, Work};
+use render::{ordered, place, Keep};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::sync_channel;
 use track::{Hit, Mark, Photo, Rect};
 
 /// Threads and memory are planned at start from the cores, the free memory and these measured costs
-/// (Girona, M4 Pro). Re-measure them after changing libraries or TRACK_EDGE.
-const PREPARE_FIXED_BYTES: usize = 150 << 20;
-const PREPARE_BYTES_PER_PIXEL: usize = 18;
-const RENDER_BYTES_PER_PIXEL: usize = 25;
-const FEATURE_BYTES: usize = 4 << 20;
+/// (`analysis/rust_task_memory.py`, M4 Pro, 2026-10-05: prepare 139, 174, 347 MB and render 38, 123,
+/// 480 MB at 3, 12 and 49 MP), rounded up. Re-measure them after changing libraries or TRACK_EDGE.
+const PREPARE_FIXED_BYTES: usize = 130 << 20; // SIFT's pyramid at TRACK_EDGE, whatever the photo size
+const PREPARE_BYTES_PER_PIXEL: usize = 6; // decode buffers, RGB and gray at full size
+const RENDER_BYTES_PER_PIXEL: usize = 11; // RGB, the RGBA frame and its YUV
+const FEATURE_BYTES: usize = 1 << 20; // one photo's keypoints and byte descriptors; Girona's are under 1 MB
 /// Results queued per thread; they come back in order, so a slow photo must not idle the others.
 const QUEUE_DEPTH: usize = 3;
 /// Policy: plan within this share of the memory free at start, leaving the rest to other apps.
@@ -91,37 +92,37 @@ fn parse_args() -> Args {
 	args
 }
 
-fn parse_numbers(flag: &str, text: &str) -> Vec<f64> {
+fn parse_numbers(flag: &str, text: &str) -> Result<Vec<f64>, String> {
 	text.split(',')
-		.map(|v| {
-			v.trim()
-				.parse()
-				.unwrap_or_else(|_| fail(&format!("{flag} {text}: expected comma-separated numbers")))
-		})
+		.map(|v| v.trim().parse().map_err(|_| format!("{flag} {text}: expected comma-separated numbers")))
 		.collect()
 }
 
 /// A mark is a point x,y or a box x,y,w,h with an optional zoom, inside its photo.
-fn check_mark(name: &str, mark: &[f64], (fw, fh): (u32, u32)) {
+fn check_mark(name: &str, mark: &[f64], (fw, fh): (u32, u32)) -> Result<(), String> {
 	let (fw, fh) = (fw as f64, fh as f64);
 	if ![2, 4, 5].contains(&mark.len()) {
-		fail(&format!("{name}: a mark is x,y or x,y,w,h with an optional zoom, not {} numbers", mark.len()));
+		return Err(format!(
+			"{name}: a mark is x,y or x,y,w,h with an optional zoom, not {} numbers",
+			mark.len()
+		));
 	}
 	let (px, py) = if mark.len() == 2 {
 		(mark[0], mark[1])
 	} else {
 		let (bx, by, bw, bh) = (mark[0], mark[1], mark[2], mark[3]);
 		if !(bw > 0.0 && bh > 0.0 && bx >= 0.0 && by >= 0.0 && bx + bw <= fw && by + bh <= fh) {
-			fail(&format!("{name}: box {bx},{by},{bw},{bh} is empty or outside the {fw}x{fh} photo"));
+			return Err(format!("{name}: box {bx},{by},{bw},{bh} is empty or outside the {fw}x{fh} photo"));
 		}
 		(bx + bw / 2.0, by + bh / 2.0)
 	};
 	if !(0.0 <= px && px < fw && 0.0 <= py && py < fh) {
-		fail(&format!("{name}: point {px},{py} is outside the {fw}x{fh} photo"));
+		return Err(format!("{name}: point {px},{py} is outside the {fw}x{fh} photo"));
 	}
 	if mark.len() == 5 && !(mark[4] > 0.0) {
-		fail(&format!("{name}: zoom must be positive"));
+		return Err(format!("{name}: zoom must be positive"));
 	}
+	Ok(())
 }
 
 fn file_name(path: &Path) -> String {
@@ -129,19 +130,16 @@ fn file_name(path: &Path) -> String {
 }
 
 /// Every photo's size from its header, so bad input stops before any decoding.
-fn read_sizes(paths: &[PathBuf]) -> Vec<(u32, u32)> {
+fn read_sizes(paths: &[PathBuf]) -> Result<Vec<(u32, u32)>, String> {
 	if paths.len() < 2 {
-		fail("need at least two photos");
+		return Err("need at least two photos".into());
 	}
 	let mut names: Vec<String> = paths.iter().map(|p| file_name(p)).collect();
 	names.sort();
 	if names.windows(2).any(|w| w[0] == w[1]) {
-		fail("two photos share a file name, so --at and the .json could not tell them apart");
+		return Err("two photos share a file name, so --at and the .json could not tell them apart".into());
 	}
-	paths
-		.iter()
-		.map(|p| avif::oriented_size(p).unwrap_or_else(|e| fail(&format!("{}: {e}", p.display()))))
-		.collect()
+	paths.iter().map(|p| avif::oriented_size(p).map_err(|e| format!("{}: {e}", p.display()))).collect()
 }
 
 /// --box and every --at, by photo index, checked against the photo sizes.
@@ -150,39 +148,37 @@ fn read_marks(
 	ats: &[String],
 	paths: &[PathBuf],
 	sizes: &[(u32, u32)],
-) -> Vec<Option<Mark>> {
+) -> Result<Vec<Option<Mark>>, String> {
 	let names: Vec<String> = paths.iter().map(|p| file_name(p)).collect();
 	// ponytail: no box drawing (anchor.py opens an OpenCV window); --box is required here
-	let first = parse_numbers("--box", box_.unwrap_or_else(|| fail("--box x,y,w,h is required")));
+	let first = parse_numbers("--box", box_.ok_or("--box x,y,w,h is required")?)?;
 	if first.len() != 4 {
-		fail("--box is x,y,w,h");
+		return Err("--box is x,y,w,h".into());
 	}
 	let mut marks: Vec<Option<Mark>> = vec![None; paths.len()];
 	marks[0] = Some(Mark(first));
 	for at in ats {
 		let Some((name, value)) = at.split_once('=').filter(|(n, _)| names.iter().any(|m| m == n)) else {
-			fail(&format!("--at {at}: expected PHOTO=x,y with PHOTO one of the photo file names"));
+			return Err(format!("--at {at}: expected PHOTO=x,y with PHOTO one of the photo file names"));
 		};
 		let i = names.iter().position(|m| m == name).unwrap();
 		if marks[i].is_some() {
-			fail(&format!(
-				"--at {name}: {}",
-				if i == 0 { "use --box for the first photo" } else { "marked twice" }
-			));
+			let why = if i == 0 { "use --box for the first photo" } else { "marked twice" };
+			return Err(format!("--at {name}: {why}"));
 		}
-		marks[i] = Some(Mark(parse_numbers(&format!("--at {name}"), value)));
+		marks[i] = Some(Mark(parse_numbers(&format!("--at {name}"), value)?));
 	}
 	for (i, mark) in marks.iter().enumerate() {
 		if let Some(Mark(m)) = mark {
-			check_mark(&names[i], m, sizes[i]);
+			check_mark(&names[i], m, sizes[i])?;
 		}
 	}
-	marks
+	Ok(marks)
 }
 
-fn parse_fill(value: &str) -> Vec<u8> {
+fn parse_fill(value: &str) -> Result<Vec<u8>, String> {
 	if value == "transparent" {
-		return vec![0, 0, 0, 0];
+		return Ok(vec![0, 0, 0, 0]);
 	}
 	let hex = match value {
 		"black" => "000000",
@@ -191,8 +187,8 @@ fn parse_fill(value: &str) -> Vec<u8> {
 	};
 	let channel = |i: usize| hex.get(i..i + 2).and_then(|h| u8::from_str_radix(h, 16).ok());
 	match (hex.len(), channel(0), channel(2), channel(4)) {
-		(6, Some(r), Some(g), Some(b)) => vec![r, g, b],
-		_ => fail(&format!("--pad {value}: use transparent, black, white or a #rrggbb colour")),
+		(6, Some(r), Some(g), Some(b)) => Ok(vec![r, g, b]),
+		_ => Err(format!("--pad {value}: use transparent, black, white or a #rrggbb colour")),
 	}
 }
 
@@ -212,28 +208,28 @@ fn folder_of(path: &Path) -> PathBuf {
 	}
 }
 
-fn check_output(out: &Path, alpha: bool, filters: Option<&str>) {
+fn check_output(out: &Path, alpha: bool, filters: Option<&str>) -> Result<(), String> {
 	let ext = suffix(out);
 	if !CLIP_SUFFIXES.contains(&ext.as_str()) {
-		fail(&format!("--out {}: use one of .avif, .mp4, .mov, .webm", out.display()));
+		return Err(format!("--out {}: use one of .avif, .mp4, .mov, .webm", out.display()));
 	}
 	if !folder_of(out).is_dir() {
-		fail(&format!("--out {}: folder {} does not exist", out.display(), folder_of(out).display()));
+		return Err(format!("--out {}: folder {} does not exist", out.display(), folder_of(out).display()));
 	}
 	if ext == "avif" {
 		if filters.is_some() {
-			fail("--vf runs through ffmpeg: use a .mp4, .mov or .webm --out");
+			return Err("--vf runs through ffmpeg: use a .mp4, .mov or .webm --out".into());
 		}
-		return;
+		return Ok(());
 	}
 	if !on_path("ffmpeg") {
-		fail(&format!("--out .{ext} needs ffmpeg on PATH; .avif does not"));
+		return Err(format!("--out .{ext} needs ffmpeg on PATH; .avif does not"));
 	}
 	if alpha && ext == "mp4" {
-		fail("transparent padding needs a .avif, .mov or .webm --out");
+		return Err("transparent padding needs a .avif, .mov or .webm --out".into());
 	}
+	Ok(())
 }
-
 struct Resources {
 	prepare_threads: usize,
 	render_threads: usize,
@@ -265,7 +261,7 @@ fn available_bytes() -> usize {
 	}
 }
 
-fn plan_resources(largest_pixels: usize, free_bytes: usize, cores: usize) -> Resources {
+fn plan_resources(largest_pixels: usize, free_bytes: usize, cores: usize) -> Result<Resources, String> {
 	let budget = (free_bytes as f64 * MEMORY_SHARE) as usize;
 	let prepare_cost =
 		PREPARE_FIXED_BYTES + PREPARE_BYTES_PER_PIXEL * largest_pixels + QUEUE_DEPTH * FEATURE_BYTES;
@@ -276,14 +272,14 @@ fn plan_resources(largest_pixels: usize, free_bytes: usize, cores: usize) -> Res
 	if prepare_threads < 1 || render_threads < 1 {
 		let need = prepare_cost.max(render_cost) as f64 / MEMORY_SHARE / (1u64 << 30) as f64;
 		let free = free_bytes as f64 / (1u64 << 30) as f64;
-		fail(&format!(
+		return Err(format!(
 			"a {:.0} MP photo needs about {need:.1} GB free; {free:.1} GB is",
 			largest_pixels as f64 / 1e6
 		));
 	}
 	// Kept photos last through both passes, so they get what neither pass's threads need.
 	let working = (prepare_threads * prepare_cost).max(render_threads * render_cost);
-	Resources { prepare_threads, render_threads, keep_bytes: budget - working }
+	Ok(Resources { prepare_threads, render_threads, keep_bytes: budget - working })
 }
 
 #[cfg(not(any(feature = "kornia", feature = "opencv")))]
@@ -294,7 +290,7 @@ fn find_features(small: &pixels::Image) -> sift::Features {
 /// kornia-imgproc's SIFT, with its float descriptors (whole numbers, as OpenCV's) stored as bytes.
 #[cfg(feature = "kornia")]
 fn find_features(small: &pixels::Image) -> sift::Features {
-	use kornia_imgproc::features::{FirstOctave, SiftConfig, SiftWorkspace, sift_detect_and_compute};
+	use kornia_imgproc::features::{sift_detect_and_compute, FirstOctave, SiftConfig, SiftWorkspace};
 	thread_local! {
 		static WORKSPACE: std::cell::RefCell<SiftWorkspace> = std::cell::RefCell::new(SiftWorkspace::new());
 	}
@@ -336,7 +332,7 @@ fn find_features(small: &pixels::Image) -> sift::Features {
 /// OpenCV's own SIFT through the opencv crate, its float descriptors stored as bytes.
 #[cfg(feature = "opencv")]
 fn find_features(small: &pixels::Image) -> sift::Features {
-	use opencv::core::{Mat, Vector, no_array};
+	use opencv::core::{no_array, Mat, Vector};
 	use opencv::features::SIFT;
 	use opencv::prelude::*;
 	let run = || -> opencv::Result<sift::Features> {
@@ -479,7 +475,11 @@ fn render(job: &RenderJob, sink: &mut Sink) {
 			let path = dir.join(format!("{:04}.png", i + 1));
 			save_png(&path, &frame).unwrap_or_else(|e| fail(&format!("{}: {e}", path.display())));
 		}
-		if job.avif { Frame::Yuv(work(Work::Place, || avif::to_yuv420(&frame))) } else { Frame::Rgb(frame) }
+		if job.avif {
+			Frame::Yuv(work(Work::Place, || avif::to_yuv420(&frame)))
+		} else {
+			Frame::Rgb(frame)
+		}
 	};
 	let mut waited = std::time::Instant::now();
 	ordered(job.paths.len(), job.threads, QUEUE_DEPTH * job.threads, place_one, |_, frame| {
@@ -601,13 +601,14 @@ fn main() {
 		let mut paths = args.photos.clone();
 		// ponytail: filename order; the exported AVIFs carry no capture time to sort by
 		paths.sort();
-		let fill = args.pad.as_deref().map(parse_fill);
-		check_output(&args.out, fill.as_ref().is_some_and(|f| f.len() == 4), args.vf.as_deref());
+		let fill = args.pad.as_deref().map(parse_fill).transpose().unwrap_or_else(|e| fail(&e));
+		check_output(&args.out, fill.as_ref().is_some_and(|f| f.len() == 4), args.vf.as_deref())
+			.unwrap_or_else(|e| fail(&e));
 		if !(args.fps > 0.0) {
 			fail("--fps must be positive");
 		}
-		let sizes = read_sizes(&paths);
-		let marks = read_marks(args.box_.as_deref(), &args.at, &paths, &sizes);
+		let sizes = read_sizes(&paths).unwrap_or_else(|e| fail(&e));
+		let marks = read_marks(args.box_.as_deref(), &args.at, &paths, &sizes).unwrap_or_else(|e| fail(&e));
 		if let Some(dir) = &args.frames {
 			std::fs::create_dir_all(dir)
 				.unwrap_or_else(|e| fail(&format!("--frames {}: {e}", dir.display())));
@@ -619,7 +620,7 @@ fn main() {
 		let k = track::track_factor(&sizes);
 		let free = available_bytes();
 		let largest = sizes.iter().map(|&(w, h)| w as usize * h as usize).max().unwrap();
-		let resources = plan_resources(largest, free, cores());
+		let resources = plan_resources(largest, free, cores()).unwrap_or_else(|e| fail(&e));
 		println!(
 			"{:.1} GB free: {} prepare threads, {} render threads, up to {:.1} GB of kept photos",
 			free as f64 / (1u64 << 30) as f64,
@@ -693,4 +694,58 @@ fn main() {
 	cleanup();
 	println!("wrote {}", args.out.display());
 	profile::finish();
+}
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn bad_input_is_refused_and_good_input_passes() {
+		let photo = (100, 80);
+		let bad_marks: [&[f64]; 7] = [
+			&[1.0, 2.0, 3.0],
+			&[10.0, 10.0, 0.0, 5.0],
+			&[90.0, 70.0, 20.0, 20.0],
+			&[100.0, 40.0],
+			&[-1.0, 40.0],
+			&[10.0, 10.0, 20.0, 20.0, 0.0],
+			&[f64::NAN, 40.0],
+		];
+		for mark in bad_marks {
+			assert!(check_mark("p.avif", mark, photo).is_err(), "{mark:?}");
+		}
+		assert!(check_mark("p.avif", &[99.0, 79.0], photo).is_ok());
+		assert!(check_mark("p.avif", &[0.0, 0.0, 100.0, 80.0, 2.5], photo).is_ok());
+		assert!(parse_numbers("--box", "1,2,x").is_err());
+		for colour in ["purple", "#12345", "#gggggg", "#1234567"] {
+			assert!(parse_fill(colour).is_err(), "{colour}");
+		}
+		assert_eq!(parse_fill("transparent"), Ok(vec![0, 0, 0, 0]));
+		assert_eq!(parse_fill("#ff8000"), Ok(vec![255, 128, 0]));
+		assert!(check_output(Path::new("clip.gif"), false, None).is_err());
+		assert!(check_output(Path::new("clip.avif"), false, Some("deflicker")).is_err());
+		assert!(check_output(Path::new("no/such/folder/clip.avif"), false, None).is_err());
+		assert!(read_sizes(&[PathBuf::from("only-one.avif")]).is_err());
+		assert!(read_sizes(&[PathBuf::from("a/x.avif"), PathBuf::from("b/x.avif")]).is_err());
+		assert!(read_sizes(&[PathBuf::from("missing-1.avif"), PathBuf::from("missing-2.avif")]).is_err());
+		let two = [PathBuf::from("a.avif"), PathBuf::from("b.avif")];
+		let bad_ats: [&[&str]; 5] =
+			[&["b.avif"], &["c.avif=1,1"], &["a.avif=1,1"], &["b.avif=1,1", "b.avif=2,2"], &["b.avif=500,1"]];
+		for ats in bad_ats {
+			let ats: Vec<String> = ats.iter().map(|a| a.to_string()).collect();
+			assert!(read_marks(Some("0,0,10,10"), &ats, &two, &[photo, photo]).is_err(), "{ats:?}");
+		}
+		let marks = read_marks(Some("0,0,10,10"), &["b.avif=5,5".into()], &two, &[photo, photo]).unwrap();
+		assert_eq!(marks[1], Some(Mark(vec![5.0, 5.0])));
+	}
+
+	#[test]
+	fn resources_stop_at_cores_then_memory() {
+		let gb = 1usize << 30;
+		let girona = plan_resources(2048 * 1536, 4 * gb, 12).unwrap();
+		assert!(girona.prepare_threads == 12 && girona.render_threads == 12 && girona.keep_bytes > gb / 2);
+		let large = plan_resources(8064 * 6048, 4 * gb, 12).unwrap();
+		assert!((1..12).contains(&large.prepare_threads) && large.render_threads >= 1);
+		assert!(plan_resources(8064 * 6048, gb / 2, 12).is_err(), "a 48 MP photo cannot fit in 0.5 GB");
+	}
 }

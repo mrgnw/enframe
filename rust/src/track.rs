@@ -1,7 +1,7 @@
 //! Follows the anchor from photo to photo and plans one crop per photo, as `anchor.py` does.
 
 use crate::fail;
-use crate::sift::{DESCRIPTOR_LEN, Features, KeyPoint};
+use crate::sift::{Features, KeyPoint, DESCRIPTOR_LEN};
 
 pub const MIN_INLIERS: usize = 8;
 pub const MIN_CROP: i64 = 64;
@@ -161,7 +161,11 @@ fn ransac_iterations(confidence: f64, outlier_share: f64, max: usize) -> usize {
 		return 0;
 	}
 	let denom = denom.ln();
-	if denom >= 0.0 || -num >= max as f64 * -denom { max } else { (num / denom).round_ties_even() as usize }
+	if denom >= 0.0 || -num >= max as f64 * -denom {
+		max
+	} else {
+		(num / denom).round_ties_even() as usize
+	}
 }
 
 /// The least-squares similarity through all inlier pairs. OpenCV refines with Levenberg-Marquardt,
@@ -354,7 +358,11 @@ fn median(values: &[f64]) -> f64 {
 	let mut sorted = values.to_vec();
 	sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
 	let n = sorted.len();
-	if n % 2 == 1 { sorted[n / 2] } else { (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0 }
+	if n % 2 == 1 {
+		sorted[n / 2]
+	} else {
+		(sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
+	}
 }
 
 pub type Rect = (f64, f64, f64, f64);
@@ -363,7 +371,11 @@ pub type Rect = (f64, f64, f64, f64);
 /// every photo fills; padded, each side takes the median margin.
 fn crop_rects(sizes: &[(f64, f64)], anchors: &[(f64, f64)], pad: bool) -> Vec<Rect> {
 	let pick = |values: Vec<f64>| {
-		if pad { median(&values) } else { values.into_iter().fold(f64::INFINITY, f64::min) }
+		if pad {
+			median(&values)
+		} else {
+			values.into_iter().fold(f64::INFINITY, f64::min)
+		}
 	};
 	let left = pick(anchors.iter().map(|a| a.0).collect());
 	let top = pick(anchors.iter().map(|a| a.1).collect());

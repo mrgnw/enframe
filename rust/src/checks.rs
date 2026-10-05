@@ -208,7 +208,7 @@ fn encode_bench() {
 #[test]
 #[ignore]
 fn kornia_sift_matches_opencv() {
-	use kornia_imgproc::features::{FirstOctave, SiftConfig, SiftWorkspace, sift_detect_and_compute};
+	use kornia_imgproc::features::{sift_detect_and_compute, FirstOctave, SiftConfig, SiftWorkspace};
 	for name in ["IMG_4667", "IMG_4791"] {
 		let rgb = avif::decode(&Path::new(SAMPLES).join(format!("{name}.avif")), 1).unwrap();
 		let small = pixels::shrink_area(&pixels::gray(&rgb), 0.5);
@@ -360,4 +360,31 @@ fn box_descriptor_diffs() {
 			);
 		}
 	}
+}
+/// Peak memory of one prepare or render task on the photo in TASK_PHOTO, run alone in this process
+/// (`analysis/rust_task_memory.py` runs one per process and fits the planner's costs).
+#[test]
+#[ignore]
+fn task_memory() {
+	let Ok(photo) = std::env::var("TASK_PHOTO") else { return };
+	let before = crate::profile::peak_rss();
+	let path = Path::new(&photo);
+	let rgb = avif::decode(path, 1).unwrap();
+	let (w, h) = (rgb.width, rgb.height);
+	if std::env::var("TASK").as_deref() == Ok("render") {
+		let frame = crate::render::place(
+			&rgb,
+			(0.0, 0.0, w as f64, h as f64),
+			(w as u32, h as u32),
+			Some(&[0, 0, 0, 0]),
+		);
+		drop(rgb);
+		std::hint::black_box(avif::to_yuv420(&frame));
+	} else {
+		let k = (1024.0 / w.max(h) as f64).min(1.0);
+		let gray = pixels::gray(&rgb);
+		let small = if k < 1.0 { pixels::shrink_area(&gray, k) } else { gray };
+		std::hint::black_box(crate::sift::detect_and_compute(&small));
+	}
+	println!("task_memory: {} px, peak {} bytes, before {before}", w * h, crate::profile::peak_rss());
 }
