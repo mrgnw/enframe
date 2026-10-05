@@ -1,0 +1,9 @@
+{
+	"name": "pinframe-wasm-spike",
+	"private": true,
+	"type": "module",
+	"dependencies": {
+		"@jsquash/avif": "^2.1.1",
+		"pyodide": "314.0.7"
+	}
+}
