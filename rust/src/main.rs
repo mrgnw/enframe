@@ -240,28 +240,10 @@ struct Resources {
 	keep_bytes: usize,
 }
 
-fn sysctl_u32(name: &str) -> Option<u32> {
-	let name = std::ffi::CString::new(name).ok()?;
-	let mut value: u32 = 0;
-	let mut size = std::mem::size_of::<u32>();
-	let ok = unsafe {
-		libc::sysctlbyname(
-			name.as_ptr(),
-			&mut value as *mut u32 as *mut _,
-			&mut size,
-			std::ptr::null_mut(),
-			0,
-		)
-	};
-	(ok == 0).then_some(value)
-}
-
-/// The fastest cores: performance cores on Apple silicon. Results come back in order, so a thread on a
-/// slower efficiency core holds up the rest.
-fn performance_cores() -> usize {
-	sysctl_u32("hw.perflevel0.physicalcpu")
-		.map(|n| n as usize)
-		.unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()))
+/// Every core. Unlike anchor.py, whose OpenCV threads ran slower once the efficiency cores joined, the
+/// Rust prepare step gets faster with them (Girona: 1.73 s on 8 threads, 1.47 s on 12).
+fn cores() -> usize {
+	std::thread::available_parallelism().map_or(1, |n| n.get())
 }
 
 /// Memory free now or reclaimable without swapping, as psutil's `available` counts it on macOS.
@@ -560,7 +542,7 @@ fn main() {
 		let k = track::track_factor(&sizes);
 		let free = available_bytes();
 		let largest = sizes.iter().map(|&(w, h)| w as usize * h as usize).max().unwrap();
-		let resources = plan_resources(largest, free, performance_cores());
+		let resources = plan_resources(largest, free, cores());
 		println!(
 			"{:.1} GB free: {} prepare threads, {} render threads, up to {:.1} GB of kept photos",
 			free as f64 / (1u64 << 30) as f64,

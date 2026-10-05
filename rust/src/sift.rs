@@ -74,8 +74,7 @@ pub fn detect_and_compute(gray: &Image) -> Features {
 		for i in 1..LAYERS + 3 {
 			gauss.push(blur(&gauss[i - 1], sigmas[i]));
 		}
-		let dog: Vec<Plane> = gauss.windows(2).map(|w| subtract(&w[1], &w[0])).collect();
-		find_extrema(o, &gauss, &dog, &mut found, &mut samples);
+		find_extrema(o, &gauss, &mut found, &mut samples);
 		base = if o + 1 < octaves {
 			halve_nearest(&gauss[LAYERS])
 		} else {
@@ -166,11 +165,6 @@ fn halve_nearest(src: &Plane) -> Plane {
 	Plane { width: w, height: h, data }
 }
 
-fn subtract(a: &Plane, b: &Plane) -> Plane {
-	let data = a.data.iter().zip(&b.data).map(|(x, y)| x - y).collect();
-	Plane { width: a.width, height: a.height, data }
-}
-
 /// `getGaussianKernel(n, sigma, CV_32F)`, with n = round(8 sigma + 1) | 1 as `GaussianBlur` picks it.
 fn gaussian_kernel(sigma: f64) -> Vec<f32> {
 	let n = ((sigma * 8.0 + 1.0).round_ties_even() as usize) | 1;
@@ -245,26 +239,50 @@ fn blur(src: &Plane, sigma: f64) -> Plane {
 	}
 	Plane { width: w, height: h, data }
 }
+/// Difference-of-Gaussian layers read from the Gaussian layers as needed: layer i is gauss[i + 1] -
+/// gauss[i], the same float subtraction OpenCV stores, without holding five more planes per octave.
+#[derive(Clone, Copy)]
+struct Dog<'a> {
+	gauss: &'a [Plane],
+}
+
+impl Dog<'_> {
+	#[inline(always)]
+	fn at(&self, layer: usize, r: usize, c: usize) -> f32 {
+		self.gauss[layer + 1].at(r, c) - self.gauss[layer].at(r, c)
+	}
+
+	fn row(&self, layer: usize, r: usize, out: &mut [f32]) {
+		for ((o, a), b) in out.iter_mut().zip(self.gauss[layer + 1].row(r)).zip(self.gauss[layer].row(r)) {
+			*o = a - b;
+		}
+	}
+}
+
 fn find_extrema(
 	o: usize,
 	gauss: &[Plane],
-	dog: &[Plane],
 	found: &mut Vec<(KeyPoint, [u8; DESCRIPTOR_LEN])>,
 	samples: &mut Samples,
 ) {
 	let threshold = (0.5 * CONTRAST as f64 / LAYERS as f64 * 255.0).floor() as f32;
-	let (w, h) = (dog[0].width, dog[0].height);
+	let (w, h) = (gauss[0].width, gauss[0].height);
+	let dog = Dog { gauss };
 	let mut hist = [0f32; ORI_BINS];
 	let mut candidate = vec![false; w];
 	for layer in 1..=LAYERS {
-		let (prev, cur, next) = (&dog[layer - 1].data, &dog[layer].data, &dog[layer + 1].data);
-		for r in BORDER..h.saturating_sub(BORDER) {
-			let row = |y: usize| &cur[y * w..(y + 1) * w];
-			in_layer_extrema(row(r - 1), row(r), row(r + 1), threshold, &mut candidate);
+		if h < 2 * BORDER + 1 {
+			break;
+		}
+		// DoG rows r - 1, r and r + 1 of this layer, moved down one row at a time.
+		let mut rows = [vec![0f32; w], vec![0f32; w], vec![0f32; w]];
+		dog.row(layer, BORDER - 1, &mut rows[0]);
+		dog.row(layer, BORDER, &mut rows[1]);
+		for r in BORDER..h - BORDER {
+			dog.row(layer, r + 1, &mut rows[2]);
+			in_layer_extrema(&rows[0], &rows[1], &rows[2], threshold, &mut candidate);
 			for c in BORDER..w.saturating_sub(BORDER) {
-				let i = r * w + c;
-				let val = cur[i];
-				if !candidate[c] || !is_extremum(val, i, w, prev, cur, next) {
+				if !candidate[c] || !is_extremum(rows[1][c], dog, layer, r, c) {
 					continue;
 				}
 				let Some((kp, layer, r1, c1)) = adjust_local_extrema(dog, o, layer, r, c) else { continue };
@@ -304,6 +322,7 @@ fn find_extrema(
 					found.push((kp, descriptor(image, px, py, angle, kp.size * scale * 0.5, samples)));
 				}
 			}
+			rows.rotate_left(1);
 		}
 	}
 }
@@ -331,34 +350,34 @@ fn in_layer_extrema(above: &[f32], row: &[f32], below: &[f32], threshold: f32, c
 }
 
 #[inline(always)]
-fn is_extremum(val: f32, i: usize, w: usize, prev: &[f32], cur: &[f32], next: &[f32]) -> bool {
-	if val > 0.0 {
-		beats(|v| val >= v, i, w, prev, cur, next)
-	} else {
-		beats(|v| val <= v, i, w, prev, cur, next)
-	}
+fn is_extremum(val: f32, dog: Dog, layer: usize, r: usize, c: usize) -> bool {
+	if val > 0.0 { beats(|v| val >= v, dog, layer, r, c) } else { beats(|v| val <= v, dog, layer, r, c) }
 }
 
 /// Whether `wins` holds against all 26 neighbours in scale space. Generic, so each comparison inlines.
 #[inline(always)]
-fn beats(wins: impl Fn(f32) -> bool, i: usize, w: usize, prev: &[f32], cur: &[f32], next: &[f32]) -> bool {
-	let around = |p: &[f32]| {
-		wins(p[i - w - 1])
-			&& wins(p[i - w])
-			&& wins(p[i - w + 1])
-			&& wins(p[i - 1])
-			&& wins(p[i + 1])
-			&& wins(p[i + w - 1])
-			&& wins(p[i + w])
-			&& wins(p[i + w + 1])
+fn beats(wins: impl Fn(f32) -> bool, dog: Dog, layer: usize, r: usize, c: usize) -> bool {
+	let around = |l: usize| {
+		wins(dog.at(l, r - 1, c - 1))
+			&& wins(dog.at(l, r - 1, c))
+			&& wins(dog.at(l, r - 1, c + 1))
+			&& wins(dog.at(l, r, c - 1))
+			&& wins(dog.at(l, r, c + 1))
+			&& wins(dog.at(l, r + 1, c - 1))
+			&& wins(dog.at(l, r + 1, c))
+			&& wins(dog.at(l, r + 1, c + 1))
 	};
-	around(cur) && wins(next[i]) && around(next) && wins(prev[i]) && around(prev)
+	around(layer)
+		&& wins(dog.at(layer + 1, r, c))
+		&& around(layer + 1)
+		&& wins(dog.at(layer - 1, r, c))
+		&& around(layer - 1)
 }
 
 /// Interpolates an extremum to sub-pixel and sub-scale position and rejects weak or edge-like ones.
 /// Returns the keypoint in doubled-image coordinates, and the layer, row and column it settled on.
 fn adjust_local_extrema(
-	dog: &[Plane],
+	dog: Dog,
 	o: usize,
 	mut layer: usize,
 	mut r: usize,
@@ -371,22 +390,24 @@ fn adjust_local_extrema(
 	let (mut xi, mut xr, mut xc) = (0f32, 0f32, 0f32);
 	let mut step = 0;
 	while step < MAX_INTERP_STEPS {
-		let (img, prev, next) = (&dog[layer], &dog[layer - 1], &dog[layer + 1]);
+		let (img, prev, next) = (
+			|r: usize, c: usize| dog.at(layer, r, c),
+			|r: usize, c: usize| dog.at(layer - 1, r, c),
+			|r: usize, c: usize| dog.at(layer + 1, r, c),
+		);
 		let d = [
-			(img.at(r, c + 1) - img.at(r, c - 1)) * deriv_scale,
-			(img.at(r + 1, c) - img.at(r - 1, c)) * deriv_scale,
-			(next.at(r, c) - prev.at(r, c)) * deriv_scale,
+			(img(r, c + 1) - img(r, c - 1)) * deriv_scale,
+			(img(r + 1, c) - img(r - 1, c)) * deriv_scale,
+			(next(r, c) - prev(r, c)) * deriv_scale,
 		];
-		let v2 = img.at(r, c) * 2.0;
-		let dxx = (img.at(r, c + 1) + img.at(r, c - 1) - v2) * second_deriv_scale;
-		let dyy = (img.at(r + 1, c) + img.at(r - 1, c) - v2) * second_deriv_scale;
-		let dss = (next.at(r, c) + prev.at(r, c) - v2) * second_deriv_scale;
-		let dxy = (img.at(r + 1, c + 1) - img.at(r + 1, c - 1) - img.at(r - 1, c + 1) + img.at(r - 1, c - 1))
+		let v2 = img(r, c) * 2.0;
+		let dxx = (img(r, c + 1) + img(r, c - 1) - v2) * second_deriv_scale;
+		let dyy = (img(r + 1, c) + img(r - 1, c) - v2) * second_deriv_scale;
+		let dss = (next(r, c) + prev(r, c) - v2) * second_deriv_scale;
+		let dxy = (img(r + 1, c + 1) - img(r + 1, c - 1) - img(r - 1, c + 1) + img(r - 1, c - 1))
 			* cross_deriv_scale;
-		let dxs = (next.at(r, c + 1) - next.at(r, c - 1) - prev.at(r, c + 1) + prev.at(r, c - 1))
-			* cross_deriv_scale;
-		let dys = (next.at(r + 1, c) - next.at(r - 1, c) - prev.at(r + 1, c) + prev.at(r - 1, c))
-			* cross_deriv_scale;
+		let dxs = (next(r, c + 1) - next(r, c - 1) - prev(r, c + 1) + prev(r, c - 1)) * cross_deriv_scale;
+		let dys = (next(r + 1, c) - next(r - 1, c) - prev(r + 1, c) + prev(r - 1, c)) * cross_deriv_scale;
 		let x = solve3([[dxx, dxy, dxs], [dxy, dyy, dys], [dxs, dys, dss]], d);
 		(xi, xr, xc) = (-x[2], -x[1], -x[0]);
 		if xi.abs() < 0.5 && xr.abs() < 0.5 && xc.abs() < 0.5 {
@@ -399,7 +420,7 @@ fn adjust_local_extrema(
 		let nc = c as i64 + xc.round_ties_even() as i64;
 		let nr = r as i64 + xr.round_ties_even() as i64;
 		let nl = layer as i64 + xi.round_ties_even() as i64;
-		let (w, h) = (img.width as i64, img.height as i64);
+		let (w, h) = (dog.gauss[0].width as i64, dog.gauss[0].height as i64);
 		if nl < 1
 			|| nl > LAYERS as i64
 			|| nc < BORDER as i64
@@ -415,22 +436,26 @@ fn adjust_local_extrema(
 	if step >= MAX_INTERP_STEPS {
 		return None;
 	}
-	let (img, prev, next) = (&dog[layer], &dog[layer - 1], &dog[layer + 1]);
+	let (img, prev, next) = (
+		|r: usize, c: usize| dog.at(layer, r, c),
+		|r: usize, c: usize| dog.at(layer - 1, r, c),
+		|r: usize, c: usize| dog.at(layer + 1, r, c),
+	);
 	let d = [
-		(img.at(r, c + 1) - img.at(r, c - 1)) * deriv_scale,
-		(img.at(r + 1, c) - img.at(r - 1, c)) * deriv_scale,
-		(next.at(r, c) - prev.at(r, c)) * deriv_scale,
+		(img(r, c + 1) - img(r, c - 1)) * deriv_scale,
+		(img(r + 1, c) - img(r - 1, c)) * deriv_scale,
+		(next(r, c) - prev(r, c)) * deriv_scale,
 	];
 	let t = d[2].mul_add(xi, d[1].mul_add(xr, d[0] * xc));
-	let contr = img.at(r, c).mul_add(img_scale, t * 0.5);
+	let contr = img(r, c).mul_add(img_scale, t * 0.5);
 	if contr.abs() * (LAYERS as f32) < CONTRAST {
 		return None;
 	}
-	let v2 = img.at(r, c) * 2.0;
-	let dxx = (img.at(r, c + 1) + img.at(r, c - 1) - v2) * second_deriv_scale;
-	let dyy = (img.at(r + 1, c) + img.at(r - 1, c) - v2) * second_deriv_scale;
-	let dxy = (img.at(r + 1, c + 1) - img.at(r + 1, c - 1) - img.at(r - 1, c + 1) + img.at(r - 1, c - 1))
-		* cross_deriv_scale;
+	let v2 = img(r, c) * 2.0;
+	let dxx = (img(r, c + 1) + img(r, c - 1) - v2) * second_deriv_scale;
+	let dyy = (img(r + 1, c) + img(r - 1, c) - v2) * second_deriv_scale;
+	let dxy =
+		(img(r + 1, c + 1) - img(r + 1, c - 1) - img(r - 1, c + 1) + img(r - 1, c - 1)) * cross_deriv_scale;
 	let tr = dxx + dyy;
 	let det = dxx.mul_add(dyy, -(dxy * dxy));
 	if det <= 0.0 || tr * tr * EDGE >= (EDGE + 1.0) * (EDGE + 1.0) * det {

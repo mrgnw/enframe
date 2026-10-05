@@ -2,7 +2,7 @@
 
 use crate::pixels::{Image, saturate_u8};
 use crate::track::Rect;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{Condvar, Mutex};
 
 /// Runs `work(i)` for i in 0..n on `threads` threads and hands each result to `take` in order. At most
@@ -150,19 +150,9 @@ pub fn place(photo: &Image, source: Rect, size: (u32, u32), fill: Option<&[u8]>)
 	let replicate = fill.is_none();
 	let xt = taps(x, f, ow, photo.width, replicate);
 	let yt = taps(y, f, oh, photo.height, replicate);
-	let rows_used: Vec<usize> = {
-		let mut rows = yt.index.clone();
-		rows.sort_unstable();
-		rows.dedup();
-		rows
-	};
-	// Horizontal pass, only for the photo rows the vertical taps read.
-	let mut row_of = vec![usize::MAX; photo.height];
-	let mut wide = vec![0f32; rows_used.len() * ow * cn];
-	for (n, &r) in rows_used.iter().enumerate() {
-		row_of[r] = n;
+	// Horizontal pass of one photo row into `out`, with padding mixed in where the taps overhang.
+	let horizontal = |r: usize, out: &mut [f32]| {
 		let src = photo.row(r);
-		let out = &mut wide[n * ow * cn..(n + 1) * ow * cn];
 		for j in 0..ow {
 			let mut acc = [0f32; 4];
 			for k in xt.start[j]..xt.start[j + 1] {
@@ -176,18 +166,31 @@ pub fn place(photo: &Image, source: Rect, size: (u32, u32), fill: Option<&[u8]>)
 				out[j * cn + c] = xt.outside[j].mul_add(fill_value(c), acc[c]);
 			}
 		}
-	}
-	// Vertical pass.
+	};
+	// Vertical pass. The rows it reads only move down, so a few horizontally filtered rows are kept at a
+	// time, not the whole crop.
+	let mut window: VecDeque<(usize, Vec<f32>)> = VecDeque::new();
+	let mut spare: Vec<Vec<f32>> = Vec::new();
 	let mut pixels = vec![0u8; ow * oh * cn];
 	let mut acc = vec![0f32; ow * cn];
 	for i in 0..oh {
+		let rows = &yt.index[yt.start[i]..yt.start[i + 1]];
+		while window.front().is_some_and(|(r, _)| rows.first().is_some_and(|lowest| r < lowest)) {
+			spare.push(window.pop_front().unwrap().1);
+		}
+		for &r in rows {
+			if window.iter().all(|(q, _)| *q != r) {
+				let mut buf = spare.pop().unwrap_or_else(|| vec![0f32; ow * cn]);
+				horizontal(r, &mut buf);
+				window.push_back((r, buf));
+			}
+		}
 		let outside = yt.outside[i];
 		for (j, a) in acc.iter_mut().enumerate() {
 			*a = outside * fill_value(j % cn);
 		}
-		for k in yt.start[i]..yt.start[i + 1] {
-			let n = row_of[yt.index[k]];
-			let (row, wt) = (&wide[n * ow * cn..(n + 1) * ow * cn], yt.weight[k]);
+		for (&r, &wt) in rows.iter().zip(&yt.weight[yt.start[i]..yt.start[i + 1]]) {
+			let row = &window.iter().find(|(q, _)| *q == r).unwrap().1;
 			for (a, v) in acc.iter_mut().zip(row) {
 				*a = v.mul_add(wt, *a);
 			}
