@@ -373,7 +373,7 @@ kbd {
 
 .mock {
 	position: fixed;
-	top: 8px;
+	top: 60px;
 	right: 50%;
 	translate: 50% 0;
 	display: flex;
