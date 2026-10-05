@@ -502,10 +502,13 @@ fn solve3(a: [[f32; 3]; 3], b: [f32; 3]) -> [f32; 3] {
 			-(b[0] * a[1][0].mul_add(a[2][2], -(a[1][2] * a[2][0]))),
 		),
 	);
+	// x2's first cofactor, a11*b2 - b1*a21, is the negation of x0's third: the compiler evaluates that
+	// product pair once and negates it, which under contraction differs from the spelled-out order
+	// (found by kornia-rs, crates/kornia-imgproc/src/features/sift/detect.rs).
 	let x2 = b[0].mul_add(
 		a[1][0].mul_add(a[2][1], -(a[1][1] * a[2][0])),
 		a[0][0].mul_add(
-			a[1][1].mul_add(b[2], -(b[1] * a[2][1])),
+			-b[1].mul_add(a[2][1], -(a[1][1] * b[2])),
 			-(a[0][1] * a[1][0].mul_add(b[2], -(b[1] * a[2][0]))),
 		),
 	);

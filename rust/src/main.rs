@@ -286,6 +286,53 @@ fn plan_resources(largest_pixels: usize, free_bytes: usize, cores: usize) -> Res
 	Resources { prepare_threads, render_threads, keep_bytes: budget - working }
 }
 
+#[cfg(not(feature = "kornia"))]
+fn find_features(small: &pixels::Image) -> sift::Features {
+	sift::detect_and_compute(small)
+}
+
+/// kornia-imgproc's SIFT, with its float descriptors (whole numbers, as OpenCV's) stored as bytes.
+#[cfg(feature = "kornia")]
+fn find_features(small: &pixels::Image) -> sift::Features {
+	use kornia_imgproc::features::{FirstOctave, SiftConfig, SiftWorkspace, sift_detect_and_compute};
+	thread_local! {
+		static WORKSPACE: std::cell::RefCell<SiftWorkspace> = std::cell::RefCell::new(SiftWorkspace::new());
+	}
+	let src: Vec<f32> = small.pixels.iter().map(|&v| v as f32).collect();
+	let found = WORKSPACE.with_borrow_mut(|ws| {
+		let cfg = SiftConfig::default();
+		sift_detect_and_compute(
+			ws,
+			&src,
+			small.width,
+			small.height,
+			&cfg,
+			FirstOctave::Double,
+			usize::MAX,
+			false,
+		)
+	});
+	let found = found.unwrap_or_else(|e| fail(&format!("SIFT: {e:?}")));
+	let keypoints = found
+		.keypoints
+		.iter()
+		.map(|k| sift::KeyPoint {
+			x: k.x,
+			y: k.y,
+			size: k.size,
+			angle: k.angle,
+			response: k.response,
+			octave: k.octave,
+		})
+		.collect();
+	let descriptors = found
+		.descriptors
+		.chunks_exact(sift::DESCRIPTOR_LEN)
+		.map(|d| std::array::from_fn(|i| d[i] as u8))
+		.collect();
+	sift::Features { keypoints, descriptors }
+}
+
 fn prepare(path: &Path, size: (u32, u32), k: f64, keep: &Keep, i: usize) -> Photo {
 	let rgb = work(Work::Decode, || avif::decode(path, 1))
 		.unwrap_or_else(|e| fail(&format!("{}: {e}", path.display())));
@@ -298,7 +345,7 @@ fn prepare(path: &Path, size: (u32, u32), k: f64, keep: &Keep, i: usize) -> Phot
 	let photo = work(Work::Sift, || {
 		let gray = pixels::gray(&rgb);
 		let small = if k < 1.0 { pixels::shrink_area(&gray, k) } else { gray };
-		Photo { small: (small.width, small.height), features: sift::detect_and_compute(&small) }
+		Photo { small: (small.width, small.height), features: find_features(&small) }
 	});
 	keep.offer(i, rgb);
 	photo

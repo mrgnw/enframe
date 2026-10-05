@@ -54,7 +54,7 @@ pub struct Photo {
 }
 
 /// The features whose rounded position falls in the box, as OpenCV's mask filter keeps them.
-fn features_in(photo: &Photo, cx: f64, cy: f64, w: f64, h: f64) -> Features {
+pub fn features_in(photo: &Photo, cx: f64, cy: f64, w: f64, h: f64) -> Features {
 	let (sw, sh) = photo.small;
 	let round = |v: f64| v.round_ties_even() as i64;
 	let x0 = round(cx - w / 2.0).max(0);
@@ -75,7 +75,7 @@ fn features_in(photo: &Photo, cx: f64, cy: f64, w: f64, h: f64) -> Features {
 /// Euclidean distance between two descriptors. OpenCV's are whole numbers, so the squared distance
 /// is exact in integers and its square root equals OpenCV's float result.
 #[inline]
-fn distance(a: &[u8; DESCRIPTOR_LEN], b: &[u8; DESCRIPTOR_LEN]) -> f32 {
+pub fn distance(a: &[u8; DESCRIPTOR_LEN], b: &[u8; DESCRIPTOR_LEN]) -> f32 {
 	let mut sum = 0u32;
 	for (x, y) in a.iter().zip(b) {
 		let d = x.abs_diff(*y) as u32;
@@ -222,7 +222,7 @@ fn estimate_similarity(from: &[(f32, f32)], to: &[(f32, f32)], threshold: f64) -
 }
 
 /// Scale + rotation + shift taking the box's features onto the next photo, and how many agree.
-fn similarity(boxed: &Features, next: &Features, tolerance: f64) -> (Option<Affine>, usize) {
+pub fn similarity(boxed: &Features, next: &Features, tolerance: f64) -> (Option<Affine>, usize) {
 	if boxed.keypoints.is_empty() || next.keypoints.len() < 2 {
 		return (None, 0);
 	}
