@@ -125,6 +125,9 @@ fn taps(origin: f64, f: f64, out: usize, size: usize, replicate: bool) -> Taps {
 				add(&mut t, base as i64 - 1 + k as i64, w, &mut outside);
 			}
 		} else {
+			// ponytail: one area pass, a little sharper than anchor.py's INTER_AREA resize then bilinear
+			// warp (shrunk Girona frames differ by 32-39 dB, the rest by 59). Compose both filters' taps
+			// here if frames must match anchor.py's more closely.
 			let (lo, hi) = (centre + 0.5 - 0.5 / f, centre + 0.5 + 0.5 / f);
 			for i in lo.floor() as i64..hi.ceil() as i64 {
 				let overlap = (hi.min(i as f64 + 1.0) - lo.max(i as f64)).max(0.0);
