@@ -67,6 +67,7 @@ pub fn detect_and_compute(gray: &Image) -> Features {
 		((base.width.min(base.height) as f64).ln() / 2f64.ln() - 2.0).round_ties_even() as usize + 1;
 	let sigmas = layer_sigmas();
 	let mut found: Vec<(KeyPoint, [u8; DESCRIPTOR_LEN])> = Vec::new();
+	let mut samples = Samples::default();
 	for o in 0..octaves {
 		let mut gauss = Vec::with_capacity(LAYERS + 3);
 		gauss.push(base);
@@ -74,7 +75,7 @@ pub fn detect_and_compute(gray: &Image) -> Features {
 			gauss.push(blur(&gauss[i - 1], sigmas[i]));
 		}
 		let dog: Vec<Plane> = gauss.windows(2).map(|w| subtract(&w[1], &w[0])).collect();
-		find_extrema(o, &gauss, &dog, &mut found);
+		find_extrema(o, &gauss, &dog, &mut found, &mut samples);
 		base = if o + 1 < octaves {
 			halve_nearest(&gauss[LAYERS])
 		} else {
@@ -244,7 +245,13 @@ fn blur(src: &Plane, sigma: f64) -> Plane {
 	}
 	Plane { width: w, height: h, data }
 }
-fn find_extrema(o: usize, gauss: &[Plane], dog: &[Plane], found: &mut Vec<(KeyPoint, [u8; DESCRIPTOR_LEN])>) {
+fn find_extrema(
+	o: usize,
+	gauss: &[Plane],
+	dog: &[Plane],
+	found: &mut Vec<(KeyPoint, [u8; DESCRIPTOR_LEN])>,
+	samples: &mut Samples,
+) {
 	let threshold = (0.5 * CONTRAST as f64 / LAYERS as f64 * 255.0).floor() as f32;
 	let (w, h) = (dog[0].width, dog[0].height);
 	let mut hist = [0f32; ORI_BINS];
@@ -261,7 +268,8 @@ fn find_extrema(o: usize, gauss: &[Plane], dog: &[Plane], found: &mut Vec<(KeyPo
 				let scl_octv = kp.size * 0.5 / (1 << o) as f32;
 				let image = &gauss[layer];
 				let radius = (ORI_RADIUS * scl_octv).round_ties_even() as i32;
-				let omax = orientation_hist(image, r1, c1, radius, ORI_SIG_FCTR * scl_octv, &mut hist);
+				let omax =
+					orientation_hist(image, r1, c1, radius, ORI_SIG_FCTR * scl_octv, &mut hist, samples);
 				let mag_thr = omax * ORI_PEAK_RATIO;
 				for j in 0..ORI_BINS {
 					let l = if j > 0 { j - 1 } else { ORI_BINS - 1 };
@@ -290,7 +298,7 @@ fn find_extrema(o: usize, gauss: &[Plane], dog: &[Plane], found: &mut Vec<(KeyPo
 					}
 					let scale = 1.0 / (1 << o) as f32;
 					let (px, py) = (kp.x * scale, kp.y * scale);
-					found.push((kp, descriptor(image, px, py, angle, kp.size * scale * 0.5)));
+					found.push((kp, descriptor(image, px, py, angle, kp.size * scale * 0.5, samples)));
 				}
 			}
 		}
@@ -454,8 +462,10 @@ fn solve3(a: [[f32; 3]; 3], b: [f32; 3]) -> [f32; 3] {
 	[d * x0, d * x1, d * x2]
 }
 
-/// OpenCV's `hal::exp32f`: a table of 2^(j/64) and a degree-4 polynomial, not libm's exp.
-fn exp32f(values: &mut [f32]) {
+/// OpenCV's `hal::exp32f`: a table of 2^(j/64) and a degree-4 polynomial, not libm's exp. The table
+/// lookup runs in its own loop so the arithmetic loop vectorizes; multiplying by the power of two first
+/// is exact, so the product is the same as OpenCV's for any weight above 1e-37.
+fn exp32f(values: &mut [f32], index: &mut Vec<u8>) {
 	const A0: f64 = 0.9670371139572337719125840413672004409288e-2;
 	const A1: f32 = (0.5550339366753125211915322047004666939128e-1 / A0) as f32;
 	const A2: f32 = (0.2402265109513301490103372422686535526573 / A0) as f32;
@@ -465,19 +475,26 @@ fn exp32f(values: &mut [f32]) {
 	const MAX_VAL: f64 = 3000.0 * 64.0;
 	static TABLE: std::sync::LazyLock<[f32; 64]> =
 		std::sync::LazyLock::new(|| std::array::from_fn(|j| (2f64.powf(j as f64 / 64.0) * A0) as f32));
+	let table = &*TABLE;
 	let (minval, maxval) = ((-MAX_VAL / PRESCALE) as f32, (MAX_VAL / PRESCALE) as f32);
-	for v in values {
+	index.clear();
+	index.resize(values.len(), 0);
+	for (v, ix) in values.iter_mut().zip(index.iter_mut()) {
 		let x = v.max(minval).min(maxval) * PRESCALE as f32;
 		let xi = x.round_ties_even() as i32;
 		let x = (x - xi as f32) * (1.0 / 64.0);
-		let t = ((xi >> 6) + 127).clamp(0, 255);
-		let scale = f32::from_bits((t as u32) << 23) * TABLE[(xi & 63) as usize];
-		let poly = (x + A1).mul_add(x, A2).mul_add(x, A3).mul_add(x, A4);
-		*v = poly * scale;
+		let power = f32::from_bits((((xi >> 6) + 127).clamp(0, 255) as u32) << 23);
+		*v = (x + A1).mul_add(x, A2).mul_add(x, A3).mul_add(x, A4) * power;
+		*ix = (xi & 63) as u8;
+	}
+	for (v, &ix) in values.iter_mut().zip(index.iter()) {
+		*v *= table[ix as usize];
 	}
 }
 
-/// OpenCV's `fastAtan2` in degrees: a polynomial good to about 0.3 degrees.
+/// OpenCV's `fastAtan2` in degrees: a polynomial good to about 0.3 degrees. Written with selects, not
+/// branches, so loops over it vectorize.
+#[inline(always)]
 fn fast_atan2(y: f32, x: f32) -> f32 {
 	const DEG: f32 = (180.0 / std::f64::consts::PI) as f32;
 	const P1: f32 = 0.9997878412794807 * DEG;
@@ -487,44 +504,48 @@ fn fast_atan2(y: f32, x: f32) -> f32 {
 	let (ax, ay) = (x.abs(), y.abs());
 	let c = ax.min(ay) / (ax.max(ay) + f64::EPSILON as f32);
 	let cc = c * c;
-	let mut a = cc.mul_add(P7, P5).mul_add(cc, P3).mul_add(cc, P1) * c;
-	if ax < ay {
-		a = 90.0 - a;
-	}
-	if x < 0.0 {
-		a = 180.0 - a;
-	}
-	if y < 0.0 {
-		a = 360.0 - a;
-	}
-	a
+	let a = cc.mul_add(P7, P5).mul_add(cc, P3).mul_add(cc, P1) * c;
+	let a = if ax >= ay { a } else { 90.0 - a };
+	let a = if x < 0.0 { 180.0 - a } else { a };
+	if y < 0.0 { 360.0 - a } else { a }
 }
 
-/// Gradient samples around a point: x and y differences and squared distance weight, before
-/// `exp32f`, `fastAtan2` and `magnitude` turn them into weights, angles and magnitudes.
+/// Gradient samples around a keypoint: x and y differences, the squared-distance weight and histogram
+/// coordinates, then angles, magnitudes and weights. One per photo, reused from keypoint to keypoint.
+#[derive(Default)]
 struct Samples {
 	dx: Vec<f32>,
 	dy: Vec<f32>,
 	weight: Vec<f32>,
+	rbin: Vec<f32>,
+	cbin: Vec<f32>,
+	angle: Vec<f32>,
+	magnitude: Vec<f32>,
+	table_index: Vec<u8>,
 }
 
 impl Samples {
-	fn with_capacity(n: usize) -> Samples {
-		Samples { dx: Vec::with_capacity(n), dy: Vec::with_capacity(n), weight: Vec::with_capacity(n) }
+	fn clear(&mut self) {
+		for v in [&mut self.dx, &mut self.dy, &mut self.weight, &mut self.rbin, &mut self.cbin] {
+			v.clear();
+		}
 	}
 
+	#[inline(always)]
 	fn push(&mut self, img: &Plane, r: usize, c: usize, weight: f32) {
-		self.dx.push(img.at(r, c + 1) - img.at(r, c - 1));
-		self.dy.push(img.at(r - 1, c) - img.at(r + 1, c));
+		let (above, here, below) = (img.row(r - 1), img.row(r), img.row(r + 1));
+		self.dx.push(here[c + 1] - here[c - 1]);
+		self.dy.push(above[c] - below[c]);
 		self.weight.push(weight);
 	}
 
-	/// Angles in degrees and magnitudes, and `exp32f` applied to the weights in place.
-	fn finish(&mut self) -> (Vec<f32>, Vec<f32>) {
-		exp32f(&mut self.weight);
-		let angles = self.dy.iter().zip(&self.dx).map(|(&y, &x)| fast_atan2(y, x)).collect();
-		let magnitudes = self.dx.iter().zip(&self.dy).map(|(&x, &y)| x.mul_add(x, y * y).sqrt()).collect();
-		(angles, magnitudes)
+	/// `exp32f` on the weights in place, then `fastAtan2` and `magnitude` of the differences.
+	fn finish(&mut self) {
+		exp32f(&mut self.weight, &mut self.table_index);
+		self.angle.clear();
+		self.angle.extend(self.dy.iter().zip(&self.dx).map(|(&y, &x)| fast_atan2(y, x)));
+		self.magnitude.clear();
+		self.magnitude.extend(self.dx.iter().zip(&self.dy).map(|(&x, &y)| x.mul_add(x, y * y).sqrt()));
 	}
 }
 
@@ -535,10 +556,10 @@ fn orientation_hist(
 	radius: i32,
 	sigma: f32,
 	hist: &mut [f32; ORI_BINS],
+	samples: &mut Samples,
 ) -> f32 {
 	let expf_scale = -1.0 / (2.0 * sigma * sigma);
-	let side = (2 * radius + 1) as usize;
-	let mut samples = Samples::with_capacity(side * side);
+	samples.clear();
 	for i in -radius..=radius {
 		let y = r as i32 + i;
 		if y <= 0 || y >= img.height as i32 - 1 {
@@ -552,12 +573,13 @@ fn orientation_hist(
 			samples.push(img, y as usize, x as usize, (i * i + j * j) as f32 * expf_scale);
 		}
 	}
-	let (angles, magnitudes) = samples.finish();
+	samples.finish();
 	let n = ORI_BINS as i32;
 	let mut temp = [0f32; ORI_BINS + 4];
 	// OpenCV's vector loop multiplies, then adds; its scalar tail (the last len % 4) fuses the two.
-	let vector_len = angles.len() / 4 * 4;
-	for (k, (&angle, (&w, &mag))) in angles.iter().zip(samples.weight.iter().zip(&magnitudes)).enumerate() {
+	let vector_len = samples.angle.len() / 4 * 4;
+	let weighted = samples.angle.iter().zip(samples.weight.iter().zip(&samples.magnitude));
+	for (k, (&angle, (&w, &mag))) in weighted.enumerate() {
 		let mut bin = (angle * (n as f32 / 360.0)).round_ties_even() as i32;
 		if bin >= n {
 			bin -= n;
@@ -604,7 +626,14 @@ fn grid_columns(i: i32, cos_t: f32, sin_t: f32, radius: i32) -> (i32, i32) {
 	((lo.floor() as i32 - 1).max(-radius), (hi.ceil() as i32 + 1).min(radius))
 }
 
-fn descriptor(img: &Plane, x: f32, y: f32, ori: f32, scl: f32) -> [u8; DESCRIPTOR_LEN] {
+fn descriptor(
+	img: &Plane,
+	x: f32,
+	y: f32,
+	ori: f32,
+	scl: f32,
+	samples: &mut Samples,
+) -> [u8; DESCRIPTOR_LEN] {
 	const D: usize = DESCR_WIDTH;
 	const N: usize = DESCR_BINS;
 	let (pr, pc) = (y.round_ties_even() as i32, x.round_ties_even() as i32);
@@ -617,9 +646,7 @@ fn descriptor(img: &Plane, x: f32, y: f32, ori: f32, scl: f32) -> [u8; DESCRIPTO
 		.min(diagonal);
 	let cos_t = rad.cos() / hist_width;
 	let sin_t = rad.sin() / hist_width;
-	let side = (2 * radius + 1) as usize;
-	let mut samples = Samples::with_capacity(side * side);
-	let mut bins: Vec<(f32, f32)> = Vec::with_capacity(side * side);
+	samples.clear();
 	for i in -radius..=radius {
 		let (lo, hi) = grid_columns(i, cos_t, sin_t, radius);
 		for j in lo..=hi {
@@ -637,17 +664,18 @@ fn descriptor(img: &Plane, x: f32, y: f32, ori: f32, scl: f32) -> [u8; DESCRIPTO
 				&& c > 0 && c < img.width as i32 - 1
 			{
 				samples.push(img, r as usize, c as usize, c_rot.mul_add(c_rot, r_rot * r_rot) * exp_scale);
-				bins.push((rbin, cbin));
+				samples.rbin.push(rbin);
+				samples.cbin.push(cbin);
 			}
 		}
 	}
-	let (angles, magnitudes) = samples.finish();
+	samples.finish();
 	let mut hist = [0f32; (D + 2) * (D + 2) * (N + 2)];
-	for (((&(rbin, cbin), &angle), &mag), &w) in
-		bins.iter().zip(&angles).zip(&magnitudes).zip(&samples.weight)
-	{
-		let obin = (angle - ori) * bins_per_rad;
-		let mag = mag * w;
+	let s = &*samples;
+	for k in 0..s.angle.len() {
+		let (rbin, cbin) = (s.rbin[k], s.cbin[k]);
+		let obin = (s.angle[k] - ori) * bins_per_rad;
+		let mag = s.magnitude[k] * s.weight[k];
 		let (r0, c0, o0) = (rbin.floor(), cbin.floor(), obin.floor());
 		let (rbin, cbin, obin) = (rbin - r0, cbin - c0, obin - o0);
 		let mut o0 = o0 as i32;
@@ -707,7 +735,6 @@ fn descriptor(img: &Plane, x: f32, y: f32, ori: f32, scl: f32) -> [u8; DESCRIPTO
 	let nrm2 = INT_DESCR_FCTR / nrm2.sqrt().max(f32::EPSILON);
 	raw.map(|v| crate::pixels::saturate_u8(v * nrm2))
 }
-
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -740,7 +767,7 @@ mod tests {
 	fn exp32f_is_close_to_exp() {
 		let mut v: Vec<f32> = (0..100).map(|i| -i as f32 * 0.1).collect();
 		let want: Vec<f32> = v.iter().map(|x| x.exp()).collect();
-		exp32f(&mut v);
+		exp32f(&mut v, &mut Vec::new());
 		for (a, b) in v.iter().zip(&want) {
 			assert!((a - b).abs() <= 1e-6 * b.max(1e-30) + 1e-12, "{a} {b}");
 		}
