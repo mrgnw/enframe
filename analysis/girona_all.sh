@@ -4,7 +4,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 OUT=${1:-out/all.mov}
-PAD=${PAD:-transparent}
+# PAD= (empty) runs without padding, the tool's default crop.
+PAD=${PAD-transparent}
 
 fixes=(
 	--at IMG_4680.avif=400,1060,340,160
@@ -32,4 +33,4 @@ fixes=(
 	--at IMG_4798.avif=1000,400
 )
 
-uv run "${RUN:-anchor.py}" "samples/girona clouds"/*.avif --box 1010,410,1030,400 "${fixes[@]}" --pad "$PAD" --out "$OUT" "${@:2}"
+uv run "${RUN:-anchor.py}" "samples/girona clouds"/*.avif --box 1010,410,1030,400 "${fixes[@]}" ${PAD:+--pad "$PAD"} --out "$OUT" "${@:2}"
