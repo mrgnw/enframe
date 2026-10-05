@@ -31,7 +31,7 @@ By default the crop shrinks until every photo fills it. `--pad` lets it overhang
 uv run anchor.py "samples/girona clouds"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --box 400,940,540,180 --pad transparent --out out/portrait.mov
 ```
 
-Writes the clip and a `.json` beside it with each photo's crop rect, normalized to 0–1 like enframe's coordinates. With padding, rects can extend past 0 and 1.
+Writes the clip and a `.json` beside it with each photo's crop rect, normalized to 0–1 like enframe's coordinates. With padding, rects can extend past 0 and 1. Each row also has the photo's `scale` relative to the first photo and its `source`: `tracked`, `mark` (placed by `--box` or `--at`), or `lost` (position estimated from neighbours, the photos to mark next).
 
 `--frames DIR` also saves every aligned photo as `DIR/0001.png`, `0002.png`, …, so other tools can take over: re-encode at another speed with `ffmpeg -framerate 8 -i DIR/%04d.png`, stack them in Siril, or preview them in enframe. The directory must hold no PNGs yet.
 

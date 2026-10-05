@@ -60,8 +60,12 @@ class Hit(NamedTuple):
 	x: float
 	y: float
 	scale: float
-	found: bool
+	source: str  # tracked, mark or lost
 	note: str
+
+	@property
+	def found(self) -> bool:
+		return self.source != 'lost'
 
 
 def plausible(M: np.ndarray) -> tuple[bool, float, float]:
@@ -108,23 +112,23 @@ def track(frames: list[np.ndarray], marks: dict[int, tuple[float, ...]]) -> list
 				assert mark[4] > 0, f'photo {i}: zoom must be positive'
 				scale = mark[4]
 			cx, cy = px * k, py * k
-			note = 'your mark'
+			source, note = 'mark', 'your mark'
 		else:
 			kp2, des2 = sift.detectAndCompute(g, None)
 			M, agreed = similarity(kp, des, kp2, des2, RANSAC_TOLERANCE * rw)
 			if M is None or agreed < MIN_INLIERS:
-				path.append(Hit(cx / k, cy / k, scale, False, f'LOST ({agreed} features), estimated'))
+				path.append(Hit(cx / k, cy / k, scale, 'lost', f'LOST ({agreed} features), estimated'))
 				continue
 			ok, step, turn = plausible(M)
 			if not ok:
 				note = f'LOST (fit zooms {step:.2f}x, turns {turn:+.0f} deg), estimated'
-				path.append(Hit(cx / k, cy / k, scale, False, note))
+				path.append(Hit(cx / k, cy / k, scale, 'lost', note))
 				continue
 			scale *= step
 			rw, rh = rw * step, rh * step
 			cx, cy = M @ np.array([cx, cy, 1.0])
-			note = f'{agreed} features'
-		path.append(Hit(cx / k, cy / k, scale, True, note))
+			source, note = 'tracked', f'{agreed} features'
+		path.append(Hit(cx / k, cy / k, scale, source, note))
 		# Clouds deform, so features come from the latest find, never from a lost frame.
 		fresh = features_in(sift, g, cx, cy, rw, rh)
 		if i == 0:
@@ -254,10 +258,18 @@ def render(
 	assert ffmpeg.returncode == 0, f'ffmpeg exited {ffmpeg.returncode}'
 
 
-def write_rects(paths: list[Path], sizes, sources, out: Path):
+def write_rects(paths: list[Path], sizes, sources, path: list[Hit], out: Path):
 	rows = [
-		{'file': p.name, 'x': x / fw, 'y': y / fh, 'w': w / fw, 'h': h / fh}
-		for p, (fw, fh), (x, y, w, h) in zip(paths, sizes, sources)
+		{
+			'file': p.name,
+			'x': x / fw,
+			'y': y / fh,
+			'w': w / fw,
+			'h': h / fh,
+			'scale': round(hit.scale, 4),
+			'source': hit.source,
+		}
+		for p, (fw, fh), (x, y, w, h), hit in zip(paths, sizes, sources, path)
 	]
 	out.write_text(json.dumps(rows, indent='\t') + '\n')
 
@@ -352,7 +364,7 @@ def main():
 	print(f'clip {size[0]}x{size[1]}')
 
 	render(frames, sources, size, fill, args.out, args.fps, args.frames, args.vf)
-	write_rects(paths, sizes, sources, args.out.with_suffix('.json'))
+	write_rects(paths, sizes, sources, path, args.out.with_suffix('.json'))
 	print(f'wrote {args.out}')
 
 
@@ -378,7 +390,7 @@ def demo():
 		for hit, (ex, ey, es) in zip(path, truth):
 			assert hit.found and abs(hit.x - ex) <= 2 and abs(hit.y - ey) <= 2, (path, truth)
 			assert abs(hit.scale / es - 1) < 0.03, (path, truth)
-	assert path[1].note == 'your mark'
+	assert [hit.source for hit in path] == ['mark', 'mark', 'tracked'], path
 
 	# A point on a photo at the same zoom moves the anchor there and keeps the scale.
 	same_zoom = [frames[0], np.dstack([world[400:700, 450:850]] * 3)]
@@ -409,8 +421,9 @@ def demo():
 
 	assert parse_fill('transparent') == (0, 0, 0, 0) and parse_fill('#ff8000') == (255, 128, 0)
 
-	hidden = [Hit(0, 0, 1, True, ''), Hit(9, 9, 9, False, ''), Hit(20, 40, 2, True, '')]
-	assert fill_lost(hidden, [(100, 100)] * 3)[1][:3] == (10, 20, 1.5)
+	hidden = [Hit(0, 0, 1, 'tracked', ''), Hit(9, 9, 9, 'lost', ''), Hit(20, 40, 2, 'mark', '')]
+	filled = fill_lost(hidden, [(100, 100)] * 3)
+	assert filled[1][:4] == (10, 20, 1.5, 'lost'), 'an estimated photo must stay marked lost'
 	print('self-check passed')
 
 
