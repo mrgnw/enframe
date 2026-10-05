@@ -32,4 +32,4 @@ fixes=(
 	--at IMG_4798.avif=1000,400
 )
 
-uv run "${RUN:-anchor.py}" "samples/girona clouds"/*.avif --box 1010,410,1030,400 "${fixes[@]}" --pad "$PAD" --out "$OUT"
+uv run "${RUN:-anchor.py}" "samples/girona clouds"/*.avif --box 1010,410,1030,400 "${fixes[@]}" --pad "$PAD" --out "$OUT" "${@:2}"

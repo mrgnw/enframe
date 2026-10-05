@@ -2,6 +2,7 @@ import argparse
 import json
 import math
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 import sys
 from pathlib import Path
 from typing import NamedTuple
@@ -17,6 +18,7 @@ RATIO_TEST = 0.8
 RANSAC_TOLERANCE = 0.03
 MAX_STEP_ZOOM = 6
 MAX_STEP_TURN = 15
+RENDER_AHEAD = 8
 
 
 def load(path: Path) -> np.ndarray:
@@ -256,15 +258,22 @@ def render(
 		'-f', 'rawvideo', '-pix_fmt', 'rgba' if alpha else 'rgb24', '-s', f'{w}x{h}', '-r', str(fps), '-i', '-',
 		*(['-vf', filters] if filters else []), *encoder(out, alpha), str(out),
 	]  # fmt: skip
+
+	def finish(i: int, rgb: np.ndarray, source) -> np.ndarray:
+		frame = np.ascontiguousarray(place(rgb, source, size, fill))
+		if frames_dir is not None:
+			Image.fromarray(frame).save(frames_dir / f'{i:04d}.png')
+		return frame
+
 	with subprocess.Popen(cmd, stdin=subprocess.PIPE) as ffmpeg:
 		assert ffmpeg.stdin is not None
 		# ffmpeg prints why it quit (a bad --vf, say); the exit code below reports it without a traceback.
 		try:
-			for i, (rgb, source) in enumerate(zip(frames, sources), start=1):
-				frame = np.ascontiguousarray(place(rgb, source, size, fill))
-				if frames_dir is not None:
-					Image.fromarray(frame).save(frames_dir / f'{i:04d}.png')
-				ffmpeg.stdin.write(frame.tobytes())
+			# zlib and OpenCV release the GIL, so PNG saves run in parallel; buffersize bounds the frames held.
+			with ThreadPoolExecutor(RENDER_AHEAD) as pool:
+				numbers = range(1, len(frames) + 1)
+				for frame in pool.map(finish, numbers, frames, sources, buffersize=RENDER_AHEAD):
+					ffmpeg.stdin.write(frame.tobytes())
 			ffmpeg.stdin.close()
 		except BrokenPipeError:
 			pass
