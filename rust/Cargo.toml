@@ -7,6 +7,7 @@ license = "MIT"
 [dependencies]
 kornia-imgproc = { version = "0.2.0", optional = true }
 libc = "0.2"
+opencv = { version = "0.101", optional = true, default-features = false, features = ["features", "imgproc", "clang-runtime"] }
 png = "0.18.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
@@ -25,3 +26,5 @@ rayon = "1.12.0"
 [features]
 # SIFT from kornia-imgproc instead of this crate's port of OpenCV's.
 kornia = ["dep:kornia-imgproc"]
+# SIFT from OpenCV itself through the opencv crate (needs OpenCV 5 and libclang at build time).
+opencv = ["dep:opencv"]

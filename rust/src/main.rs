@@ -286,7 +286,7 @@ fn plan_resources(largest_pixels: usize, free_bytes: usize, cores: usize) -> Res
 	Resources { prepare_threads, render_threads, keep_bytes: budget - working }
 }
 
-#[cfg(not(feature = "kornia"))]
+#[cfg(not(any(feature = "kornia", feature = "opencv")))]
 fn find_features(small: &pixels::Image) -> sift::Features {
 	sift::detect_and_compute(small)
 }
@@ -331,6 +331,36 @@ fn find_features(small: &pixels::Image) -> sift::Features {
 		.map(|d| std::array::from_fn(|i| d[i] as u8))
 		.collect();
 	sift::Features { keypoints, descriptors }
+}
+
+/// OpenCV's own SIFT through the opencv crate, its float descriptors stored as bytes.
+#[cfg(feature = "opencv")]
+fn find_features(small: &pixels::Image) -> sift::Features {
+	use opencv::core::{Mat, Vector, no_array};
+	use opencv::features::SIFT;
+	use opencv::prelude::*;
+	let run = || -> opencv::Result<sift::Features> {
+		let gray = Mat::new_rows_cols_with_data(small.height as i32, small.width as i32, &small.pixels)?;
+		let mut sift = SIFT::create_def()?;
+		let (mut keypoints, mut descriptors) = (Vector::<opencv::core::KeyPoint>::new(), Mat::default());
+		sift.detect_and_compute(&gray, &no_array(), &mut keypoints, &mut descriptors, false)?;
+		let keypoints = keypoints
+			.iter()
+			.map(|k| sift::KeyPoint {
+				x: k.pt().x,
+				y: k.pt().y,
+				size: k.size(),
+				angle: k.angle(),
+				response: k.response(),
+				octave: k.octave(),
+			})
+			.collect::<Vec<_>>();
+		let values = descriptors.data_typed::<f32>().unwrap_or(&[]);
+		let descriptors =
+			values.chunks_exact(sift::DESCRIPTOR_LEN).map(|d| std::array::from_fn(|i| d[i] as u8)).collect();
+		Ok(sift::Features { keypoints, descriptors })
+	};
+	run().unwrap_or_else(|e| fail(&format!("OpenCV SIFT: {e}")))
 }
 
 fn prepare(path: &Path, size: (u32, u32), k: f64, keep: &Keep, i: usize) -> Photo {
