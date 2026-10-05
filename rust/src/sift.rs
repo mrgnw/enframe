@@ -206,18 +206,19 @@ fn reflect(mut i: isize, n: usize) -> usize {
 
 /// `GaussianBlur` on floats: a row pass that accumulates taps left to right with fused multiply-adds,
 /// then a symmetric column pass that adds mirrored rows before multiplying, as OpenCV's filters do.
+/// The compiler vectorizes both inner loops across the row.
 fn blur(src: &Plane, sigma: f64) -> Plane {
 	let kernel = gaussian_kernel(sigma);
 	let r = kernel.len() / 2;
 	let (w, h) = (src.width, src.height);
 	let mut rows = vec![0f32; w * h];
 	let mut ext = vec![0f32; w + 2 * r];
-	for y in 0..h {
+	for (y, out) in rows.chunks_exact_mut(w).enumerate() {
 		let s = src.row(y);
-		for (i, e) in ext.iter_mut().enumerate() {
-			*e = s[reflect(i as isize - r as isize, w)];
+		ext[r..r + w].copy_from_slice(s);
+		for i in (0..r).chain(r + w..w + 2 * r) {
+			ext[i] = s[reflect(i as isize - r as isize, w)];
 		}
-		let out = &mut rows[y * w..(y + 1) * w];
 		for (o, e) in out.iter_mut().zip(&ext) {
 			*o = e * kernel[0];
 		}
@@ -228,15 +229,12 @@ fn blur(src: &Plane, sigma: f64) -> Plane {
 		}
 	}
 	let mut data = vec![0f32; w * h];
-	for y in 0..h {
-		let out = &mut data[y * w..(y + 1) * w];
-		let center = &rows[y * w..(y + 1) * w];
-		for (o, c) in out.iter_mut().zip(center) {
+	for (y, out) in data.chunks_exact_mut(w).enumerate() {
+		for (o, c) in out.iter_mut().zip(&rows[y * w..(y + 1) * w]) {
 			*o = c * kernel[r];
 		}
 		for k in 1..=r {
-			let below = reflect(y as isize + k as isize, h);
-			let above = reflect(y as isize - k as isize, h);
+			let (below, above) = (reflect(y as isize + k as isize, h), reflect(y as isize - k as isize, h));
 			let (a, b) = (&rows[below * w..(below + 1) * w], &rows[above * w..(above + 1) * w]);
 			let kk = kernel[r + k];
 			for ((o, a), b) in out.iter_mut().zip(a).zip(b) {
@@ -246,7 +244,6 @@ fn blur(src: &Plane, sigma: f64) -> Plane {
 	}
 	Plane { width: w, height: h, data }
 }
-
 fn find_extrema(o: usize, gauss: &[Plane], dog: &[Plane], found: &mut Vec<(KeyPoint, [u8; DESCRIPTOR_LEN])>) {
 	let threshold = (0.5 * CONTRAST as f64 / LAYERS as f64 * 255.0).floor() as f32;
 	let (w, h) = (dog[0].width, dog[0].height);
@@ -302,23 +299,27 @@ fn find_extrema(o: usize, gauss: &[Plane], dog: &[Plane], found: &mut Vec<(KeyPo
 
 #[inline(always)]
 fn is_extremum(val: f32, i: usize, w: usize, prev: &[f32], cur: &[f32], next: &[f32]) -> bool {
-	let around = |p: &[f32], f: &dyn Fn(f32) -> bool| {
-		f(p[i - w - 1])
-			&& f(p[i - w])
-			&& f(p[i - w + 1])
-			&& f(p[i - 1])
-			&& f(p[i + 1])
-			&& f(p[i + w - 1])
-			&& f(p[i + w])
-			&& f(p[i + w + 1])
-	};
 	if val > 0.0 {
-		let ge = |v: f32| val >= v;
-		around(cur, &ge) && ge(next[i]) && around(next, &ge) && ge(prev[i]) && around(prev, &ge)
+		beats(|v| val >= v, i, w, prev, cur, next)
 	} else {
-		let le = |v: f32| val <= v;
-		around(cur, &le) && le(next[i]) && around(next, &le) && le(prev[i]) && around(prev, &le)
+		beats(|v| val <= v, i, w, prev, cur, next)
 	}
+}
+
+/// Whether `wins` holds against all 26 neighbours in scale space. Generic, so each comparison inlines.
+#[inline(always)]
+fn beats(wins: impl Fn(f32) -> bool, i: usize, w: usize, prev: &[f32], cur: &[f32], next: &[f32]) -> bool {
+	let around = |p: &[f32]| {
+		wins(p[i - w - 1])
+			&& wins(p[i - w])
+			&& wins(p[i - w + 1])
+			&& wins(p[i - 1])
+			&& wins(p[i + 1])
+			&& wins(p[i + w - 1])
+			&& wins(p[i + w])
+			&& wins(p[i + w + 1])
+	};
+	around(cur) && wins(next[i]) && around(next) && wins(prev[i]) && around(prev)
 }
 
 /// Interpolates an extremum to sub-pixel and sub-scale position and rejects weak or edge-like ones.
@@ -580,6 +581,29 @@ fn orientation_hist(
 	maxval
 }
 
+/// The columns of row i (relative to the keypoint) that can land in the rotated 4x4 grid, where both
+/// rotated coordinates lie within 2.5 histogram widths of the centre. OpenCV tests every pixel of the
+/// circle; testing only this span, widened by a pixel each side, keeps exactly the same samples.
+fn grid_columns(i: i32, cos_t: f32, sin_t: f32, radius: i32) -> (i32, i32) {
+	let half = (DESCR_WIDTH as f64 + 1.0) * 0.5;
+	let (mut lo, mut hi) = (-radius as f64, radius as f64);
+	let i = i as f64;
+	for (slope, offset) in [(cos_t as f64, -i * sin_t as f64), (sin_t as f64, i * cos_t as f64)] {
+		if slope.abs() < 1e-3 {
+			if offset.abs() > half + 0.01 {
+				return (1, 0);
+			}
+			continue;
+		}
+		let (a, b) = ((-half - offset) / slope, (half - offset) / slope);
+		(lo, hi) = (lo.max(a.min(b)), hi.min(a.max(b)));
+	}
+	if lo > hi {
+		return (1, 0);
+	}
+	((lo.floor() as i32 - 1).max(-radius), (hi.ceil() as i32 + 1).min(radius))
+}
+
 fn descriptor(img: &Plane, x: f32, y: f32, ori: f32, scl: f32) -> [u8; DESCRIPTOR_LEN] {
 	const D: usize = DESCR_WIDTH;
 	const N: usize = DESCR_BINS;
@@ -597,7 +621,8 @@ fn descriptor(img: &Plane, x: f32, y: f32, ori: f32, scl: f32) -> [u8; DESCRIPTO
 	let mut samples = Samples::with_capacity(side * side);
 	let mut bins: Vec<(f32, f32)> = Vec::with_capacity(side * side);
 	for i in -radius..=radius {
-		for j in -radius..=radius {
+		let (lo, hi) = grid_columns(i, cos_t, sin_t, radius);
+		for j in lo..=hi {
 			let (jf, i_f) = (j as f32, i as f32);
 			let c_rot = jf.mul_add(cos_t, -(i_f * sin_t));
 			let r_rot = jf.mul_add(sin_t, i_f * cos_t);
@@ -732,4 +757,22 @@ pub fn first_octave(gray: &Image) -> Vec<Vec<f32>> {
 		layers.push(next);
 	}
 	layers.into_iter().map(|p| p.data).collect()
+}
+#[cfg(test)]
+#[test]
+#[ignore]
+fn blur_bench() {
+	let data: Vec<f32> = (0..2048 * 1536).map(|i| (i % 251) as f32).collect();
+	let plane = Plane { width: 2048, height: 1536, data };
+	for sigma in [1.2262735, 1.9465878, 3.0900156] {
+		let mut best = std::time::Duration::MAX;
+		for _ in 0..10 {
+			let t = std::time::Instant::now();
+			std::hint::black_box(blur(&plane, sigma));
+			best = best.min(t.elapsed());
+		}
+		let taps = gaussian_kernel(sigma).len();
+		let fmas = 2048.0 * 1536.0 * (taps + taps / 2 + 1) as f64;
+		println!("blur_bench: {taps} taps {best:?}, {:.1} GFMA/s", fmas / best.as_secs_f64() / 1e9);
+	}
 }

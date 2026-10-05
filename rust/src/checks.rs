@@ -131,3 +131,26 @@ fn blur_matches_opencv() {
 		println!("layer {i}: {off} of {} differ, worst {worst}, first at {first:?}", theirs.len());
 	}
 }
+
+/// Fastest of 7 runs of SIFT on one photo, and a checksum of its output that optimizations must keep.
+#[test]
+#[ignore]
+fn sift_bench() {
+	let rgb = avif::decode(&Path::new(SAMPLES).join("IMG_4667.avif"), 1).unwrap();
+	let small = pixels::shrink_area(&pixels::gray(&rgb), 0.5);
+	let mut best = std::time::Duration::MAX;
+	let mut sum = 0u64;
+	let runs = std::env::var("SIFT_BENCH_RUNS").map_or(7, |v| v.parse().unwrap());
+	for _ in 0..runs {
+		let started = std::time::Instant::now();
+		let features = crate::sift::detect_and_compute(&small);
+		best = best.min(started.elapsed());
+		sum = features.descriptors.iter().flatten().map(|&b| b as u64).sum::<u64>()
+			+ features
+				.keypoints
+				.iter()
+				.map(|k| (k.x.to_bits() ^ k.size.to_bits() ^ k.angle.to_bits()) as u64)
+				.sum::<u64>();
+	}
+	println!("sift_bench: fastest {best:?}, checksum {sum}");
+}
