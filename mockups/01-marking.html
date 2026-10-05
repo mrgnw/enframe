@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>pinframe · fix lost photos</title>
 <link rel="stylesheet" href="pin.css">
 <style>
@@ -10,105 +10,147 @@
 		--before: #b49cff;
 		--after: #3fd8c4;
 	}
-	.stage { cursor: crosshair; }
-	.stage.linked { cursor: default; }
+	.stage { grid-template-rows: minmax(0, 1fr); place-items: stretch; }
+	.view { position: relative; display: grid; place-items: center; container-type: size; min-height: 0; }
+	.photo { width: min(100cqw, 100cqh * var(--r)); aspect-ratio: var(--r); touch-action: none; }
+	.view.edit .photo { cursor: crosshair; }
 	.where { font-variant-numeric: tabular-nums; }
 	.where b { color: var(--fg); font-weight: 600; }
+
 	.looking { height: auto; padding: 8px; border-radius: 14px; gap: 10px; align-items: flex-start; }
-	.looking .label { padding: 4px 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.3; }
+	.looking .label { padding: 4px 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.35; }
 	.looking .label b { display: block; color: var(--fg); font-weight: 600; font-size: 13px; }
-	.tools { gap: 6px; font-variant-numeric: tabular-nums; }
-	.tools .val { font: 600 15px/1 var(--display); min-width: 2.2ch; text-align: center; }
+	.looking .btn { margin-top: 6px; height: 26px; padding: 0 10px; background: rgba(255, 255, 255, 0.08); font-size: 12px; }
+
+	.tools { gap: 4px; font-variant-numeric: tabular-nums; }
+	.tools .val { font: 600 15px/1 var(--display); min-width: 2.4ch; text-align: center; }
 	.tools .val.off { font: 500 13px/1 var(--body); color: var(--muted); }
-	.tools .btn.icon { width: 24px; height: 24px; font-size: 15px; color: var(--muted); }
+	.tools .btn.icon { width: 26px; height: 26px; font-size: 15px; color: var(--muted); }
 	.tools .group { display: contents; }
-	.legend { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; margin-right: 4px; }
-	.legend svg { width: 9px; height: 9px; overflow: visible; }
-	.legend path { fill: none; stroke-width: 2; }
-	.legend .before path { stroke: var(--before); }
-	.legend .after path { stroke: var(--after); }
-	.legend .before + span { margin-right: 6px; }
-	.hint {
+	.legend { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; margin-right: 2px; }
+	.legend i { width: 7px; height: 7px; border-radius: 999px; }
+	.legend .b { background: var(--before); }
+	.legend .a { background: var(--after); margin-left: 4px; }
+
+	.nav { gap: 2px; padding: 0 4px; }
+	.nav .btn.icon { font-size: 17px; }
+
+	.overlay-msg {
 		position: absolute;
-		bottom: 64px;
+		bottom: 72px;
 		left: 50%;
 		translate: -50% 0;
+		z-index: 6;
+		white-space: nowrap;
+	}
+	.hint {
 		padding: 6px 12px;
 		border-radius: 999px;
 		background: rgba(0, 0, 0, 0.55);
 		color: rgba(255, 255, 255, 0.85);
 		font-size: 13px;
 		pointer-events: none;
-		z-index: 4;
 	}
+	.toast { position: absolute; gap: 8px; padding: 0 5px 0 14px; animation: rise 0.25s var(--ease); }
+	.toast .btn { background: rgba(255, 255, 255, 0.1); }
+	@keyframes rise { from { opacity: 0; translate: -50% 6px; } }
+
+	.box.just { animation: pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+	@keyframes pop { from { scale: 0.85; opacity: 0.4; } }
 
 	.ghost { visibility: hidden; }
 	.photo:hover .ghost { visibility: visible; }
+
 	.trail { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-	.trail path { fill: none; stroke-linecap: square; }
-	.trail .halo { stroke: rgba(0, 0, 0, 0.5); stroke-width: 3.5; }
-	.trail .tick { stroke-width: 1.75; }
-	.trail .before .tick, .trail .before circle { stroke: var(--before); }
-	.trail .after .tick, .trail .after circle { stroke: var(--after); }
-	.trail .mark .tick { stroke-width: 2.5; }
-	.trail .mark .halo { stroke-width: 4.5; }
-	.trail .lost path { stroke-dasharray: 3 3; }
-	.trail circle { fill: none; stroke-width: 1.75; }
+	.trail path, .trail circle { fill: none; }
+	.trail .halo { stroke: rgba(0, 0, 0, 0.5); }
+	.trail .line { stroke-width: 2.5; stroke-linecap: round; }
+	.trail .line.halo { stroke-width: 5.5; }
+	.trail .dashed { stroke-dasharray: 4 4; stroke-linecap: butt; }
+	.trail .before { stroke: var(--before); }
+	.trail .after { stroke: var(--after); }
+	.trail .tick { stroke-width: 1.5; }
+	.trail .tick.halo { stroke-width: 3.5; }
+	.trail .dot.tracked { fill: currentColor; stroke: rgba(0, 0, 0, 0.6); stroke-width: 1.5; }
+	.trail .dot.mark { stroke-width: 2.25; }
+	.trail .dot.lost { stroke-width: 1.5; stroke-dasharray: 2 2; fill: rgba(0, 0, 0, 0.35); }
+	.trail .before.dot { color: var(--before); }
+	.trail .after.dot { color: var(--after); }
+
+	@media (max-width: 700px) {
+		.stage { grid-template-rows: auto minmax(0, 1fr) auto; }
+		.view { padding: 0 8px; }
+		.looking { padding: 6px; gap: 8px; align-items: center; }
+		.looking .patch { width: 48px; height: 42px; }
+		.looking .label { padding: 0; }
+		.looking .label .more { display: none; }
+		.looking .btn { margin-top: 2px; }
+		.overlay-msg { bottom: 12px; }
+		.tools .btn.icon { width: 32px; height: 32px; }
+	}
 </style>
 </head>
 <body>
 
 <main class="stage" id="stage">
-	<div class="island tl">
-		<span class="wordmark">pin<b>frame</b></span>
-		<span class="sep"></span>
-		<span class="muted where" id="where"></span>
-	</div>
-
-	<div class="island tc steps">
-		<a class="step done" href="00-start.html"><span class="n">1</span>Box</a>
-		<span class="step active"><span class="n">2</span>Fix</span>
-		<span class="step"><span class="n">3</span>Export</span>
-	</div>
-
-	<div class="island tr" id="status">
-		<span class="count" id="count"><span class="dot"></span><span id="count-text"></span></span>
-		<button class="btn icon" id="next-lost" title="Next lost photo (Tab)">→</button>
-		<span class="sep"></span>
-		<a class="btn primary" href="02-preview.html">Preview</a>
-		<div class="bar"></div>
-	</div>
-
-	<div class="island bl looking" id="looking">
-		<div class="patch" id="patch"></div>
-		<div class="label">Looking for<b id="patch-from"></b>click where it is now<br>or <kbd>⏎</kbd> to accept the estimate</div>
-	</div>
-
-	<div class="island br tools">
-		<span class="legend" title="Anchor boxes of neighbouring photos: dashed = estimated, thick with a ring = your mark">
-			<svg class="before" viewBox="0 0 9 9"><path d="M1 8V1H8"/></svg><span>before</span>
-			<svg class="after" viewBox="0 0 9 9"><path d="M8 1V8H1"/></svg><span>after</span>
-		</span>
-		<button class="btn icon" id="trail-less" title="Fewer neighbours">−</button>
-		<span class="val" id="trail-n" title="Neighbours shown each side (T toggles)"></span>
-		<button class="btn icon" id="trail-more" title="More neighbours">+</button>
-		<span class="group" id="zoom-group">
+	<div class="row top">
+		<div class="island start">
+			<span class="wordmark desk">pin<b>frame</b></span>
+			<span class="sep desk"></span>
+			<span class="muted where" id="where"></span>
+		</div>
+		<div class="island steps mid desk">
+			<a class="step done" href="00-start.html"><span class="n">1</span>Box</a>
+			<span class="step active"><span class="n">2</span>Fix</span>
+			<span class="step"><span class="n">3</span>Export</span>
+		</div>
+		<div class="island end" id="status">
+			<span class="count" id="count"><span class="dot"></span><span id="count-text"></span></span>
+			<button class="btn icon" id="next-lost" title="Next lost photo (Tab)">→</button>
 			<span class="sep"></span>
-			<span class="muted" title="Zoom relative to the first photo. Scroll, or [ and ]">zoom</span>
-			<span class="val" id="zoom-val"></span>
-			<kbd>[</kbd><kbd>]</kbd>
-		</span>
+			<a class="btn primary" href="02-preview.html">Preview</a>
+			<div class="bar"></div>
+		</div>
 	</div>
 
-	<div class="hint" id="hint">Click the cloud · drag to narrow the search · scroll to change zoom</div>
+	<div class="view" id="view">
+		<div class="photo" id="photo">
+			<img id="img" alt="">
+			<svg class="trail" id="trail"></svg>
+			<div class="box estimate" id="estimate"><span class="cross"></span><span class="tag">estimated</span></div>
+			<div class="box" id="markbox" hidden><span class="cross"></span><span class="tag" id="mark-tag"></span></div>
+			<div class="box ghost" id="ghost"><span class="cross"></span></div>
+			<div class="box drawing" id="drawing" hidden></div>
+		</div>
+		<div class="overlay-msg hint desk" id="hint"></div>
+		<div class="overlay-msg island toast" id="toast" hidden>
+			<span id="toast-text"></span>
+			<button class="btn" id="undo">Undo <kbd class="desk">⌘Z</kbd></button>
+		</div>
+	</div>
 
-	<div class="photo" id="photo">
-		<img id="img" alt="">
-		<svg class="trail" id="trail"></svg>
-		<div class="box estimate" id="estimate"><span class="cross"></span><span class="tag">estimated</span></div>
-		<div class="box ghost" id="ghost"><span class="cross"></span></div>
-		<div class="box drawing" id="drawing" hidden></div>
-		<div class="box" id="markbox" hidden><span class="cross"></span><span class="tag" id="mark-tag"></span></div>
+	<div class="row bottom">
+		<div class="island looking start" id="looking">
+			<div class="patch" id="patch"></div>
+			<div class="label" id="looking-label"></div>
+		</div>
+		<div class="island nav mid phone">
+			<button class="btn icon" id="prev" title="Previous photo">‹</button>
+			<button class="btn icon" id="next" title="Next photo">›</button>
+		</div>
+		<div class="island tools end">
+			<span class="legend" title="Path of the anchor through neighbouring photos: dashed = estimated, ring = your mark"><i class="b"></i><span class="desk">before</span><i class="a"></i><span class="desk">after</span></span>
+			<button class="btn icon" id="trail-less" title="Fewer neighbours">−</button>
+			<span class="val" id="trail-n" title="Neighbours shown each side (T toggles)"></span>
+			<button class="btn icon" id="trail-more" title="More neighbours">+</button>
+			<span class="group" id="zoom-group">
+				<span class="sep"></span>
+				<span class="muted desk">zoom</span>
+				<button class="btn icon" id="zoom-out" title="Zoom out ([)">−</button>
+				<span class="val" id="zoom-val"></span>
+				<button class="btn icon" id="zoom-in" title="Zoom in (])">+</button>
+			</span>
+		</div>
 	</div>
 </main>
 
@@ -118,18 +160,22 @@
 <script>
 	// ponytail: a scenario, not the live tracker. Real Girona anchors; IMG_4703 un-marked so four photos are left to fix.
 	const ZOOMS = [1, 1.5, 2, 2.5, 3, 5];
-	const TRAIL_MIN = 5, TRAIL_MAX = 10, TRAIL_DEFAULT = 6;
+	const TRAIL_MIN = 5, TRAIL_MAX = 10, TRAIL_DEFAULT = 6, BOXES_NEAR = 1;
+	const ADVANCE_MS = 450, TOAST_MS = 6000, HISTORY_MAX = 100;
 	const photos = PHOTOS.map(p => ({ ...p }));
 	Object.assign(photos.find(p => p.name === 'IMG_4703'), { source: 'lost', feats: 3 });
 
 	let current = photos.findIndex(p => p.name === 'IMG_4721');
 	let zoom = 1;
 	let trailN = TRAIL_DEFAULT, trailLast = TRAIL_DEFAULT;
+	const history = [];
+	let advanceTimer = null, toastTimer = null;
 
 	const $ = id => document.getElementById(id);
-	const stage = $('stage'), photo = $('photo'), img = $('img'), ghost = $('ghost'), estimate = $('estimate');
+	const view = $('view'), photo = $('photo'), img = $('img'), ghost = $('ghost'), estimate = $('estimate');
 	const markbox = $('markbox'), drawing = $('drawing'), filmstrip = $('filmstrip'), trail = $('trail');
 	const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+	const phone = matchMedia('(max-width: 700px)');
 
 	function place(el, [cx, cy, w, h]) {
 		Object.assign(el.style, { left: `${(cx - w / 2) * 100}%`, top: `${(cy - h / 2) * 100}%`, width: `${w * 100}%`, height: `${h * 100}%` });
@@ -150,24 +196,32 @@
 	function renderStage() {
 		const p = photos[current];
 		img.src = `assets/${p.name}.jpg`;
-		photo.style.aspectRatio = `${p.w} / ${p.h}`;
-		photo.style.width = p.w > p.h ? 'min(100%, calc((100vh - 110px) * 4 / 3))' : 'min(100%, calc((100vh - 110px) * 3 / 4))';
-		$('where').innerHTML = `<b>${p.name}</b> · ${current + 1} / ${photos.length}`;
-		const lost = p.source === 'lost';
-		stage.classList.toggle('linked', !lost);
-		for (const el of [estimate, ghost, $('hint'), $('looking'), $('zoom-group')]) el.hidden = !lost;
+		photo.style.setProperty('--r', p.w / p.h);
+		$('where').innerHTML = `<b class="desk">${p.name} · </b>${current + 1} / ${photos.length}`;
+		const lost = p.source === 'lost', editable = p.source !== 'tracked';
+		view.classList.toggle('edit', editable);
+		estimate.hidden = !lost;
+		ghost.hidden = !editable;
 		markbox.hidden = lost;
-		if (lost) {
-			place(estimate, p.a);
+		$('looking').hidden = !editable;
+		$('zoom-group').hidden = !editable;
+		$('hint').hidden = !editable || !$('toast').hidden;
+		$('hint').textContent = lost ? 'Click the cloud · drag to narrow the search · scroll to change zoom' : 'Click or drag to move your mark';
+		if (editable) {
 			const ref = prevLinked(current);
-			zoom = ref.scale;
-			$('patch-from').textContent = `${ref.name} · found at ${ref.scale.toFixed(2)}×`;
-			const patch = $('patch'), k = 120 / (ref.a[2] * ref.w);
+			zoom = lost ? ref.scale : p.scale;
+			const patch = $('patch'), pw = patch.offsetWidth || 120, ph = patch.offsetHeight || 105, k = pw / (ref.a[2] * ref.w);
 			patch.style.backgroundImage = `url(assets/${ref.name}.jpg)`;
 			patch.style.backgroundSize = `${ref.w * k}px auto`;
-			patch.style.backgroundPosition = `${-(ref.a[0] - ref.a[2] / 2) * ref.w * k}px ${-(ref.a[1] - ref.a[3] / 2) * ref.h * k + (105 - ref.a[3] * ref.h * k) / 2}px`;
+			patch.style.backgroundPosition = `${-(ref.a[0] - ref.a[2] / 2) * ref.w * k}px ${-(ref.a[1] - ref.a[3] / 2) * ref.h * k + (ph - ref.a[3] * ref.h * k) / 2}px`;
+			$('looking-label').innerHTML = lost
+				? `Looking for<b>${ref.name} · ${ref.scale.toFixed(2)}×</b><span class="more">${phone.matches ? 'tap where it is now' : 'click where it is now<br>or <kbd>⏎</kbd> to accept the estimate'}</span>`
+				: `Your mark<b>${p.scale.toFixed(2)}×</b><button class="btn" id="clear">Clear mark <kbd class="desk">⌫</kbd></button>`;
+			$('clear')?.addEventListener('click', clearMark);
 			sizeGhost();
-		} else {
+		}
+		if (lost) place(estimate, p.a);
+		else {
 			markbox.className = `box ${p.source}`;
 			$('mark-tag').textContent = p.source === 'mark' ? `your mark · ${p.scale.toFixed(2)}×` : `${p.feats} features · ${p.scale.toFixed(2)}×`;
 			place(markbox, p.a);
@@ -182,36 +236,53 @@
 		$('zoom-val').textContent = `${+zoom.toFixed(2)}×`;
 	}
 
-	// Corner ticks of up to trailN neighbours each side, at their own normalized position. Far ones first, so near ones sit on top.
+	// The trail: a path through the anchor centres of up to trailN photos each side, in order, with a dot per photo.
+	// Corner ticks only on the nearest BOXES_NEAR each side, where box size (a lens switch) matters most.
+	const fade = d => trailN === 1 ? 0.95 : 0.95 - 0.6 * (d - 1) / (trailN - 1);
+
 	function drawTrail() {
 		const W = photo.clientWidth, H = photo.clientHeight;
 		trail.setAttribute('viewBox', `0 0 ${W} ${H}`);
-		let out = '';
-		for (let d = trailN; d >= 1; d--) {
-			const opacity = trailN === 1 ? 0.9 : 0.9 - 0.7 * (d - 1) / (trailN - 1);
-			for (const [dir, side] of [[-1, 'before'], [1, 'after']]) {
-				const q = photos[current + dir * d];
-				if (q) out += corners(q, W, H, opacity, side);
-			}
-		}
-		trail.innerHTML = out;
 		$('trail-n').textContent = trailN ? trailN : 'off';
 		$('trail-n').classList.toggle('off', !trailN);
+		if (!trailN) { trail.innerHTML = ''; return; }
+		const pts = [];
+		for (let k = -trailN; k <= trailN; k++) {
+			const q = photos[current + k];
+			if (q) pts.push({ q, k, x: q.a[0] * W, y: q.a[1] * H });
+		}
+		let lines = '', ticks = '', dots = '';
+		for (let j = 0; j + 1 < pts.length; j++) {
+			const a = pts[j], b = pts[j + 1];
+			const side = b.k <= 0 ? 'before' : 'after';
+			const d = Math.max(Math.abs(a.k), Math.abs(b.k));
+			const dash = a.q.source === 'lost' || b.q.source === 'lost' ? ' dashed' : '';
+			const seg = `M${a.x} ${a.y}L${b.x} ${b.y}`;
+			lines += `<g opacity="${fade(d).toFixed(2)}"><path class="line halo${dash}" d="${seg}"/><path class="line ${side}${dash}" d="${seg}"/></g>`;
+		}
+		for (const { q, k, x, y } of pts) {
+			if (k === 0) continue;
+			const side = k < 0 ? 'before' : 'after', d = Math.abs(k);
+			const r = q.source === 'mark' ? 5.5 : 4;
+			dots += `<circle class="dot ${side} ${q.source}" opacity="${fade(d).toFixed(2)}" cx="${x}" cy="${y}" r="${r}"${q.source === 'mark' ? ` stroke="var(--${side})"` : ''}/>`;
+			if (d <= BOXES_NEAR) ticks += corners(q, W, H, fade(d) * 0.8, side);
+		}
+		trail.innerHTML = ticks + lines + dots;
 	}
 
 	function corners(q, W, H, opacity, side) {
 		const [cx, cy, bw, bh] = q.a;
 		const x0 = (cx - bw / 2) * W, x1 = (cx + bw / 2) * W, y0 = (cy - bh / 2) * H, y1 = (cy + bh / 2) * H;
-		const L = clamp(0.18 * Math.min(x1 - x0, y1 - y0), 5, 16);
+		const L = clamp(0.18 * Math.min(x1 - x0, y1 - y0), 5, 14);
 		const d = `M${x0} ${y0 + L}V${y0}H${x0 + L}M${x1 - L} ${y0}H${x1}V${y0 + L}M${x1} ${y1 - L}V${y1}H${x1 - L}M${x0 + L} ${y1}H${x0}V${y1 - L}`;
-		const ring = q.source === 'mark' ? `<circle cx="${cx * W}" cy="${cy * H}" r="3"/>` : '';
-		return `<g class="${side} ${q.source}" opacity="${opacity.toFixed(2)}"><path class="halo" d="${d}"/><path class="tick" d="${d}"/>${ring}</g>`;
+		const dash = q.source === 'lost' ? ' dashed' : '';
+		return `<g opacity="${opacity.toFixed(2)}"><path class="tick halo${dash}" d="${d}"/><path class="tick ${side}${dash}" d="${d}"/></g>`;
 	}
 
 	function renderFilmstrip() {
 		const lost = photos.filter(p => p.source === 'lost').length;
 		$('count').className = `count${lost ? '' : ' ok'}`;
-		$('count-text').textContent = lost ? `${lost} to fix` : `All ${photos.length} linked`;
+		$('count-text').textContent = lost ? `${lost}${phone.matches ? '' : ' to fix'}` : phone.matches ? '0' : `All ${photos.length} linked`;
 		$('next-lost').disabled = !lost;
 		filmstrip.innerHTML = photos.map((p, i) => {
 			const tip = p.source === 'mark' ? 'your mark' : p.source === 'lost' ? `lost · ${p.feats} features · estimated` : `${p.feats} features`;
@@ -219,8 +290,9 @@
 		}).join('');
 	}
 
-	// Jumps (Tab, Home, End) centre the current thumb smoothly; steps and scrubbing only keep it in view.
+	// Jumps (Tab, Home, End, undo) centre the current thumb smoothly; steps and scrubbing only keep it in view.
 	function go(i, jump = false) {
+		clearTimeout(advanceTimer);
 		i = clamp(i, 0, photos.length - 1);
 		filmstrip.children[current]?.classList.remove('current');
 		current = i;
@@ -237,15 +309,54 @@
 		}
 	}
 
-	function mark(a) {
-		const p = photos[current];
-		if (p.source !== 'lost') return;
-		Object.assign(p, { source: 'mark', a, scale: zoom, feats: null });
-		retrack();
-		nextLost();
+	function remember(i) {
+		history.push({ i, before: { ...photos[i], a: [...photos[i].a] } });
+		if (history.length > HISTORY_MAX) history.shift();
 	}
 
-	// Re-tracking with cached keypoints is ~0.3–0.5 s. Dots dim while it runs; the stage has already moved on.
+	// A mark shows where it landed, with an undo, then moves on. Moving an existing mark stays put.
+	function mark(a) {
+		const p = photos[current], i = current;
+		if (p.source === 'tracked') return;
+		const wasLost = p.source === 'lost';
+		remember(i);
+		Object.assign(p, { source: 'mark', a, scale: zoom, feats: null });
+		renderStage();
+		markbox.classList.add('just');
+		toast(`${wasLost ? 'Marked' : 'Moved mark on'} ${p.name}`);
+		retrack();
+		if (wasLost) advanceTimer = setTimeout(() => { if (current === i) nextLost(); }, ADVANCE_MS);
+	}
+
+	function clearMark() {
+		const p = photos[current];
+		if (p.source !== 'mark' || current === 0) return;
+		remember(current);
+		Object.assign(p, { source: 'lost', feats: 0 });
+		toast(`Cleared mark on ${p.name}`);
+		retrack();
+		renderStage();
+	}
+
+	function undo() {
+		const h = history.pop();
+		if (!h) return;
+		Object.assign(photos[h.i], h.before);
+		retrack();
+		go(h.i, true);
+		toast(`Undone on ${photos[h.i].name}`, history.length > 0);
+	}
+
+	function toast(text, canUndo = true) {
+		clearTimeout(toastTimer);
+		$('toast-text').textContent = text;
+		$('undo').hidden = !canUndo;
+		$('toast').hidden = false;
+		$('hint').hidden = true;
+		toastTimer = setTimeout(() => { $('toast').hidden = true; renderStage(); }, TOAST_MS);
+	}
+
+	// Re-tracking with cached keypoints is ~0.3–0.5 s. Dots dim while it runs; the stage may already have moved on.
 	function retrack() {
 		$('status').classList.add('busy');
 		filmstrip.classList.add('dim');
@@ -253,7 +364,8 @@
 			$('status').classList.remove('busy');
 			filmstrip.classList.remove('dim');
 			renderFilmstrip();
-			go(current);
+			filmstrip.children[current].classList.add('current');
+			drawTrail();
 		}, 450);
 	}
 
@@ -262,10 +374,22 @@
 		if (n) trailLast = n;
 		drawTrail();
 	}
+	function stepZoom(dir) {
+		const i = ZOOMS.findIndex(z => z >= zoom - 1e-6);
+		zoom = ZOOMS[clamp((i < 0 ? ZOOMS.length - 1 : i) + dir, 0, ZOOMS.length - 1)];
+		sizeGhost();
+	}
+
 	$('trail-less').addEventListener('click', () => setTrail(trailN <= TRAIL_MIN ? 0 : trailN - 1));
 	$('trail-more').addEventListener('click', () => setTrail(trailN ? Math.min(TRAIL_MAX, trailN + 1) : TRAIL_MIN));
+	$('zoom-out').addEventListener('click', () => stepZoom(-1));
+	$('zoom-in').addEventListener('click', () => stepZoom(1));
+	$('prev').addEventListener('click', () => go(current - 1));
+	$('next').addEventListener('click', () => go(current + 1));
+	$('next-lost').addEventListener('click', () => nextLost());
+	$('undo').addEventListener('click', undo);
 
-	// Stage: click marks a point, drag marks a search box, scroll sets the zoom.
+	// Stage: click or tap marks a point, drag marks a search box, scroll sets the zoom.
 	let drag = null;
 	const norm = e => { const r = photo.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }; };
 	photo.addEventListener('pointermove', e => {
@@ -274,31 +398,29 @@
 		ghost.style.top = `calc(${n.y * 100}% - ${ghost.offsetHeight / 2}px)`;
 		if (!drag) return;
 		drawing.hidden = false;
-		ghost.hidden = true;
 		Object.assign(drawing.style, { left: `${Math.min(n.x, drag.x) * 100}%`, top: `${Math.min(n.y, drag.y) * 100}%`, width: `${Math.abs(n.x - drag.x) * 100}%`, height: `${Math.abs(n.y - drag.y) * 100}%` });
 	});
-	photo.addEventListener('pointerdown', e => { if (photos[current].source === 'lost') drag = norm(e); });
+	photo.addEventListener('pointerdown', e => {
+		if (photos[current].source === 'tracked') return;
+		photo.setPointerCapture(e.pointerId);
+		drag = norm(e);
+	});
 	photo.addEventListener('pointerup', e => {
 		if (!drag) return;
 		const p = photos[current], n = norm(e);
 		const w = Math.abs(n.x - drag.x), h = Math.abs(n.y - drag.y);
 		drawing.hidden = true;
-		if (w * p.w > 12 && h * p.h > 12) mark([(n.x + drag.x) / 2, (n.y + drag.y) / 2, w, h]);
-		else mark([n.x, n.y, ...ghostSize(p)]);
+		const start = drag;
 		drag = null;
+		if (w * p.w > 12 && h * p.h > 12) mark([(n.x + start.x) / 2, (n.y + start.y) / 2, w, h]);
+		else mark([n.x, n.y, ...ghostSize(p)]);
 	});
 	photo.addEventListener('wheel', e => {
-		if (photos[current].source !== 'lost') return;
+		if (photos[current].source === 'tracked') return;
 		e.preventDefault();
 		stepZoom(e.deltaY < 0 ? 1 : -1);
 	}, { passive: false });
 	new ResizeObserver(drawTrail).observe(photo);
-
-	function stepZoom(dir) {
-		const i = ZOOMS.findIndex(z => z >= zoom - 1e-6);
-		zoom = ZOOMS[clamp((i < 0 ? ZOOMS.length - 1 : i) + dir, 0, ZOOMS.length - 1)];
-		sizeGhost();
-	}
 
 	// Filmstrip: press and drag to scrub; near either edge it scrolls on its own. A vertical wheel scrolls it sideways.
 	let scrubX = null;
@@ -330,27 +452,24 @@
 		filmstrip.scrollLeft += e.deltaY;
 	}, { passive: false });
 
-	$('next-lost').addEventListener('click', () => nextLost());
-
 	window.addEventListener('keydown', e => {
 		const p = photos[current];
 		const step = e.shiftKey ? 10 : 1;
-		if (e.key === 'ArrowRight') { e.preventDefault(); go(current + step); }
+		if (e.key === 'z' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); undo(); }
+		else if (e.key === 'ArrowRight') { e.preventDefault(); go(current + step); }
 		else if (e.key === 'ArrowLeft') { e.preventDefault(); go(current - step); }
 		else if (e.key === 'Home') { e.preventDefault(); go(0, true); }
 		else if (e.key === 'End') { e.preventDefault(); go(photos.length - 1, true); }
 		else if (e.key === 'Tab' || e.key === 'l') { e.preventDefault(); nextLost(e.shiftKey ? -1 : 1); }
 		else if (e.key === 'Enter' && p.source === 'lost') mark(p.a);
-		else if ((e.key === 'Backspace' || e.key === 'Delete') && p.source === 'mark') {
-			Object.assign(p, { source: 'lost', feats: 0 });
-			retrack();
-		}
+		else if (e.key === 'Backspace' || e.key === 'Delete') clearMark();
 		else if (e.key === 't') setTrail(trailN ? 0 : trailLast);
 		else if (e.key === ']') stepZoom(1);
 		else if (e.key === '[') stepZoom(-1);
-		else if (e.key === '1' && p.source === 'lost') { zoom = 1; sizeGhost(); }
+		else if (e.key === '1' && p.source !== 'tracked') { zoom = 1; sizeGhost(); }
 		else if (e.key === 'Escape') { drag = null; drawing.hidden = true; }
 	});
+	phone.addEventListener('change', () => { renderFilmstrip(); go(current); });
 
 	renderFilmstrip();
 	go(current, true);
