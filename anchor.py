@@ -20,6 +20,9 @@ RANSAC_TOLERANCE = 0.03
 MAX_STEP_ZOOM = 6
 MAX_STEP_TURN = 15
 RENDER_AHEAD = 8
+# On the M4 Pro (8 performance + 4 efficiency cores), Girona decode + SIFT: 4 threads 1.6 s,
+# 6 threads 1.5 s, 8 threads 1.6 s with more memory; one photo at a time 2.3 s.
+PREPARE_WORKERS = 6
 # libaom's fastest preset; on the Girona clip it encodes as fast as ProRes at 1/12 the size, 40 dB PSNR.
 AVIF_SPEED = 10
 AVIF_QUALITY = 75
@@ -28,6 +31,14 @@ AVIF_QUALITY = 75
 def load(path: Path) -> np.ndarray:
 	with Image.open(path) as im:
 		return np.asarray(ImageOps.exif_transpose(im).convert('RGB'))
+
+
+def header_sizes(paths: list[Path]) -> list[tuple[int, int]]:
+	sizes = []
+	for path in paths:
+		with Image.open(path) as im:
+			sizes.append(im.size)
+	return sizes
 
 
 def gray(rgb: np.ndarray) -> np.ndarray:
@@ -73,6 +84,33 @@ def similarity(kp, des, kp2, des2, tolerance: float):
 	return M, int(inliers.sum())
 
 
+class Photo(NamedTuple):
+	rgb: np.ndarray
+	small_shape: tuple[int, ...]  # the downscaled gray image SIFT ran on
+	keypoints: tuple
+	descriptors: np.ndarray | None
+
+
+def track_factor(sizes) -> float:
+	"""One downscale for every photo, so differing resolutions show up as scale, like a lens change.
+	The long edge is the same whichever way EXIF rotates the photo."""
+	return min(1.0, TRACK_EDGE / max(max(size) for size in sizes))
+
+
+def prepare(rgb: np.ndarray, k: float) -> Photo:
+	small = resize(gray(rgb), k)
+	# A fresh SIFT per call, because photos are prepared on several threads at once.
+	kp, des = cv2.SIFT_create().detectAndCompute(small, None)
+	return Photo(rgb, small.shape, kp, des)
+
+
+def load_photos(paths: list[Path], k: float) -> list[Photo]:
+	"""Decode and find features photo by photo across threads. AVIF decoding and SIFT each keep only about
+	half the cores busy, so running one photo's decode beside another's SIFT fills the rest."""
+	with ThreadPoolExecutor(PREPARE_WORKERS) as pool:
+		return list(pool.map(lambda path: prepare(load(path), k), paths))
+
+
 class Hit(NamedTuple):
 	x: float
 	y: float
@@ -92,26 +130,22 @@ def plausible(M: np.ndarray) -> tuple[bool, float, float]:
 	return 1 / MAX_STEP_ZOOM <= step <= MAX_STEP_ZOOM and abs(turn) <= MAX_STEP_TURN, step, turn
 
 
-def track(frames: list[np.ndarray], marks: dict[int, tuple[float, ...]]) -> list[Hit]:
-	"""Per frame: anchor position, its scale relative to the first box, and how it was found.
+def track(photos: list[Photo], k: float, marks: dict[int, tuple[float, ...]]) -> list[Hit]:
+	"""Per photo: anchor position, its scale relative to the first box, and how it was found.
 
-	marks maps a frame index to where the user put the anchor: x,y or a box x,y,w,h, plus an optional
-	zoom relative to the first photo. Frame 0 needs a box; later marks fix photos the tracker lost and
-	keep the zoom unless they give one.
+	k is the downscale the photos' features were found at. marks maps a photo index to where the user put
+	the anchor: x,y or a box x,y,w,h, plus an optional zoom relative to the first photo. Photo 0 needs a
+	box; later marks fix photos the tracker lost and keep the zoom unless they give one.
 	"""
 	assert 0 in marks and len(marks[0]) == 4, 'the first photo needs a box'
-	# One factor for every frame, so differing resolutions show up as scale, like a lens change.
-	k = min(1.0, TRACK_EDGE / max(max(f.shape[:2]) for f in frames))
-	small = [resize(gray(f), k) for f in frames]
-	sift = cv2.SIFT_create()
-
 	path: list[Hit] = []
 	cx = cy = 0.0
 	rw, rh = marks[0][2] * k, marks[0][3] * k
 	scale = 1.0
 	kp, des = None, None
-	for i, g in enumerate(small):
-		fh, fw = frames[i].shape[:2]
+	for i, photo in enumerate(photos):
+		fh, fw = photo.rgb.shape[:2]
+		kp2, des2 = photo.keypoints, photo.descriptors
 		mark = marks.get(i)
 		if mark is not None:
 			assert len(mark) in (2, 4, 5), f'photo {i}: a mark is x,y or x,y,w,h with an optional zoom'
@@ -131,7 +165,6 @@ def track(frames: list[np.ndarray], marks: dict[int, tuple[float, ...]]) -> list
 			cx, cy = px * k, py * k
 			source, note = 'mark', 'your mark'
 		else:
-			kp2, des2 = sift.detectAndCompute(g, None)
 			M, agreed = similarity(kp, des, kp2, des2, RANSAC_TOLERANCE * rw)
 			if M is None or agreed < MIN_INLIERS:
 				path.append(Hit(cx / k, cy / k, scale, 'lost', f'LOST ({agreed} features), estimated'))
@@ -147,9 +180,7 @@ def track(frames: list[np.ndarray], marks: dict[int, tuple[float, ...]]) -> list
 			source, note = 'tracked', f'{agreed} features'
 		path.append(Hit(cx / k, cy / k, scale, source, note))
 		# Clouds deform, so features come from the latest find, never from a lost frame.
-		mask = box_mask(g.shape, cx, cy, rw, rh)
-		# A tracked photo already has its whole-photo features; a marked one skipped that run.
-		fresh = features_in(kp2, des2, mask) if source == 'tracked' else sift.detectAndCompute(g, mask)
+		fresh = features_in(kp2, des2, box_mask(photo.small_shape, cx, cy, rw, rh))
 		if i == 0:
 			assert len(fresh[0]) >= MIN_INLIERS, (
 				f'only {len(fresh[0])} features in the box; draw a bigger one'
@@ -328,9 +359,9 @@ def pick_box(rgb: np.ndarray) -> tuple[int, int, int, int]:
 	return tuple(int(v) for v in box)
 
 
-def plan(frames: list[np.ndarray], boxes, pad: bool = False):
-	sizes = [(f.shape[1], f.shape[0]) for f in frames]
-	path = fill_lost(track(frames, boxes), sizes)
+def plan(photos: list[Photo], k: float, boxes, pad: bool = False):
+	sizes = [(photo.rgb.shape[1], photo.rgb.shape[0]) for photo in photos]
+	path = fill_lost(track(photos, k, boxes), sizes)
 	scaled_sizes = [(fw / hit.scale, fh / hit.scale) for (fw, fh), hit in zip(sizes, path)]
 	scaled_anchors = [(hit.x / hit.scale, hit.y / hit.scale) for hit in path]
 	rects = crop_rects(scaled_sizes, scaled_anchors, pad)
@@ -405,7 +436,9 @@ def main():
 		assert args.vf is None, '--vf runs through ffmpeg: use a .mp4, .mov or .webm --out'
 	else:
 		encoder(args.out, fill is not None and len(fill) == 4)
-	frames = [load(p) for p in paths]
+	k = track_factor(header_sizes(paths))
+	photos = load_photos(paths, k)
+	frames = [photo.rgb for photo in photos]
 	boxes = {0: parse_box(args.box) if args.box else pick_box(frames[0])}
 	names = [p.name for p in paths]
 	for fix in args.at:
@@ -413,7 +446,7 @@ def main():
 		assert name in names, f'--at {name}: not one of the photos'
 		boxes[names.index(name)] = parse_box(value)
 
-	path, sizes, sources, size = plan(frames, boxes, pad=fill is not None)
+	path, sizes, sources, size = plan(photos, k, boxes, pad=fill is not None)
 	for p, (fw, fh), hit in zip(paths, sizes, path):
 		print(f'{p.name}  {fw}x{fh}  anchor {hit.x:.0f},{hit.y:.0f}  scale {hit.scale:.2f}  {hit.note}')
 	print(f'clip {size[0]}x{size[1]}')
@@ -436,12 +469,16 @@ def demo():
 		frames.append(np.dstack([resize(world[y : y + h, x : x + w], s)] * 3))
 		truth.append(((anchor[0] - x) * s, (anchor[1] - y) * s, s))
 
+	def prepared(images: list[np.ndarray]) -> tuple[list[Photo], float]:
+		k = track_factor([image.shape[:2] for image in images])
+		return [prepare(image, k) for image in images], k
+
 	tx, ty, _ = truth[0]
 	box = (round(tx) - 80, round(ty) - 80, 160, 160)
 	ux, uy, _ = truth[1]
 	# Tracked alone, then with the user boxing frame 1: its box size must carry the 0.5 scale onward.
 	for marks in ({0: box}, {0: box, 1: (round(ux) - 40, round(uy) - 40, 80, 80, 0.5)}):
-		path = track(frames, marks)
+		path = track(*prepared(frames), marks)
 		for hit, (ex, ey, es) in zip(path, truth):
 			assert hit.found and abs(hit.x - ex) <= 2 and abs(hit.y - ey) <= 2, (path, truth)
 			assert abs(hit.scale / es - 1) < 0.03, (path, truth)
@@ -450,7 +487,7 @@ def demo():
 	# A point on a photo at the same zoom moves the anchor there and keeps the scale.
 	same_zoom = [frames[0], np.dstack([world[400:700, 450:850]] * 3)]
 	for mark in ((150, 200), (100, 150, 100, 100)):
-		path = track(same_zoom, {0: box, 1: mark})
+		path = track(*prepared(same_zoom), {0: box, 1: mark})
 		assert path[1][:3] == (150, 200, 1.0) and path[1].note == 'your mark', path
 
 	# A fit that spins or zooms 10x between two photos is a false match, not a camera move.
@@ -458,13 +495,13 @@ def demo():
 	assert not plausible(np.float64([[0.7, -0.7, 0], [0.7, 0.7, 0]]))[0]
 	assert plausible(np.float64([[2.5, 0.05, 0], [-0.05, 2.5, 0]]))[0]
 
-	_, _, sources, size = plan(frames, {0: box})
+	_, _, sources, size = plan(*prepared(frames), {0: box})
 	crops = [place(f, src, size, None).astype(int) for f, src in zip(frames, sources)]
 	for c in crops[1:]:
 		assert np.abs(c - crops[0]).mean() < 8, 'locked crops of a static world must match'
 
 	# Padded: a bigger crop that overhangs some photos; where every photo shows, they must still agree.
-	_, _, sources, padded = plan(frames, {0: box}, pad=True)
+	_, _, sources, padded = plan(*prepared(frames), {0: box}, pad=True)
 	assert padded[0] * padded[1] > size[0] * size[1]
 	crops = [place(f, src, padded, (0, 0, 0, 0)).astype(int) for f, src in zip(frames, sources)]
 	alpha = np.stack([c[..., 3] for c in crops])
@@ -474,8 +511,19 @@ def demo():
 	for c in crops[1:]:
 		assert np.abs(c[solid] - crops[0][solid]).mean() < 8, 'padding must not move the anchor'
 
-	# The default output keeps every frame, the frame rate and the transparency.
 	with tempfile.TemporaryDirectory() as tmp:
+		# Photos prepared across threads get exactly the features one thread would find.
+		paths = [Path(tmp) / f'{i}.png' for i in range(len(frames))]
+		for frame, p in zip(frames, paths):
+			Image.fromarray(frame).save(p)
+		k = track_factor(header_sizes(paths))
+		pooled = load_photos(paths, k)
+		for photo, frame in zip(pooled, frames):
+			alone = prepare(frame, k)
+			assert [p.pt for p in photo.keypoints] == [p.pt for p in alone.keypoints]
+			assert np.array_equal(photo.descriptors, alone.descriptors)
+
+		# The default output keeps every frame, the frame rate and the transparency.
 		clip = Path(tmp) / 'clip.avif'
 		write_avif([place(f, src, padded, (0, 0, 0, 0)) for f, src in zip(frames, sources)], clip, 4)
 		with Image.open(clip) as im:
