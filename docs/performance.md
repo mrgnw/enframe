@@ -93,6 +93,53 @@ The three phases run one after another, and each already keeps 6–7 of 12 cores
 
 The crop size depends on every photo's anchor (`crop_rects` takes min or median margins over all of them). So no frame can be rendered or encoded until tracking has finished. Encoding cannot overlap tracking. Only decode and tracking can overlap.
 
+## Output encoding on the Mac mini (M4 Pro, 24 GB, macOS 27.0.1)
+
+```sh
+FFMPEG=/opt/homebrew/bin/ffmpeg uv run analysis/codecs.py
+```
+
+**The `ffmpeg` on `PATH` was an Intel build.** `/Users/user/.local/bin/ffmpeg` is the x86_64 static build from evermeet.cx (8.1). It runs under Rosetta and shadows Homebrew's native arm64 ffmpeg 9.0.1 at `/opt/homebrew/bin/ffmpeg`. The Intel build can't open VideoToolbox encoders (`Cannot create compression session: -12908`) and lacks SVT-AV1. It also encodes slower: the Girona ProRes run takes 3.75 s through it against 3.42 s through the native build. Every ProRes number above was measured through it.
+
+**No hardware AV1 encoder.** `VTCopyVideoEncoderList` on this machine lists hardware H.264, HEVC, HEVC with alpha ("Apple Muxed Alpha"), ProRes and JPEG encoders, but no `av01`. Apple's spec for this Mac lists "AV1 decode" only ([Mac mini (2024) tech specs](https://support.apple.com/en-us/121555)). AV1 and AVIF encoding run on the CPU.
+
+57 Girona frames at 1442x1196, native ffmpeg, one run each. PSNR is against the placed frames.
+
+**Transparent** (`--pad transparent`, the Girona default):
+
+| encoding | wall s | CPU s | MB | PSNR RGB dB | PSNR alpha dB |
+|-|-|-|-|-|-|
+| ProRes 4444 (`.mov`) | 1.03 | 7.3 | 109.3 | 63.0 | lossless |
+| VP9 alpha crf 30 (`.webm`) | 8.89 | 26.1 | 6.2 | 38.9 | 70.7 |
+| HEVC + alpha, VideoToolbox HW, q 80 | 0.85 | 0.2 | 12.9 | 38.1 | 71.7 |
+| **animated AVIF, aom speed 10, q 75 (new default)** | 1.01 | 4.2 | 9.3 | 40.0 | 71.9 |
+| animated AVIF, aom speed 10, q 85 | 1.06 | 4.5 | 12.7 | 41.5 | 73.0 |
+
+**Opaque** (`--pad black`). The default crop without `--pad` is only 392x368 on Girona, where every encoder takes about 0.3 s.
+
+| encoding | wall s | CPU s | MB | PSNR RGB dB |
+|-|-|-|-|-|
+| H.264 x264 crf 18 (`.mp4`) | 1.29 | 8.6 | 17.3 | 40.9 |
+| HEVC VideoToolbox HW, q 85 | 0.49 | 0.3 | 16.4 | 41.0 |
+| HEVC VideoToolbox HW, q 75 | 0.43 | 0.3 | 9.2 | 39.1 |
+| AV1 SVT-AV1 preset 10, crf 23 | 0.44 | 2.1 | 8.1 | 39.4 |
+| animated AVIF, aom speed 10, q 75 | 0.84 | 3.6 | 9.2 | 40.0 |
+
+- **AVIF** is the default because it is the one format that is small, keeps alpha, and needs no ffmpeg. At 40 dB it is a twelfth of ProRes and encodes as fast. In Playwright's WebKit and Chromium, the animated transparent AVIF decodes at full size, animates, and shows the page background through its transparent areas. Real Safari was not tested.
+- **The hardware HEVC encoder** uses almost no CPU, but at equal PSNR its files are as large as x264's. With alpha it is only as fast as AVIF, because feeding frames is the limit, and its colour is worse per megabyte.
+- **SVT-AV1** is the fastest small opaque encoder: 0.44 s, 8 MB. It has no alpha and needs the native ffmpeg.
+- **VP9 with alpha** takes 8.9 s, the slowest by far.
+
+End to end, transparent Girona, 9 runs each:
+
+| `--out` | median wall | peak RSS | file |
+|-|-|-|-|
+| `.mov` through the Intel ffmpeg | 3.75 s | 1.07 GB | 109 MB |
+| `.mov` through the native ffmpeg | 3.42 s | 1.07 GB | 109 MB |
+| `.avif` | 3.42–3.57 s | 1.5 GB | 9.3 MB |
+
+AVIF holds every placed frame for Pillow's encoder, which adds about 450 MB of peak memory.
+
 ## Further ideas, ranked
 
 0. **For click-to-mark, skip the clip and cache features between runs.**
@@ -102,7 +149,7 @@ The crop size depends on every photo's anchor (`crop_rects` takes min or median 
    - A re-run would then load features and match. Estimated, not measured: about 0.3–0.5 s instead of about 4 s.
    - Output is unchanged by construction. This matters most for the enframe integration in `docs/wasm.md` (`spike-wasm`), which re-runs `anchor.py` on every click.
 1. **Smaller `TRACK_EDGE` (768)** would save about 0.5 s with the same LOST set on Girona. It needs an accuracy check first, for example `analysis/grids.py` contact sheets at lens switches, since 1024 was chosen for them.
-2. **Faster encode for previews.** ProRes 4444 sets a ~1.2 s floor. A draft mode that writes VP9 or x264 with `-preset ultrafast`, or `--frames` alone, would skip it. This changes the output, so it belongs behind a flag.
+2. **Faster encode for previews.** Done differently: the default output is now animated AVIF. See "Output encoding" above.
 3. **Overlap decode with tracking.** Pillow reads image sizes without decoding, so `k` can be known up front. Tracking photo i could then run while photo i+1 decodes. Both stages already use several cores, so expect 0.2-0.3 s at most.
 4. **Hold less in memory.** Decoding twice (downscaled gray for tracking, full RGB in render) would bring peak RSS from ~1.1 GB to ~200 MB. It costs a second 0.6 s decode, unless render decodes on its worker threads.
-5. **Threaded whole-photo SIFT** (rejected above). Worth it only where memory is plentiful: 0.2 s for 500-800 MB.
+5. **Threaded whole-photo SIFT** (rejected above). Worth it only where memory is plentiful: 0.2 s for 500-800 MB. The 24 GB Mac mini has the room.
