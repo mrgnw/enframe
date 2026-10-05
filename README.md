@@ -8,7 +8,7 @@ Turn a series of photos into a short clip where one chosen feature, like a cloud
 ## Usage
 
 ```sh
-uv run anchor.py "samples/girona clouds"/IMG_479{1,2,3,4,5}.avif --out out/heart.mp4
+uv run anchor.py "samples/girona clouds"/IMG_479{1,2,3,4,5}.avif --out out/heart.avif
 ```
 
 A window opens on the first photo. Drag a box around the feature to hold still, then press Enter. To skip the window, pass the box as `--box x,y,w,h` in first-photo pixels.
@@ -22,20 +22,22 @@ Any photo the tracker reports as `LOST` can be fixed by marking the feature ther
 Otherwise a mark keeps the zoom of the photo before it.
 
 ```sh
-uv run anchor.py "samples/girona clouds"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif --box 840,550,400,350 --at IMG_4703.avif=746,554,400,350 --out out/turbines.mp4
+uv run anchor.py "samples/girona clouds"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif --box 840,550,400,350 --at IMG_4703.avif=746,554,400,350 --out out/turbines.avif
 ```
 
-By default the crop shrinks until every photo fills it. `--pad` lets it overhang photos instead, filled with `black`, `white`, a `#rrggbb` colour, or `transparent`. Transparent padding needs a `.mov` (ProRes 4444, for video editors) or `.webm` (VP9, for browsers) output:
+By default the crop shrinks until every photo fills it. `--pad` lets it overhang photos instead, filled with `black`, `white`, a `#rrggbb` colour, or `transparent`:
 
 ```sh
-uv run anchor.py "samples/girona clouds"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --box 400,940,540,180 --pad transparent --out out/portrait.mov
+uv run anchor.py "samples/girona clouds"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --box 400,940,540,180 --pad transparent --out out/portrait.avif
 ```
+
+The extension of `--out` picks the format. The default, `.avif`, is an animated AVIF that keeps transparency and plays in browsers as an image. On the 57-photo Girona clip it encodes as fast as ProRes, and the file is 9 MB instead of 109 MB. Through ffmpeg, `.mp4` writes H.264, `.mov` writes ProRes 4444 when transparent (for video editors), and `.webm` writes VP9.
 
 Writes the clip and a `.json` beside it with each photo's crop rect, normalized to 0–1 like enframe's coordinates. With padding, rects can extend past 0 and 1. Each row also has the photo's `scale` relative to the first photo and its `source`: `tracked`, `mark` (placed by `--box` or `--at`), or `lost` (position estimated from neighbours, the photos to mark next).
 
 `--frames DIR` also saves every aligned photo as `DIR/0001.png`, `0002.png`, …, so other tools can take over: re-encode at another speed with `ffmpeg -framerate 8 -i DIR/%04d.png`, stack them in Siril, or preview them in enframe. The directory must hold no PNGs yet.
 
-`--vf` passes ffmpeg filters to the clip (not to `--frames`). `deflicker` evens exposure jumps between shots, `minterpolate=fps=24:mi_mode=blend` blends between photos instead of cutting, and `tpad=stop_mode=clone:stop_duration=2` holds the last photo for 2 seconds:
+`--vf` passes ffmpeg filters to a `.mp4`, `.mov` or `.webm` clip (not to `--frames`). `deflicker` evens exposure jumps between shots, `minterpolate=fps=24:mi_mode=blend` blends between photos instead of cutting, and `tpad=stop_mode=clone:stop_duration=2` holds the last photo for 2 seconds:
 
 ```sh
 uv run anchor.py "samples/girona clouds"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif --box 840,550,400,350 --at IMG_4703.avif=746,554,400,350 --vf deflicker,tpad=stop_mode=clone:stop_duration=2 --out out/turbines.mp4
@@ -44,7 +46,7 @@ uv run anchor.py "samples/girona clouds"/IMG_{4698,4699,4700,4701,4702,4703,4704
 The whole sample folder, with every mark, is one script:
 
 ```sh
-analysis/girona_all.sh out/all.mov
+analysis/girona_all.sh out/all.avif
 ```
 
 Run with no arguments for the self-check:

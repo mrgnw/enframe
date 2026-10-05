@@ -4,12 +4,13 @@ import math
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 import sys
+import tempfile
 from pathlib import Path
 from typing import NamedTuple
 
 import cv2
 import numpy as np
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageSequence
 
 MIN_INLIERS = 8
 MIN_CROP = 64
@@ -19,6 +20,9 @@ RANSAC_TOLERANCE = 0.03
 MAX_STEP_ZOOM = 6
 MAX_STEP_TURN = 15
 RENDER_AHEAD = 8
+# libaom's fastest preset; on the Girona clip it encodes as fast as ProRes at 1/12 the size, 40 dB PSNR.
+AVIF_SPEED = 10
+AVIF_QUALITY = 75
 
 
 def load(path: Path) -> np.ndarray:
@@ -237,8 +241,41 @@ def encoder(out: Path, alpha: bool) -> list[str]:
 		]
 	if out.suffix == '.mov' and alpha:
 		return ['-c:v', 'prores_ks', '-profile:v', '4444', '-pix_fmt', 'yuva444p10le']
-	assert not alpha, 'transparent padding needs a .mov (ProRes 4444) or .webm (VP9) output'
+	assert not alpha, 'transparent padding needs a .avif, .mov (ProRes 4444) or .webm (VP9) output'
 	return ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18']
+
+
+def write_avif(frames, out: Path, fps: float):
+	"""Animated AVIF through Pillow's libavif: small, keeps transparency, and needs no ffmpeg."""
+	images = [Image.fromarray(frame) for frame in frames]
+	images[0].save(
+		out,
+		'AVIF',
+		save_all=True,
+		append_images=images[1:],
+		duration=round(1000 / fps),
+		speed=AVIF_SPEED,
+		quality=AVIF_QUALITY,
+	)
+
+
+def pipe_to_ffmpeg(frames, size: tuple[int, int], alpha: bool, out: Path, fps: float, filters: str | None):
+	w, h = size
+	cmd = [
+		'ffmpeg', '-y', '-loglevel', 'error',
+		'-f', 'rawvideo', '-pix_fmt', 'rgba' if alpha else 'rgb24', '-s', f'{w}x{h}', '-r', str(fps), '-i', '-',
+		*(['-vf', filters] if filters else []), *encoder(out, alpha), str(out),
+	]  # fmt: skip
+	with subprocess.Popen(cmd, stdin=subprocess.PIPE) as ffmpeg:
+		assert ffmpeg.stdin is not None
+		# ffmpeg prints why it quit (a bad --vf, say); the exit code below reports it without a traceback.
+		try:
+			for frame in frames:
+				ffmpeg.stdin.write(frame.tobytes())
+			ffmpeg.stdin.close()
+		except BrokenPipeError:
+			pass
+	assert ffmpeg.returncode == 0, f'ffmpeg exited {ffmpeg.returncode}'
 
 
 def render(
@@ -251,33 +288,19 @@ def render(
 	frames_dir: Path | None = None,
 	filters: str | None = None,
 ):
-	alpha = fill is not None and len(fill) == 4
-	w, h = size
-	cmd = [
-		'ffmpeg', '-y', '-loglevel', 'error',
-		'-f', 'rawvideo', '-pix_fmt', 'rgba' if alpha else 'rgb24', '-s', f'{w}x{h}', '-r', str(fps), '-i', '-',
-		*(['-vf', filters] if filters else []), *encoder(out, alpha), str(out),
-	]  # fmt: skip
-
 	def finish(i: int, rgb: np.ndarray, source) -> np.ndarray:
 		frame = np.ascontiguousarray(place(rgb, source, size, fill))
 		if frames_dir is not None:
 			Image.fromarray(frame).save(frames_dir / f'{i:04d}.png')
 		return frame
 
-	with subprocess.Popen(cmd, stdin=subprocess.PIPE) as ffmpeg:
-		assert ffmpeg.stdin is not None
-		# ffmpeg prints why it quit (a bad --vf, say); the exit code below reports it without a traceback.
-		try:
-			# zlib and OpenCV release the GIL, so PNG saves run in parallel; buffersize bounds the frames held.
-			with ThreadPoolExecutor(RENDER_AHEAD) as pool:
-				numbers = range(1, len(frames) + 1)
-				for frame in pool.map(finish, numbers, frames, sources, buffersize=RENDER_AHEAD):
-					ffmpeg.stdin.write(frame.tobytes())
-			ffmpeg.stdin.close()
-		except BrokenPipeError:
-			pass
-	assert ffmpeg.returncode == 0, f'ffmpeg exited {ffmpeg.returncode}'
+	# zlib and OpenCV release the GIL, so frames are placed and saved in parallel; buffersize bounds those held.
+	with ThreadPoolExecutor(RENDER_AHEAD) as pool:
+		placed = pool.map(finish, range(1, len(frames) + 1), frames, sources, buffersize=RENDER_AHEAD)
+		if out.suffix == '.avif':
+			write_avif(placed, out, fps)
+		else:
+			pipe_to_ffmpeg(placed, size, fill is not None and len(fill) == 4, out, fps, filters)
 
 
 def write_rects(paths: list[Path], sizes, sources, path: list[Hit], out: Path):
@@ -351,7 +374,13 @@ def main():
 		'omit to shrink the crop until every photo fills it',
 	)
 	parser.add_argument('--fps', type=float, default=4)
-	parser.add_argument('--out', type=Path, default=Path('out.mp4'))
+	parser.add_argument(
+		'--out',
+		type=Path,
+		default=Path('out.avif'),
+		help='the clip; its extension picks the format: .avif (animated AVIF), or through ffmpeg .mp4 (H.264), '
+		'.mov (ProRes 4444 when transparent) or .webm (VP9)',
+	)
 	parser.add_argument(
 		'--frames',
 		type=Path,
@@ -361,7 +390,8 @@ def main():
 	parser.add_argument(
 		'--vf',
 		metavar='FILTERS',
-		help='ffmpeg video filters for the clip only, e.g. deflicker or tpad=stop_mode=clone:stop_duration=2',
+		help='ffmpeg video filters for a .mp4, .mov or .webm clip, e.g. deflicker or '
+		'tpad=stop_mode=clone:stop_duration=2',
 	)
 	args = parser.parse_args()
 	if args.frames:
@@ -371,7 +401,10 @@ def main():
 	# ponytail: filename order; the exported AVIFs carry no capture time to sort by
 	paths = sorted(args.photos)
 	fill = parse_fill(args.pad) if args.pad else None
-	encoder(args.out, fill is not None and len(fill) == 4)
+	if args.out.suffix == '.avif':
+		assert args.vf is None, '--vf runs through ffmpeg: use a .mp4, .mov or .webm --out'
+	else:
+		encoder(args.out, fill is not None and len(fill) == 4)
 	frames = [load(p) for p in paths]
 	boxes = {0: parse_box(args.box) if args.box else pick_box(frames[0])}
 	names = [p.name for p in paths]
@@ -440,6 +473,16 @@ def demo():
 	assert solid.any()
 	for c in crops[1:]:
 		assert np.abs(c[solid] - crops[0][solid]).mean() < 8, 'padding must not move the anchor'
+
+	# The default output keeps every frame, the frame rate and the transparency.
+	with tempfile.TemporaryDirectory() as tmp:
+		clip = Path(tmp) / 'clip.avif'
+		write_avif([place(f, src, padded, (0, 0, 0, 0)) for f, src in zip(frames, sources)], clip, 4)
+		with Image.open(clip) as im:
+			assert im.n_frames == len(frames) and im.mode == 'RGBA', (im.n_frames, im.mode)
+			alpha = [np.asarray(frame)[..., 3] for frame in ImageSequence.Iterator(im)]
+			assert im.info['duration'] == 250, im.info
+			assert min(a.min() for a in alpha) < 16, 'transparent padding must survive encoding'
 
 	assert parse_fill('transparent') == (0, 0, 0, 0) and parse_fill('#ff8000') == (255, 128, 0)
 

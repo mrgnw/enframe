@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-OUT=${1:-out/all.mov}
+OUT=${1:-out/all.avif}
 # PAD= (empty) runs without padding, the tool's default crop.
 PAD=${PAD-transparent}
 
