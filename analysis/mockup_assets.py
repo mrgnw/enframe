@@ -16,7 +16,6 @@ OUT = Path(__file__).resolve().parent.parent / 'mockups' / 'assets'
 
 MAIN = ['IMG_4667', 'IMG_4675', 'IMG_4702', 'IMG_4703', 'IMG_4720', 'IMG_4721', 'IMG_4725']
 THUMB_LONG, MAIN_LONG, FRAME_LONG = 200, 1400, 720
-PATCH = ('IMG_4702', 716, 719, 400, 350)
 
 
 def save(image: Image.Image, long_side: int, path: Path, quality: int = 72) -> None:
@@ -34,10 +33,6 @@ def main() -> None:
 			save(im, THUMB_LONG, OUT / f'{p.stem}-t.jpg', 65)
 			if p.stem in MAIN:
 				save(im, MAIN_LONG, OUT / f'{p.stem}.jpg')
-	name, ax, ay, w, h = PATCH
-	with Image.open(SAMPLES / f'{name}.avif') as im:
-		patch = ImageOps.exif_transpose(im).crop((ax - w // 2, ay - h // 2, ax + w // 2, ay + h // 2))
-		patch.convert('RGB').save(OUT / 'patch.jpg', quality=80)
 	frames = sorted(FRAMES.glob('*.png'))
 	assert len(frames) == 57, len(frames)
 	for f in frames:

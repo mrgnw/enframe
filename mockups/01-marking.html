@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pinframe · fix lost photos</title>
+<link rel="stylesheet" href="pin.css">
+<style>
+	.stage { cursor: crosshair; }
+	.stage.linked { cursor: default; }
+	.looking { height: auto; padding: 8px; border-radius: 14px; gap: 10px; align-items: flex-start; }
+	.looking .label { padding: 4px 6px 0 0; }
+	.looking .label { font-size: 12px; color: var(--muted); line-height: 1.3; }
+	.looking .label b { display: block; color: var(--fg); font-weight: 600; font-size: 13px; }
+	.zoom { gap: 8px; font-variant-numeric: tabular-nums; }
+	.zoom .val { font: 600 15px/1 var(--display); min-width: 3ch; text-align: right; }
+	.hint {
+		position: absolute;
+		bottom: 64px;
+		left: 50%;
+		translate: -50% 0;
+		padding: 6px 12px;
+		border-radius: 999px;
+		background: rgba(0, 0, 0, 0.55);
+		color: rgba(255, 255, 255, 0.85);
+		font-size: 13px;
+		pointer-events: none;
+		z-index: 4;
+	}
+	.hint kbd { color: var(--fg); }
+</style>
+</head>
+<body>
+
+<main class="stage" id="stage">
+	<div class="island tl">
+		<span class="wordmark">pin<b>frame</b></span>
+		<span class="sep"></span>
+		<span class="muted">girona clouds · 57 photos</span>
+	</div>
+
+	<div class="island tc steps">
+		<span class="step done"><span class="n">1</span>Box</span>
+		<span class="step active"><span class="n">2</span>Fix</span>
+		<span class="step"><span class="n">3</span>Export</span>
+	</div>
+
+	<div class="island tr" id="status">
+		<span class="count" id="count"><span class="dot"></span><span id="count-text">4 to fix</span></span>
+		<button class="btn icon" id="next-lost" title="Next lost photo (Tab)">→</button>
+		<span class="sep"></span>
+		<button class="btn primary" id="preview-btn">Preview</button>
+		<div class="bar"></div>
+	</div>
+
+	<div class="island bl looking" id="looking">
+		<div class="patch" id="patch"></div>
+		<div class="label">Looking for<b id="patch-from">IMG_4702 · found at 2.47×</b>click where it is now<br>or <kbd>⏎</kbd> to accept the estimate</div>
+	</div>
+
+	<div class="island br zoom" id="zoom-island" title="Zoom relative to the first photo. Scroll, or [ and ]">
+		<span class="muted">zoom</span>
+		<span class="val" id="zoom-val">2.5×</span>
+		<kbd>[</kbd><kbd>]</kbd>
+	</div>
+
+	<div class="hint" id="hint">Click the cloud · drag to narrow the search · scroll to change zoom</div>
+
+	<div class="photo" id="photo">
+		<img id="img" alt="">
+		<div class="box estimate" id="estimate"><span class="cross"></span><span class="tag">estimated</span></div>
+		<div class="box ghost" id="ghost"><span class="cross"></span></div>
+		<div class="box drawing" id="drawing" hidden></div>
+		<div class="box" id="markbox" hidden><span class="cross"></span><span class="tag" id="mark-tag">mark</span></div>
+	</div>
+</main>
+
+<nav class="filmstrip" id="filmstrip"></nav>
+
+<script src="assets/photos.js"></script>
+<script>
+	// ponytail: a scenario, not the live tracker. 20 marks already placed, four photos left to fix.
+	const FULL = new Set(['IMG_4667', 'IMG_4675', 'IMG_4702', 'IMG_4703', 'IMG_4720', 'IMG_4721', 'IMG_4725']);
+	const ZOOMS = [1, 1.5, 2, 2.5, 3, 5];
+	const GHOST = { w: 400, h: 350 };
+	const photos = PHOTOS.map(p => ({ ...p }));
+	photos.find(p => p.name === 'IMG_4703').source = 'lost';
+	photos.find(p => p.name === 'IMG_4703').feats = 3;
+	photos.find(p => p.name === 'IMG_4675').source = 'lost';
+	for (const p of photos) if (p.source === 'lost') p.estimate = { ax: p.ax, ay: p.ay };
+
+	let current = photos.findIndex(p => p.name === 'IMG_4703');
+	let zoom = 2.5;
+	let busy = false;
+
+	const $ = id => document.getElementById(id);
+	const stage = $('stage'), photo = $('photo'), img = $('img'), ghost = $('ghost'), estimate = $('estimate');
+	const markbox = $('markbox'), drawing = $('drawing'), filmstrip = $('filmstrip');
+
+	function src(p) { return FULL.has(p.name) ? `assets/${p.name}.jpg` : `assets/${p.name}-t.jpg`; }
+
+	function place(el, p, ax, ay, w, h) {
+		el.style.left = `${(ax - w / 2) / p.w * 100}%`;
+		el.style.top = `${(ay - h / 2) / p.h * 100}%`;
+		el.style.width = `${w / p.w * 100}%`;
+		el.style.height = `${h / p.h * 100}%`;
+	}
+
+	function prevLinked(i) {
+		for (let j = i - 1; j >= 0; j--) if (photos[j].source !== 'lost') return photos[j];
+		return photos[0];
+	}
+
+	function renderStage() {
+		const p = photos[current];
+		img.src = src(p);
+		photo.style.aspectRatio = `${p.w} / ${p.h}`;
+		photo.style.width = p.w > p.h ? 'min(100%, calc((100vh - 110px) * 4 / 3))' : 'min(100%, calc((100vh - 110px) * 3 / 4))';
+		const lost = p.source === 'lost';
+		stage.classList.toggle('linked', !lost);
+		estimate.hidden = !lost;
+		ghost.hidden = !lost;
+		$('hint').hidden = !lost;
+		$('looking').hidden = !lost;
+		$('zoom-island').hidden = !lost;
+		if (lost) {
+			place(estimate, p, p.estimate.ax, p.estimate.ay, GHOST.w, GHOST.h);
+			const ref = prevLinked(current);
+			zoom = ref.scale;
+			$('zoom-val').textContent = `${+zoom.toFixed(2)}×`;
+			$('patch-from').textContent = `${ref.name} · found at ${ref.scale.toFixed(2)}×`;
+			const k = 120 / GHOST.w;
+			const patch = $('patch');
+			patch.style.backgroundImage = `url(${src(ref)})`;
+			patch.style.backgroundSize = `${ref.w * k}px auto`;
+			patch.style.backgroundPosition = `${-(ref.ax - GHOST.w / 2) * k}px ${-(ref.ay - GHOST.h / 2) * k}px`;
+			markbox.hidden = true;
+		} else {
+			markbox.hidden = false;
+			markbox.className = `box ${p.source}`;
+			$('mark-tag').textContent = p.source === 'mark' ? `your mark · ${p.scale.toFixed(2)}×` : `${p.feats} features · ${p.scale.toFixed(2)}×`;
+			place(markbox, p, p.ax, p.ay, GHOST.w, GHOST.h);
+		}
+		sizeGhost();
+	}
+
+	function sizeGhost() {
+		const p = photos[current];
+		const ref = prevLinked(current);
+		const f = zoom / ref.scale;
+		ghost.style.width = `${GHOST.w * f / p.w * 100}%`;
+		ghost.style.height = `${GHOST.h * f / p.h * 100}%`;
+		$('zoom-val').textContent = `${+zoom.toFixed(2)}×`;
+	}
+
+	function renderFilmstrip() {
+		const lost = photos.filter(p => p.source === 'lost').length;
+		$('count').className = `count${lost ? '' : ' ok'}`;
+		$('count-text').textContent = lost ? `${lost} to fix` : 'All 57 linked';
+		$('next-lost').disabled = !lost;
+		filmstrip.innerHTML = photos.map((p, i) => {
+			const tip = p.source === 'mark' ? 'your mark' : p.source === 'lost' ? `lost · ${p.feats} features · estimated` : `${p.feats} features`;
+			return `<a class="thumb ${p.source}${i === current ? ' current' : ''}" data-i="${i}"><img src="assets/${p.name}-t.jpg" alt=""><span class="tip">${p.name} <b>${tip} · ${p.scale.toFixed(2)}×</b></span></a>`;
+		}).join('');
+		filmstrip.querySelector('.current')?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+	}
+
+	function go(i) {
+		current = (i + photos.length) % photos.length;
+		renderStage();
+		renderFilmstrip();
+	}
+
+	function nextLost(dir = 1) {
+		for (let k = 1; k <= photos.length; k++) {
+			const i = (current + k * dir + photos.length) % photos.length;
+			if (photos[i].source === 'lost') return go(i);
+		}
+	}
+
+	function mark(ax, ay, box) {
+		const p = photos[current];
+		if (p.source === 'lost') {
+			Object.assign(p, { source: 'mark', ax, ay, scale: zoom, feats: null });
+			if (box) p.box = box;
+			retrack();
+			nextLost();
+		}
+	}
+
+	// Re-tracking with cached keypoints is ~0.3–0.5 s. Dots dim while it runs; the stage has already moved on.
+	function retrack() {
+		busy = true;
+		$('status').classList.add('busy');
+		filmstrip.classList.add('dim');
+		setTimeout(() => {
+			busy = false;
+			$('status').classList.remove('busy');
+			filmstrip.classList.remove('dim');
+			renderFilmstrip();
+		}, 450);
+	}
+
+	let drag = null;
+	photo.addEventListener('pointermove', e => {
+		const r = photo.getBoundingClientRect();
+		const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+		ghost.style.left = `calc(${x * 100}% - ${ghost.offsetWidth / 2}px)`;
+		ghost.style.top = `calc(${y * 100}% - ${ghost.offsetHeight / 2}px)`;
+		if (drag) {
+			const l = Math.min(drag.x, x), t = Math.min(drag.y, y);
+			drawing.hidden = false;
+			ghost.hidden = true;
+			drawing.style.left = `${l * 100}%`; drawing.style.top = `${t * 100}%`;
+			drawing.style.width = `${Math.abs(x - drag.x) * 100}%`; drawing.style.height = `${Math.abs(y - drag.y) * 100}%`;
+		}
+	});
+	photo.addEventListener('pointerdown', e => {
+		if (photos[current].source !== 'lost') return;
+		const r = photo.getBoundingClientRect();
+		drag = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+	});
+	photo.addEventListener('pointerup', e => {
+		if (!drag) return;
+		const p = photos[current];
+		const r = photo.getBoundingClientRect();
+		const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+		const w = Math.abs(x - drag.x) * p.w, h = Math.abs(y - drag.y) * p.h;
+		drawing.hidden = true;
+		if (w > 12 && h > 12) mark(Math.round((x + drag.x) / 2 * p.w), Math.round((y + drag.y) / 2 * p.h), { w, h });
+		else mark(Math.round(x * p.w), Math.round(y * p.h));
+		drag = null;
+	});
+	photo.addEventListener('wheel', e => {
+		if (photos[current].source !== 'lost') return;
+		e.preventDefault();
+		stepZoom(e.deltaY < 0 ? 1 : -1);
+	}, { passive: false });
+
+	function stepZoom(dir) {
+		const i = ZOOMS.findIndex(z => z >= zoom - 1e-6);
+		const next = ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, (i < 0 ? ZOOMS.length - 1 : i) + dir))];
+		zoom = next;
+		sizeGhost();
+	}
+
+	filmstrip.addEventListener('click', e => {
+		const t = e.target.closest('.thumb');
+		if (t) go(+t.dataset.i);
+	});
+	$('next-lost').addEventListener('click', () => nextLost());
+	$('preview-btn').addEventListener('click', () => location.href = '02-preview.html');
+
+	window.addEventListener('keydown', e => {
+		const p = photos[current];
+		if (e.key === 'ArrowRight') go(current + 1);
+		else if (e.key === 'ArrowLeft') go(current - 1);
+		else if (e.key === 'Tab' || e.key === 'l') { e.preventDefault(); nextLost(e.shiftKey ? -1 : 1); }
+		else if (e.key === 'Enter' && p.source === 'lost') mark(p.estimate.ax, p.estimate.ay);
+		else if ((e.key === 'Backspace' || e.key === 'Delete') && p.source === 'mark') {
+			Object.assign(p, { source: 'lost', feats: 0, estimate: { ax: p.ax, ay: p.ay } });
+			retrack(); go(current);
+		}
+		else if (e.key === ']') stepZoom(1);
+		else if (e.key === '[') stepZoom(-1);
+		else if (e.key === '1') { zoom = 1; sizeGhost(); }
+		else if (e.key === 'Escape') { drag = null; drawing.hidden = true; }
+	});
+
+	go(current);
+</script>
+</body>
+</html>
