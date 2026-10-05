@@ -2,6 +2,7 @@ import argparse
 import json
 import math
 import os
+import shutil
 import subprocess
 import sys
 from collections.abc import Iterable, Iterator
@@ -10,7 +11,7 @@ from itertools import repeat
 import tempfile
 import threading
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, NoReturn
 
 import cv2
 import numpy as np
@@ -36,6 +37,13 @@ KEEP_SHARE = 0.25
 # libaom's fastest preset; on the Girona clip it encodes as fast as ProRes at 1/12 the size, 40 dB PSNR.
 AVIF_SPEED = 10
 AVIF_QUALITY = 75
+CLIP_SUFFIXES = ('.avif', '.mp4', '.mov', '.webm')
+
+
+def fail(message: str) -> NoReturn:
+	"""Stop on input or photos pinframe cannot use: a message and exit code 1, not a traceback.
+	Asserts stay for invariants; checks of what the user gave must survive python -O."""
+	raise SystemExit(f'pinframe: {message}')
 
 
 def load(path: Path) -> np.ndarray:
@@ -224,10 +232,8 @@ def track(photos: Iterable[Photo], sizes, k: float, marks: dict[int, tuple[float
 		path.append(Hit(cx / k, cy / k, scale, source, note))
 		# Clouds deform, so features come from the latest find, never from a lost frame.
 		fresh = features_in(kp2, des2, box_mask(photo.small_shape, cx, cy, rw, rh))
-		if i == 0:
-			assert len(fresh[0]) >= MIN_INLIERS, (
-				f'only {len(fresh[0])} features in the box; draw a bigger one'
-			)
+		if i == 0 and len(fresh[0]) < MIN_INLIERS:
+			fail(f'only {len(fresh[0])} features in the first box; draw a bigger one')
 		if len(fresh[0]) >= MIN_INLIERS:
 			kp, des = fresh
 	return path
@@ -236,7 +242,8 @@ def track(photos: Iterable[Photo], sizes, k: float, marks: dict[int, tuple[float
 def fill_lost(path: list[Hit], sizes) -> list[Hit]:
 	"""Estimate hidden anchors from the nearest frames where it was found."""
 	good = [i for i, hit in enumerate(path) if hit.found]
-	assert len(good) >= 2, 'anchor found in fewer than two frames'
+	if len(good) < 2:
+		fail('the anchor was found in fewer than two photos; mark more of them with --at')
 	every = np.arange(len(path))
 	x, y, s = (np.interp(every, good, [path[i][c] for i in good]) for c in range(3))
 	return [
@@ -260,9 +267,10 @@ def crop_rects(sizes, anchors, pad: bool) -> list[tuple[float, float, int, int]]
 	# Even sizes keep yuv420p happy; flooring only shrinks the crop, so bounds still hold.
 	cw = int(left + right) // 2 * 2
 	ch = int(top + bottom) // 2 * 2
-	assert cw >= MIN_CROP and ch >= MIN_CROP, (
-		f'anchor wanders too far: only a {cw}x{ch} crop fits every frame'
-	)
+	if cw < MIN_CROP or ch < MIN_CROP:
+		fail(
+			f'the anchor wanders too far: only a {cw}x{ch} crop fits every photo; mark lost photos or use --pad'
+		)
 
 	rects = [(x - left, y - top, cw, ch) for x, y in anchors]
 	if not pad:
@@ -375,7 +383,8 @@ def pipe_to_ffmpeg(frames, size: tuple[int, int], alpha: bool, out: Path, fps: f
 			ffmpeg.stdin.close()
 		except BrokenPipeError:
 			pass
-	assert ffmpeg.returncode == 0, f'ffmpeg exited {ffmpeg.returncode}'
+	if ffmpeg.returncode != 0:
+		fail(f'ffmpeg exited {ffmpeg.returncode}')
 
 
 def render(
@@ -428,7 +437,8 @@ def pick_box(rgb: np.ndarray) -> tuple[int, int, int, int]:
 		'Drag a box around the anchor, then press Enter', cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 	)
 	cv2.destroyAllWindows()
-	assert box[2] > 0 and box[3] > 0, 'no box drawn'
+	if box[2] <= 0 or box[3] <= 0:
+		fail('no box drawn')
 	return tuple(int(v) for v in box)
 
 
@@ -446,16 +456,97 @@ def plan(photos: Iterable[Photo], sizes, k: float, boxes, pad: bool = False):
 	return path, sizes, sources, (round(cw * typical / 2) * 2, round(ch * typical / 2) * 2)
 
 
-def parse_box(value: str) -> tuple[float, ...]:
-	return tuple(float(v) for v in value.split(','))
+def parse_numbers(flag: str, text: str) -> tuple[float, ...]:
+	try:
+		return tuple(float(v) for v in text.split(','))
+	except ValueError:
+		fail(f'{flag} {text}: expected comma-separated numbers')
+
+
+def check_mark(name: str, mark: tuple[float, ...], size: tuple[int, int]):
+	"""A mark is a point x,y or a box x,y,w,h with an optional zoom, inside its photo."""
+	fw, fh = size
+	if len(mark) not in (2, 4, 5):
+		fail(f'{name}: a mark is x,y or x,y,w,h with an optional zoom, not {len(mark)} numbers')
+	if len(mark) == 2:
+		px, py = mark
+	else:
+		bx, by, bw, bh = mark[:4]
+		if not (bw > 0 and bh > 0 and bx >= 0 and by >= 0 and bx + bw <= fw and by + bh <= fh):
+			fail(f'{name}: box {bx:g},{by:g},{bw:g},{bh:g} is empty or outside the {fw}x{fh} photo')
+		px, py = bx + bw / 2, by + bh / 2
+	if not (0 <= px < fw and 0 <= py < fh):
+		fail(f'{name}: point {px:g},{py:g} is outside the {fw}x{fh} photo')
+	if len(mark) == 5 and not mark[4] > 0:
+		fail(f'{name}: zoom must be positive')
+
+
+def read_sizes(paths: list[Path]) -> list[tuple[int, int]]:
+	"""Every photo's size from its header, so bad input stops before any decoding."""
+	if len(paths) < 2:
+		fail('need at least two photos')
+	names = [p.name for p in paths]
+	if len(set(names)) < len(names):
+		fail('two photos share a file name, so --at and the .json could not tell them apart')
+	sizes = []
+	for path in paths:
+		try:
+			sizes.append(oriented_size(path))
+		except (OSError, Image.DecompressionBombError) as error:
+			fail(f'{path}: {error}')
+	return sizes
+
+
+def read_marks(box: str | None, ats: list[str], paths: list[Path], sizes) -> dict[int, tuple[float, ...]]:
+	"""--box (or a drawn box) and every --at, by photo index, checked against the photo sizes."""
+	names = [p.name for p in paths]
+	first = parse_numbers('--box', box) if box else pick_box(load(paths[0]))
+	if len(first) != 4:
+		fail('--box is x,y,w,h')
+	marks = {0: first}
+	for at in ats:
+		name, sep, value = at.partition('=')
+		if not sep or name not in names:
+			fail(f'--at {at}: expected PHOTO=x,y with PHOTO one of the photo file names')
+		i = names.index(name)
+		if i in marks:
+			fail(f'--at {name}: ' + ('use --box for the first photo' if i == 0 else 'marked twice'))
+		marks[i] = parse_numbers(f'--at {name}', value)
+	for i, mark in marks.items():
+		check_mark(names[i], mark, sizes[i])
+	return marks
+
+
+def check_output(out: Path, alpha: bool, filters: str | None):
+	if out.suffix not in CLIP_SUFFIXES:
+		fail(f'--out {out}: use one of ' + ', '.join(CLIP_SUFFIXES))
+	if not out.parent.is_dir():
+		fail(f'--out {out}: folder {out.parent} does not exist')
+	if out.suffix == '.avif':
+		if filters:
+			fail('--vf runs through ffmpeg: use a .mp4, .mov or .webm --out')
+		return
+	if shutil.which('ffmpeg') is None:
+		fail(f'--out {out.suffix} needs ffmpeg on PATH; .avif does not')
+	if alpha and out.suffix == '.mp4':
+		fail('transparent padding needs a .avif, .mov or .webm --out')
+
+
+def partial(path: Path) -> Path:
+	"""A hidden name beside path, keeping its extension for the encoder, to write and then rename."""
+	return path.with_name(f'.{path.stem}.partial{path.suffix}')
 
 
 def parse_fill(value: str) -> tuple[int, ...]:
 	if value == 'transparent':
 		return (0, 0, 0, 0)
 	hex_value = {'black': '000000', 'white': 'ffffff'}.get(value, value.removeprefix('#'))
-	assert len(hex_value) == 6, f'--pad {value}: use transparent, black, white or a #rrggbb colour'
-	return tuple(int(hex_value[i : i + 2], 16) for i in (0, 2, 4))
+	if len(hex_value) == 6:
+		try:
+			return tuple(int(hex_value[i : i + 2], 16) for i in (0, 2, 4))
+		except ValueError:
+			pass
+	fail(f'--pad {value}: use transparent, black, white or a #rrggbb colour')
 
 
 def main():
@@ -497,36 +588,41 @@ def main():
 		'tpad=stop_mode=clone:stop_duration=2',
 	)
 	args = parser.parse_args()
-	if args.frames:
-		args.frames.mkdir(parents=True, exist_ok=True)
-		assert not any(args.frames.glob('*.png')), f'--frames {args.frames}: already has PNGs; empty it first'
 
 	# ponytail: filename order; the exported AVIFs carry no capture time to sort by
 	paths = sorted(args.photos)
 	fill = parse_fill(args.pad) if args.pad else None
-	if args.out.suffix == '.avif':
-		assert args.vf is None, '--vf runs through ffmpeg: use a .mp4, .mov or .webm --out'
-	else:
-		encoder(args.out, fill is not None and len(fill) == 4)
-	sizes = [oriented_size(p) for p in paths]
+	check_output(args.out, fill is not None and len(fill) == 4, args.vf)
+	if not args.fps > 0:
+		fail('--fps must be positive')
+	sizes = read_sizes(paths)
+	marks = read_marks(args.box, args.at, paths, sizes)
+	if args.frames:
+		args.frames.mkdir(parents=True, exist_ok=True)
+		if any(args.frames.glob('*.png')):
+			fail(f'--frames {args.frames}: already has PNGs; empty it first')
+
 	k = track_factor(sizes)
 	keep = Keep(int(physical_memory() * KEEP_SHARE))
-	boxes = {0: parse_box(args.box) if args.box else pick_box(load(paths[0]))}
-	names = [p.name for p in paths]
-	for fix in args.at:
-		name, _, value = fix.partition('=')
-		assert name in names, f'--at {name}: not one of the photos'
-		boxes[names.index(name)] = parse_box(value)
-
 	path, sizes, sources, size = plan(
-		load_photos(paths, sizes, k, keep), sizes, k, boxes, pad=fill is not None
+		load_photos(paths, sizes, k, keep), sizes, k, marks, pad=fill is not None
 	)
 	for p, (fw, fh), hit in zip(paths, sizes, path):
 		print(f'{p.name}  {fw}x{fh}  anchor {hit.x:.0f},{hit.y:.0f}  scale {hit.scale:.2f}  {hit.note}')
 	print(f'clip {size[0]}x{size[1]}')
 
-	render(paths, sources, size, fill, args.out, args.fps, keep, args.frames, args.vf)
-	write_rects(paths, sizes, sources, path, args.out.with_suffix('.json'))
+	# Written under hidden names and renamed together, so a failed run leaves the previous clip and its
+	# .json as they were instead of a partial clip beside a stale .json.
+	rects = args.out.with_suffix('.json')
+	clip_partial, rects_partial = partial(args.out), partial(rects)
+	try:
+		render(paths, sources, size, fill, clip_partial, args.fps, keep, args.frames, args.vf)
+		write_rects(paths, sizes, sources, path, rects_partial)
+		clip_partial.replace(args.out)
+		rects_partial.replace(rects)
+	finally:
+		clip_partial.unlink(missing_ok=True)
+		rects_partial.unlink(missing_ok=True)
 	print(f'wrote {args.out}')
 
 
@@ -617,6 +713,34 @@ def demo():
 			assert min(a.min() for a in alpha) < 16, 'transparent padding must survive encoding'
 
 	assert parse_fill('transparent') == (0, 0, 0, 0) and parse_fill('#ff8000') == (255, 128, 0)
+
+	# Bad input stops with a message, never a traceback, and good input passes.
+	def stops(action) -> bool:
+		try:
+			action()
+		except SystemExit as stop:
+			return str(stop).startswith('pinframe: ')
+		return False
+
+	photo = (100, 80)
+	for mark in ((1, 2, 3), (10, 10, 0, 5), (90, 70, 20, 20), (100, 40), (-1, 40), (10, 10, 20, 20, 0)):
+		assert stops(lambda: check_mark('p.avif', mark, photo)), mark
+	assert stops(lambda: check_mark('p.avif', (float('nan'), 40), photo))
+	check_mark('p.avif', (99, 79), photo)
+	check_mark('p.avif', (0, 0, 100, 80, 2.5), photo)
+	assert stops(lambda: parse_numbers('--box', '1,2,x'))
+	for colour in ('purple', '#12345', '#gggggg', '#1234567'):
+		assert stops(lambda: parse_fill(colour)), colour
+	assert stops(lambda: check_output(Path('clip.gif'), False, None))
+	assert stops(lambda: check_output(Path('clip.avif'), False, 'deflicker'))
+	assert stops(lambda: check_output(Path('no/such/folder/clip.avif'), False, None))
+	assert stops(lambda: read_sizes([Path('only-one.avif')]))
+	assert stops(lambda: read_sizes([Path('a/x.avif'), Path('b/x.avif')]))
+	assert stops(lambda: read_sizes([Path('missing-1.avif'), Path('missing-2.avif')]))
+	two = [Path('a.avif'), Path('b.avif')]
+	for ats in (['b.avif'], ['c.avif=1,1'], ['a.avif=1,1'], ['b.avif=1,1', 'b.avif=2,2'], ['b.avif=500,1']):
+		assert stops(lambda: read_marks('0,0,10,10', ats, two, [photo, photo])), ats
+	assert read_marks('0,0,10,10', ['b.avif=5,5'], two, [photo, photo]) == {0: (0, 0, 10, 10), 1: (5, 5)}
 
 	hidden = [Hit(0, 0, 1, 'tracked', ''), Hit(9, 9, 9, 'lost', ''), Hit(20, 40, 2, 'mark', '')]
 	filled = fill_lost(hidden, [(100, 100)] * 3)
