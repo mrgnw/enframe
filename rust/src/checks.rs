@@ -7,6 +7,45 @@ use std::path::Path;
 const SAMPLES: &str = "../samples/girona clouds";
 const DUMPS: &str = "../out";
 
+/// float32 values of a .npy file written by numpy.save.
+fn read_npy_f32(path: &str) -> Vec<f32> {
+	let bytes = std::fs::read(path).unwrap();
+	let header = u16::from_le_bytes([bytes[8], bytes[9]]) as usize;
+	bytes[10 + header..].chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect()
+}
+
+#[test]
+#[ignore]
+fn sift_matches_opencv() {
+	for name in ["IMG_4667", "IMG_4791"] {
+		let rgb = avif::decode(&Path::new(SAMPLES).join(format!("{name}.avif")), 1).unwrap();
+		let small = pixels::shrink_area(&pixels::gray(&rgb), 0.5);
+		let started = std::time::Instant::now();
+		let features = crate::sift::detect_and_compute(&small);
+		let took = started.elapsed();
+		let text = std::fs::read_to_string(format!("{DUMPS}/{name}.kp.json")).unwrap();
+		let opencv: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap();
+		let des = read_npy_f32(&format!("{DUMPS}/{name}.des.npy"));
+		println!("{name}: {} keypoints in {took:?}, OpenCV {}", features.keypoints.len(), opencv.len());
+		let mut worst = [0f64; 5];
+		let mut same_descriptors = 0;
+		for (i, (kp, cv)) in features.keypoints.iter().zip(&opencv).enumerate() {
+			let ours = [kp.x, kp.y, kp.size, kp.angle, kp.response];
+			for (w, (v, key)) in
+				worst.iter_mut().zip(ours.iter().zip(["x", "y", "size", "angle", "response"]))
+			{
+				*w = w.max((*v as f64 - cv[key].as_f64().unwrap()).abs());
+			}
+			let theirs = &des[i * 128..(i + 1) * 128];
+			same_descriptors +=
+				features.descriptors[i].iter().zip(theirs).all(|(a, b)| *a as f32 == *b) as usize;
+		}
+		println!(
+			"{name}: worst diff in x y size angle response {worst:?}; {same_descriptors} identical descriptors"
+		);
+	}
+}
+
 #[test]
 #[ignore]
 fn decode_and_gray_match_python() {
@@ -47,4 +86,48 @@ fn gray_from_python_rgb_matches() {
 		crate::avif_sys::avifLibYUVVersion()
 	});
 	assert_eq!(off, 0);
+}
+
+#[test]
+#[ignore]
+fn sift_exactness() {
+	let name = "IMG_4667";
+	let rgb = avif::decode(&Path::new(SAMPLES).join(format!("{name}.avif")), 1).unwrap();
+	let features = crate::sift::detect_and_compute(&pixels::shrink_area(&pixels::gray(&rgb), 0.5));
+	let text = std::fs::read_to_string(format!("{DUMPS}/{name}.kp.json")).unwrap();
+	let opencv: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap();
+	let mut exact = [0usize; 4];
+	let mut octaves = std::collections::BTreeMap::new();
+	for (kp, cv) in features.keypoints.iter().zip(&opencv) {
+		let ours = [kp.x, kp.y, kp.size, kp.angle];
+		let same: Vec<bool> = ours
+			.iter()
+			.zip(["x", "y", "size", "angle"])
+			.map(|(v, k)| *v == cv[k].as_f64().unwrap() as f32)
+			.collect();
+		for (e, s) in exact.iter_mut().zip(&same) {
+			*e += *s as usize;
+		}
+		let entry = octaves.entry(kp.octave & 255).or_insert((0, 0));
+		entry.0 += 1;
+		entry.1 += same.iter().all(|s| *s) as usize;
+	}
+	println!("exact x y size angle {exact:?} of {}; per octave (total, exact) {octaves:?}", opencv.len());
+}
+
+#[test]
+#[ignore]
+fn blur_matches_opencv() {
+	let name = "IMG_4667";
+	let rgb = avif::decode(&Path::new(SAMPLES).join(format!("{name}.avif")), 1).unwrap();
+	let layers = crate::sift::first_octave(&pixels::shrink_area(&pixels::gray(&rgb), 0.5));
+	for (i, ours) in layers.iter().enumerate() {
+		let bytes = std::fs::read(format!("{DUMPS}/{name}.g{i}.f32")).unwrap();
+		let theirs: Vec<f32> =
+			bytes.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
+		let off = ours.iter().zip(&theirs).filter(|(a, b)| a != b).count();
+		let worst = ours.iter().zip(&theirs).map(|(a, b)| (a - b).abs()).fold(0f32, f32::max);
+		let first = ours.iter().zip(&theirs).position(|(a, b)| a != b);
+		println!("layer {i}: {off} of {} differ, worst {worst}, first at {first:?}", theirs.len());
+	}
 }
