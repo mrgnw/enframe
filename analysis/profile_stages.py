@@ -23,6 +23,9 @@ imported = time.perf_counter()
 
 LABELS = {
 	'load': 'decode photos (Pillow AVIF + EXIF)',
+	'load_photos': 'decode + SIFT on threads: wait',
+	'prepare': 'prepare photo: other',
+	'header_sizes': 'read photo headers',
 	'gray': 'track: gray',
 	'resize': 'track: downscale to 1024',
 	'sift whole photo': 'track: SIFT on whole photo',
@@ -47,7 +50,7 @@ LABELS = {
 }
 
 # Top-level phases get wall and process-wide CPU time, to show how many cores each one keeps busy.
-PHASES = ('load', 'track', 'render')
+PHASES = ('load_photos', 'track', 'render')
 
 spent = defaultdict(float)
 calls = defaultdict(int)
@@ -114,6 +117,9 @@ class TimedPopen(subprocess.Popen):
 def instrument():
 	for name in (
 		'load',
+		'header_sizes',
+		'prepare',
+		'load_photos',
 		'gray',
 		'resize',
 		'features_in',
@@ -194,7 +200,7 @@ def summarize(log: Path, walls: Path):
 	for label, seconds, n in sorted(rows, key=lambda row: -row[1]):
 		print(f'| {label} | {n} | {seconds:.2f} | {seconds / wall:.0%} |')
 	print(f'| **total** | | **{wall:.2f}** | |\n')
-	print('| in parallel during render | calls | thread-seconds |')
+	print('| on worker threads (overlaps the waits above) | calls | thread-seconds |')
 	print('|-|-|-|')
 	for k in worker_keys:
 		name = k.removeprefix('worker:')
