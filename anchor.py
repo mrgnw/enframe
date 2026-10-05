@@ -1,4 +1,5 @@
 import argparse
+import fcntl
 import json
 import math
 import os
@@ -6,10 +7,12 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from itertools import repeat
 import tempfile
 import threading
+import uuid
 from pathlib import Path
 from typing import NamedTuple, NoReturn
 
@@ -397,20 +400,36 @@ class StreamedClip(Image.Image):
 
 
 def write_avif(
-	frames: Iterable[np.ndarray], count: int, size: tuple[int, int], alpha: bool, out: Path, fps: float
+	frames: Iterable[np.ndarray],
+	count: int,
+	size: tuple[int, int],
+	alpha: bool,
+	out: Path,
+	fps: float,
+	run: str,
 ):
 	"""Animated AVIF through Pillow's libavif: small, keeps transparency, and needs no ffmpeg."""
 	clip = StreamedClip(frames, count, size, 'RGBA' if alpha else 'RGB')
-	clip.save(out, 'AVIF', save_all=True, duration=round(1000 / fps), speed=AVIF_SPEED, quality=AVIF_QUALITY)
+	clip.save(
+		out,
+		'AVIF',
+		save_all=True,
+		duration=round(1000 / fps),
+		speed=AVIF_SPEED,
+		quality=AVIF_QUALITY,
+		xmp=run_xmp(run),
+	)
 	assert clip._pulled == count, f'encoded {clip._pulled} of {count} frames'
 
 
-def pipe_to_ffmpeg(frames, size: tuple[int, int], alpha: bool, out: Path, fps: float, filters: str | None):
+def pipe_to_ffmpeg(
+	frames, size: tuple[int, int], alpha: bool, out: Path, fps: float, filters: str | None, run: str
+):
 	w, h = size
 	cmd = [
 		'ffmpeg', '-y', '-loglevel', 'error',
 		'-f', 'rawvideo', '-pix_fmt', 'rgba' if alpha else 'rgb24', '-s', f'{w}x{h}', '-r', str(fps), '-i', '-',
-		*(['-vf', filters] if filters else []), *encoder(out, alpha), str(out),
+		*(['-vf', filters] if filters else []), *encoder(out, alpha), '-metadata', f'comment=pinframe-run={run}', str(out),
 	]  # fmt: skip
 	with subprocess.Popen(cmd, stdin=subprocess.PIPE) as ffmpeg:
 		assert ffmpeg.stdin is not None
@@ -434,6 +453,7 @@ def render(
 	fps: float,
 	keep: Keep,
 	threads: int,
+	run: str,
 	frames_dir: Path | None = None,
 	filters: str | None = None,
 ):
@@ -451,12 +471,12 @@ def render(
 		queue = QUEUE_DEPTH * threads
 		placed = pool.map(finish, range(1, len(paths) + 1), paths, sources, buffersize=queue)
 		if out.suffix == '.avif':
-			write_avif(placed, len(paths), size, alpha, out, fps)
+			write_avif(placed, len(paths), size, alpha, out, fps, run)
 		else:
-			pipe_to_ffmpeg(placed, size, alpha, out, fps, filters)
+			pipe_to_ffmpeg(placed, size, alpha, out, fps, filters, run)
 
 
-def write_rects(paths: list[Path], sizes, sources, path: list[Hit], out: Path):
+def write_rects(paths: list[Path], sizes, sources, path: list[Hit], out: Path, run: str, clip: str):
 	rows = [
 		{
 			'file': p.name,
@@ -469,7 +489,8 @@ def write_rects(paths: list[Path], sizes, sources, path: list[Hit], out: Path):
 		}
 		for p, (fw, fh), (x, y, w, h), hit in zip(paths, sizes, sources, path)
 	]
-	out.write_text(json.dumps(rows, indent='\t') + '\n')
+	sidecar = {'run': run, 'clip': clip, 'photos': rows}
+	out.write_text(json.dumps(sidecar, indent='\t') + '\n')
 
 
 def pick_box(rgb: np.ndarray) -> tuple[int, int, int, int]:
@@ -573,8 +594,33 @@ def check_output(out: Path, alpha: bool, filters: str | None):
 
 
 def partial(path: Path) -> Path:
-	"""A hidden name beside path, keeping its extension for the encoder, to write and then rename."""
-	return path.with_name(f'.{path.stem}.partial{path.suffix}')
+	"""A new hidden file beside path, unique to this run, keeping the extension for the encoder.
+	Two runs writing the same output never share it."""
+	fd, name = tempfile.mkstemp(dir=path.parent, prefix=f'.{path.stem}.', suffix=f'.partial{path.suffix}')
+	os.close(fd)
+	return Path(name)
+
+
+@contextmanager
+def folder_lock(folder: Path):
+	"""An exclusive lock on the output folder while outputs are renamed into place, so concurrent runs
+	publish one clip and .json pair at a time. Readers can take a shared lock (LOCK_SH) on the folder
+	to read a pair, or compare the run ID in both."""
+	fd = os.open(folder, os.O_RDONLY)
+	try:
+		fcntl.flock(fd, fcntl.LOCK_EX)
+		yield
+	finally:
+		os.close(fd)
+
+
+def run_xmp(run: str) -> bytes:
+	"""A minimal XMP packet carrying the run ID, so a clip can be matched with its .json."""
+	return (
+		'<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+		f'<rdf:Description xmlns:pinframe="https://pinframe.local/ns/1.0/" pinframe:run="{run}"/>'
+		'</rdf:RDF></x:xmpmeta>'
+	).encode()
 
 
 def parse_fill(value: str) -> tuple[int, ...]:
@@ -656,8 +702,9 @@ def main():
 		print(f'{p.name}  {fw}x{fh}  anchor {hit.x:.0f},{hit.y:.0f}  scale {hit.scale:.2f}  {hit.note}')
 	print(f'clip {size[0]}x{size[1]}')
 
-	# Written under hidden names and renamed together, so a failed run leaves the previous clip and its
-	# .json as they were instead of a partial clip beside a stale .json.
+	# Written under names unique to this run, then renamed together under the folder lock: a failed run
+	# leaves the previous pair as it was, and runs sharing an output publish whole pairs, one at a time.
+	run = uuid.uuid4().hex
 	rects = args.out.with_suffix('.json')
 	clip_partial, rects_partial = partial(args.out), partial(rects)
 	try:
@@ -670,12 +717,14 @@ def main():
 			args.fps,
 			keep,
 			resources.render_threads,
+			run,
 			args.frames,
 			args.vf,
 		)
-		write_rects(paths, sizes, sources, path, rects_partial)
-		clip_partial.replace(args.out)
-		rects_partial.replace(rects)
+		write_rects(paths, sizes, sources, path, rects_partial, run, args.out.name)
+		with folder_lock(args.out.parent):
+			clip_partial.replace(args.out)
+			rects_partial.replace(rects)
 	finally:
 		clip_partial.unlink(missing_ok=True)
 		rects_partial.unlink(missing_ok=True)
@@ -758,10 +807,32 @@ def demo():
 		assert keep.take(paths[0]) is frames[0] and np.array_equal(keep.take(paths[1]), frames[1])
 		assert not keep.photos, 'taking a photo releases it'
 
+		# Two runs writing the same output at once both succeed and leave one whole pair: the clip and the
+		# .json carry the same run ID, and no partial files are left behind.
+		shared = Path(tmp) / 'shared.avif'
+		cmd = [
+			sys.executable,
+			__file__,
+			*map(str, paths),
+			'--box',
+			','.join(map(str, box)),
+			'--out',
+			str(shared),
+		]
+		runs = [subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE) for _ in range(2)]
+		for run in runs:
+			assert run.wait() == 0, run.stderr.read().decode()
+			run.stderr.close()
+		sidecar = json.loads(shared.with_suffix('.json').read_text())
+		assert sidecar['clip'] == shared.name and len(sidecar['photos']) == len(frames)
+		with Image.open(shared) as im:
+			assert sidecar['run'].encode() in im.info['xmp'], 'the clip and its .json must come from one run'
+		assert not list(Path(tmp).glob('.*partial*')), 'no partial files may be left'
+
 		# The default output streams frames in, and keeps every frame, the frame rate and the transparency.
 		clip = Path(tmp) / 'clip.avif'
 		streamed = (place(f, src, padded, (0, 0, 0, 0)) for f, src in zip(frames, sources))
-		write_avif(streamed, len(frames), padded, True, clip, 4)
+		write_avif(streamed, len(frames), padded, True, clip, 4, 'demo')
 		with Image.open(clip) as im:
 			assert im.n_frames == len(frames) and im.mode == 'RGBA', (im.n_frames, im.mode)
 			alpha = [np.asarray(frame)[..., 3] for frame in ImageSequence.Iterator(im)]

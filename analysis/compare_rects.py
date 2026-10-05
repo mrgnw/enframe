@@ -3,7 +3,14 @@
 import json
 import sys
 
-base, new = (json.loads(open(p).read()) for p in sys.argv[1:3])
+
+def photos(path: str) -> list[dict]:
+	"""The per-photo rows, from a sidecar or an older one that was a bare list."""
+	data = json.loads(open(path).read())
+	return data if isinstance(data, list) else data['photos']
+
+
+base, new = (photos(p) for p in sys.argv[1:3])
 assert len(base) == len(new), f'{len(base)} vs {len(new)} photos'
 worst = 0.0
 for a, b in zip(base, new):
