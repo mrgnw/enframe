@@ -14,8 +14,7 @@ FRAMES = Path('/tmp/pin/frames')
 SIDECAR = Path('/tmp/pin/all.json')
 OUT = Path(__file__).resolve().parent.parent / 'mockups' / 'assets'
 
-MAIN = ['IMG_4667', 'IMG_4675', 'IMG_4702', 'IMG_4703', 'IMG_4720', 'IMG_4721', 'IMG_4725']
-THUMB_LONG, MAIN_LONG, FRAME_LONG = 200, 1400, 720
+THUMB_LONG, MAIN_LONG, FRAME_LONG = 200, 1100, 720
 
 
 def save(image: Image.Image, long_side: int, path: Path, quality: int = 72) -> None:
@@ -31,8 +30,7 @@ def main() -> None:
 	for p in photos:
 		with Image.open(p) as im:
 			save(im, THUMB_LONG, OUT / f'{p.stem}-t.jpg', 65)
-			if p.stem in MAIN:
-				save(im, MAIN_LONG, OUT / f'{p.stem}.jpg')
+			save(im, MAIN_LONG, OUT / f'{p.stem}.jpg', 62)
 	frames = sorted(FRAMES.glob('*.png'))
 	assert len(frames) == 57, len(frames)
 	for f in frames:
