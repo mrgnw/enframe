@@ -67,15 +67,21 @@ The tracker's own estimate for a lost photo (interpolated from neighbours) is dr
 | `Shift+Tab` | Previous lost photo |
 | `T` | Trail on or off; `−` `+` in the island set how many neighbours |
 | `Enter` | Accept the tracker's estimate for this photo as a mark (zero mouse) |
-| `Backspace`, `Delete` | Remove the mark on this photo; the photo becomes lost again |
-| `⌘Z`, `⌘⇧Z` | Undo, redo (marks only) |
+| `Backspace`, `Delete` | Clear the mark on this photo, the same as the "Clear mark" button. The photo becomes lost again. |
+| `⌘Z`, `⌘⇧Z` | Undo or redo the last mark, move or clear, and go to that photo. History holds 100 steps. |
 | `[` `]` `1` | Zoom down, up, reset |
 | `Space` | Play or pause the clip in Preview; in Fix, flip to the previous linked photo while held |
 | `Esc` | Cancel a drag in progress |
 
-**Mouse, complete list:** click = point mark; drag = search box; scroll = zoom; press and drag on the filmstrip = scrub; a vertical wheel over the filmstrip scrolls it sideways; click on the next-lost arrow = `Tab`.
+**Mouse, complete list:** click = point mark; drag = search box; scroll = zoom. On a lost photo these place a mark. On a marked photo they move it. Tracked photos ignore clicks, so scrubbing past them can't create a mark by accident. Press and drag on the filmstrip = scrub; a vertical wheel over the filmstrip scrolls it sideways; click on the next-lost arrow = `Tab`.
 
-After a mark the stage auto-advances to the next lost photo. Advancing is instant; the dots catch up when the re-track returns. A mark that fixes a scene change usually links several following photos too, so the next lost photo may be far away; the filmstrip scrolls to it.
+**After a mark** the new box pops in place for 450 ms, about the time the re-track takes, and then the stage moves to the next lost photo. The pause is long enough to see where the mark landed, and short enough that 24 marks stay fast. A mark that fixes a scene change usually links several following photos too, so the next lost photo may be far away; the filmstrip scrolls to it.
+
+**Fixing a mistake.** Every mark, move and clear can be undone, in three ways:
+
+- **Undo toast.** An island reads "Marked IMG_4721 · Undo" for 6 s after each change. Undo puts the photo back as it was, goes back to it, and re-tracks. It is the only undo on a phone, where there is no ⌘Z.
+- **⌘Z** does the same at any time, back through the last 100 changes.
+- **Go back and redo it.** `←`, Shift+Tab or the filmstrip reach any photo. On a marked photo the island reads "Your mark" with a "Clear mark" button, and a new click or drag moves the mark without advancing, so the fix can be checked in place.
 
 **Reaching the 24 marks on the sample:** 24 clicks, 24 re-tracks of under a second each, plus 12 scrolls where the lens changed. Around a minute. The same set costs about 40 minutes with the CLI.
 
@@ -107,25 +113,28 @@ Confidence (the inlier count) is shown on hover only. It is the tracker's honest
 
 ## Neighbour trail
 
-Over the current photo, the anchor boxes of up to N photos before it and N after it are drawn as **corner ticks only**. Each box gets four short L-shaped ticks and no outline. On a lost photo, the trail shows where the anchor was and where it goes next, so the click usually lands between the last violet ticks and the first teal ones. On a tracked photo, it shows the anchor's path, and a drift the tracker missed shows up as a kink.
+Over the current photo, the trail draws the anchor's **path** through up to N photos before it and N after it. A line joins the anchor centres in photo order and passes through the current anchor, with a dot at each neighbour. Box corners are drawn only on the nearest neighbour each side. On a lost photo, the path shows where the anchor was and where it goes next, so the click usually lands where the violet line meets the teal one. On a tracked photo, a drift the tracker missed shows up as a kink.
+
+**Why a path, not boxes.** The first version drew corner ticks for every neighbour. At 2.5x the followed box covers most of the photo, so twelve sets of corners landed near the photo edges, far from each other. They read as scattered marks, not a sequence. The phone screenshot of IMG_4725 showed this. Centres stay close together whatever the box size, and a line between them shows order and connection directly.
 
 | Property | Choice | Why |
 |-|-|-|
-| Colour | Before: violet `#b49cff`. After: teal `#3fd8c4`. | Distinct from amber, which is the current box and marks, and from red, which is lost. A 3.5 px dark halo under each tick keeps both readable on sky, cloud and foliage. |
-| Opacity | Linear, from 0.9 at the nearest neighbour to 0.2 at the Nth. Far boxes are drawn first, so near ones sit on top. | The nearest neighbour is the one the click depends on. |
-| Tick length | 18% of the box's shorter side, clamped to 5–16 px | Small boxes still get visible ticks, and big ones don't turn back into outlines. |
-| Default N | 6 per side, adjustable from 5 to 10 with `−` `+`. `T` turns the trail off. | The Girona set's 57 photos form 27 linked chains, so most chains are one to three photos long. At 6, the trail crosses a scene change or two on each side, which is where lost photos are. The 6th neighbour is already at 0.2 opacity, so more would add clutter that can't be read. |
-| Cost | One SVG over the photo, with at most 20 groups of two paths each. It is redrawn on photo change and on resize. | No images and no blur, so scrubbing stays instant. |
+| Colour | Before: violet `#b49cff`. After: teal `#3fd8c4`. | Distinct from amber, which is the current box and marks, and from red, which is lost. A dark halo under every line and tick keeps both readable on sky, cloud and foliage. |
+| Line | 2.5 px on a 5.5 px dark halo. Each segment takes the opacity of its farther end. | The line is the strongest element of the trail, because the connection is what the user reads. |
+| Opacity | Linear, from 0.95 at the nearest neighbour to 0.35 at the Nth. | The nearest neighbour is the one the click depends on, and the far end must stay visible. |
+| Corners | Nearest neighbour each side only. Ticks are 18% of the box's shorter side, clamped to 5–14 px. | Box size matters most next to the current photo, which is where a lens switch shows. More boxes turn back into scatter. |
+| Default N | 6 per side, adjustable from 5 to 10 with `−` `+`. `T` turns the trail off. | The Girona set's 57 photos form 27 linked chains, so most chains are one to three photos long. At 6, the path crosses a scene change or two on each side, which is where lost photos are. |
+| Cost | One SVG over the photo: at most 20 line segments, 12 dots and 2 sets of corners. It is redrawn on photo change and on resize. | No images and no blur, so scrubbing stays instant. |
 
-How the source changes the ticks:
+How the source changes the trail:
 
-| Source | Ticks | Meaning |
-|-|-|-|
-| `tracked` | Solid, 1.75 px | Seen by the tracker |
-| `mark` | Solid, 2.5 px, with a small ring at the centre | Placed by the user. The ring is where they clicked, and it shows where a new scene starts. |
-| `lost` | Dashed, 3 px on and 3 px off, no ring | Interpolated from neighbours, never seen |
+| Source | Dot | Line into it | Meaning |
+|-|-|-|-|
+| `tracked` | Filled | Solid | Seen by the tracker |
+| `mark` | Large ring | Solid | Placed by the user. A long segment ending in a ring is a scene change. |
+| `lost` | Small, hollow, dashed | Dashed | Interpolated from neighbours, never seen |
 
-**Coordinates.** Each neighbour's box is drawn at its own position in its own photo, normalized 0–1, so photos of different resolutions line up. The trail is then the anchor's path through the frame. A lens switch shows up as a jump in box size, which is useful information. In the mockup, the box goes from 0.35 to 0.90 of the photo width between IMG_4719 and IMG_4720, where the lens switches to 2.55x. Two side effects follow from this choice:
+**Coordinates.** Each neighbour's centre and box are drawn at their own position in their own photo, normalized 0–1, so photos of different resolutions line up. The trail is then the anchor's path through the frame. A lens switch shows up as a jump in box size, which is useful information. In the mockup, the box goes from 0.35 to 0.90 of the photo width between IMG_4719 and IMG_4720, where the lens switches to 2.55x. Two side effects follow from this choice:
 
 - A neighbour of the other orientation, such as a landscape photo next to a portrait one, is drawn stretched. Its position is still right.
 - At large zoom a box can extend past the photo. Its ticks are drawn outside the photo edge rather than clipped, because the size is the information.
@@ -154,6 +163,17 @@ The derivation needs the marks and the photo sizes. The UI has both, because the
 
 - It holds only while the crop is a pure scale and shift of the anchor. The README's "soft lock" next step would let the anchor drift inside the crop and break step 1.
 - Lost photos use the sidecar's interpolated scale, so their size is an estimate, like their position.
+
+## Phone layout
+
+Below 700 px wide, the islands stop floating over the photo. They stack in a dock above it and a dock below it, so nothing covers the photo or another island. The first mockup overlapped the wordmark, the steps and the status on a phone, and the trail control sat on top of the reference patch.
+
+- **Top dock:** the position ("30 / 57"), the lost count with the next-lost arrow, and Preview. The wordmark, the folder name and the Box/Fix/Export steps are dropped; Preview is the next step.
+- **Bottom dock:** a compact reference patch with "Looking for IMG_4720 · 2.55×", prev and next buttons in place of the arrow keys, then the trail and zoom steppers. Zoom uses `−` `+` buttons because there is no scroll wheel.
+- **Photo:** sized to the space left between the docks, so it is never cut off. A tap marks a point and a one-finger drag marks a search box. The undo toast sits at the top of the photo, clear of the thumb.
+- **Filmstrip:** 48 px thumbnails, scrubbed by dragging, with bottom padding for the iPhone home indicator so Safari's toolbar doesn't cover it.
+- **Touch targets:** buttons are 36 px inside 44 px islands.
+- **Preview screen:** the clip, the transport controls and the export panel stack in one scrolling column.
 
 ## Preview and export
 
@@ -198,7 +218,7 @@ Alternatives rejected:
 - **Smoothing, soft lock, same-size versus full-frame.** README next steps, not UI. When they exist they are one switch each in the Preview island.
 - **A library, projects, history.** The session file beside the folder is the project. Reopening a folder reopens the session.
 - **Confidence tuning** (`--min-matches`, `--max-zoom`, `--max-turn`). Not CLI flags today either.
-- **Mobile layout.** A pointer and a keyboard are assumed. The layout degrades to a single column but marking is not designed for touch.
+- **Pinch and hover on phones.** Pinch is left to the browser for inspecting the photo, not used to set the zoom. Feature counts and filenames that desktop shows on hover are not shown on a phone.
 - **Frame-style settings depth.** Frame's polish comes from its density of correct detail in one panel. Here the panel has five controls, and the polish goes into the marking loop.
 
 ## Open questions
@@ -211,4 +231,5 @@ Alternatives rejected:
 6. **EXIF zoom.** When photos carry focal length, should the UI pre-set the ghost zoom from it, or hide the zoom gesture entirely on those sets?
 7. **Where in enframe.** A route at `/pin` next to the framer at `/`, or a mode of the framer reached from a multi-select in the library?
 8. **Sidecar `anchor` field.** Is `[cx, cy, w, h]` per row, normalized to the photo, the right shape? Adding it to `anchor.py` removes the derivation and its soft-lock caveat.
-9. **Trail across scene changes.** Should the trail stop at a mark that starts a new scene, since positions from another scene are not comparable? The proposal is no: the mark's ring already shows where the scene changes, and stopping would hide lens switches that happen at a mark, such as IMG_4698 at 2.5x.
+9. **Trail across scene changes.** Should the trail stop at a mark that starts a new scene, since positions from another scene are not comparable? The proposal is no: a long segment ending in a mark's ring already shows where the scene changes, and stopping would hide lens switches that happen at a mark, such as IMG_4698 at 2.5x. On IMG_4725 that segment crosses most of the photo; if that reads as noise in use, draw segments into a mark dotted instead of stopping.
+10. **Auto-advance delay.** Is 450 ms after a mark the right pause? A longer one shows the mark more clearly; a shorter one makes 24 marks faster. The undo toast covers mistakes either way.
