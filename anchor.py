@@ -33,11 +33,22 @@ def resize(img: np.ndarray, factor: float) -> np.ndarray:
 	return cv2.resize(img, None, fx=factor, fy=factor, interpolation=interpolation)
 
 
-def features_in(sift, g: np.ndarray, cx: float, cy: float, w: float, h: float):
-	mask = np.zeros_like(g)
+def box_mask(shape, cx: float, cy: float, w: float, h: float) -> np.ndarray:
+	mask = np.zeros(shape, np.uint8)
 	x0, y0 = max(0, round(cx - w / 2)), max(0, round(cy - h / 2))
 	mask[y0 : round(cy + h / 2), x0 : round(cx + w / 2)] = 255
-	return sift.detectAndCompute(g, mask)
+	return mask
+
+
+def features_in(kp, des, mask: np.ndarray):
+	"""The features SIFT finds with this mask: OpenCV detects on the whole photo, then drops keypoints
+	whose rounded position falls outside the mask, so filtering a whole-photo run is identical."""
+	if not kp:
+		return (), None
+	# float32 like OpenCV's (int)(pt + 0.5f), so a keypoint on a box edge lands on the same side.
+	at = (np.float32([p.pt for p in kp]) + np.float32(0.5)).astype(int)
+	keep = mask[at[:, 1], at[:, 0]] > 0
+	return tuple(p for p, inside in zip(kp, keep) if inside), des[keep]
 
 
 def similarity(kp, des, kp2, des2, tolerance: float):
@@ -130,7 +141,9 @@ def track(frames: list[np.ndarray], marks: dict[int, tuple[float, ...]]) -> list
 			source, note = 'tracked', f'{agreed} features'
 		path.append(Hit(cx / k, cy / k, scale, source, note))
 		# Clouds deform, so features come from the latest find, never from a lost frame.
-		fresh = features_in(sift, g, cx, cy, rw, rh)
+		mask = box_mask(g.shape, cx, cy, rw, rh)
+		# A tracked photo already has its whole-photo features; a marked one skipped that run.
+		fresh = features_in(kp2, des2, mask) if source == 'tracked' else sift.detectAndCompute(g, mask)
 		if i == 0:
 			assert len(fresh[0]) >= MIN_INLIERS, (
 				f'only {len(fresh[0])} features in the box; draw a bigger one'
