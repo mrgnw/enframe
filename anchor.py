@@ -1,5 +1,6 @@
 import argparse
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -121,12 +122,18 @@ def fill_lost(path: list[Hit], sizes) -> list[Hit]:
 	]
 
 
-def crop_rects(sizes, anchors) -> list[tuple[float, float, int, int]]:
-	"""Largest same-size crop holding every anchor at one spot; all values in first-frame scale."""
-	left = min(x for x, _ in anchors)
-	top = min(y for _, y in anchors)
-	right = min(fw - x for (fw, _), (x, _) in zip(sizes, anchors))
-	bottom = min(fh - y for (_, fh), (_, y) in zip(sizes, anchors))
+def crop_rects(sizes, anchors, pad: bool) -> list[tuple[float, float, int, int]]:
+	"""Same-size crop holding every anchor at one spot; all values in first-frame scale.
+
+	Unpadded, it is the largest crop every photo fills. Padded, each side takes the median margin, so
+	half the photos fill each edge and the rest show padding.
+	"""
+	# ponytail: median margins when padding; a percentile knob if half-filled edges look wrong
+	pick = np.median if pad else min
+	left = float(pick([x for x, _ in anchors]))
+	top = float(pick([y for _, y in anchors]))
+	right = float(pick([fw - x for (fw, _), (x, _) in zip(sizes, anchors)]))
+	bottom = float(pick([fh - y for (_, fh), (_, y) in zip(sizes, anchors)]))
 	# Even sizes keep yuv420p happy; flooring only shrinks the crop, so bounds still hold.
 	cw = int(left + right) // 2 * 2
 	ch = int(top + bottom) // 2 * 2
@@ -135,38 +142,72 @@ def crop_rects(sizes, anchors) -> list[tuple[float, float, int, int]]:
 	)
 
 	rects = [(x - left, y - top, cw, ch) for x, y in anchors]
-	for (fw, fh), (rx, ry, rw, rh) in zip(sizes, rects):
-		assert -1e-6 <= rx and -1e-6 <= ry and rx + rw <= fw + 1e-6 and ry + rh <= fh + 1e-6
+	if not pad:
+		for (fw, fh), (rx, ry, rw, rh) in zip(sizes, rects):
+			assert -1e-6 <= rx and -1e-6 <= ry and rx + rw <= fw + 1e-6 and ry + rh <= fh + 1e-6
 	return rects
 
 
-def to_source(rect, s: float, size: tuple[int, int]) -> tuple[int, int, int, int]:
-	x, y, w, h = rect
-	fw, fh = size
-	sw, sh = min(round(w * s), fw), min(round(h * s), fh)
-	# Rounding can overshoot by a pixel; nudge back inside rather than pad.
-	sx = min(max(round(x * s), 0), fw - sw)
-	sy = min(max(round(y * s), 0), fh - sh)
-	return sx, sy, sw, sh
-
-
-def cut(rgb: np.ndarray, source: tuple[int, int, int, int], size: tuple[int, int]) -> np.ndarray:
+def place(rgb: np.ndarray, source, size: tuple[int, int], fill: tuple[int, ...] | None) -> np.ndarray:
+	"""Scale the source rect (photo pixels, may overhang the photo) to size; overhang shows fill."""
 	x, y, w, h = source
-	interpolation = cv2.INTER_AREA if w > size[0] else cv2.INTER_CUBIC
-	return cv2.resize(rgb[y : y + h, x : x + w], size, interpolation=interpolation)
+	out_w, out_h = size
+	fh, fw = rgb.shape[:2]
+	f = out_w / w
+	# Cubic resampling reads 2 px past each edge; cut that much extra photo so only real overhang is padded.
+	a0, b0 = max(0, math.floor(x) - 2), max(0, math.floor(y) - 2)
+	a1, b1 = min(fw, math.ceil(x + w) + 2), min(fh, math.ceil(y + h) + 2)
+	assert a1 > a0 and b1 > b0, 'crop misses the photo entirely'
+
+	piece = rgb[b0:b1, a0:a1]
+	if fill is not None and len(fill) == 4:
+		piece = np.dstack([piece, np.full(piece.shape[:2], 255, np.uint8)])
+	if f < 1:
+		piece = cv2.resize(piece, None, fx=f, fy=f, interpolation=cv2.INTER_AREA)
+	px, py = piece.shape[1] / (a1 - a0), piece.shape[0] / (b1 - b0)
+	M = np.float64([[f / px, 0, (a0 - x) * f], [0, f / py, (b0 - y) * f]])
+	# Unpadded crops sit inside the photo, so replicating only ever fills a rounding seam.
+	border = cv2.BORDER_REPLICATE if fill is None else cv2.BORDER_CONSTANT
+	return cv2.warpAffine(
+		piece,
+		M,
+		(out_w, out_h),
+		flags=cv2.INTER_CUBIC if f >= 1 else cv2.INTER_LINEAR,
+		borderMode=border,
+		borderValue=fill or 0,
+	)
 
 
-def render(frames: list[np.ndarray], sources, size: tuple[int, int], out: Path, fps: float):
+def encoder(out: Path, alpha: bool) -> list[str]:
+	if out.suffix == '.webm':
+		return [
+			'-c:v',
+			'libvpx-vp9',
+			'-pix_fmt',
+			'yuva420p' if alpha else 'yuv420p',
+			'-crf',
+			'30',
+			'-b:v',
+			'0',
+		]
+	if out.suffix == '.mov' and alpha:
+		return ['-c:v', 'prores_ks', '-profile:v', '4444', '-pix_fmt', 'yuva444p10le']
+	assert not alpha, 'transparent padding needs a .mov (ProRes 4444) or .webm (VP9) output'
+	return ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18']
+
+
+def render(frames, sources, size: tuple[int, int], fill: tuple[int, ...] | None, out: Path, fps: float):
+	alpha = fill is not None and len(fill) == 4
 	w, h = size
 	cmd = [
 		'ffmpeg', '-y', '-loglevel', 'error',
-		'-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{w}x{h}', '-r', str(fps), '-i', '-',
-		'-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', str(out),
+		'-f', 'rawvideo', '-pix_fmt', 'rgba' if alpha else 'rgb24', '-s', f'{w}x{h}', '-r', str(fps), '-i', '-',
+		*encoder(out, alpha), str(out),
 	]  # fmt: skip
 	with subprocess.Popen(cmd, stdin=subprocess.PIPE) as ffmpeg:
 		assert ffmpeg.stdin is not None
 		for rgb, source in zip(frames, sources):
-			ffmpeg.stdin.write(np.ascontiguousarray(cut(rgb, source, size)).tobytes())
+			ffmpeg.stdin.write(np.ascontiguousarray(place(rgb, source, size, fill)).tobytes())
 		ffmpeg.stdin.close()
 	assert ffmpeg.returncode == 0, f'ffmpeg exited {ffmpeg.returncode}'
 
@@ -188,13 +229,15 @@ def pick_box(rgb: np.ndarray) -> tuple[int, int, int, int]:
 	return tuple(int(v) for v in box)
 
 
-def plan(frames: list[np.ndarray], boxes):
+def plan(frames: list[np.ndarray], boxes, pad: bool = False):
 	sizes = [(f.shape[1], f.shape[0]) for f in frames]
 	path = fill_lost(track(frames, boxes), sizes)
 	scaled_sizes = [(fw / hit.scale, fh / hit.scale) for (fw, fh), hit in zip(sizes, path)]
 	scaled_anchors = [(hit.x / hit.scale, hit.y / hit.scale) for hit in path]
-	rects = crop_rects(scaled_sizes, scaled_anchors)
-	sources = [to_source(r, hit.scale, size) for r, hit, size in zip(rects, path, sizes)]
+	rects = crop_rects(scaled_sizes, scaled_anchors, pad)
+	sources = [
+		(x * hit.scale, y * hit.scale, w * hit.scale, h * hit.scale) for (x, y, w, h), hit in zip(rects, path)
+	]
 	# Size the clip at the typical photo's scale, so one zoomed-out shot doesn't shrink the rest.
 	typical = float(np.median([hit.scale for hit in path]))
 	_, _, cw, ch = rects[0]
@@ -205,6 +248,14 @@ def parse_box(value: str) -> tuple[int, int, int, int]:
 	box = tuple(int(v) for v in value.split(','))
 	assert len(box) == 4, f'{value}: a box is x,y,w,h'
 	return box
+
+
+def parse_fill(value: str) -> tuple[int, ...]:
+	if value == 'transparent':
+		return (0, 0, 0, 0)
+	hex_value = {'black': '000000', 'white': 'ffffff'}.get(value, value.removeprefix('#'))
+	assert len(hex_value) == 6, f'--pad {value}: use transparent, black, white or a #rrggbb colour'
+	return tuple(int(hex_value[i : i + 2], 16) for i in (0, 2, 4))
 
 
 def main():
@@ -218,12 +269,20 @@ def main():
 		metavar='PHOTO=x,y,w,h',
 		help='box the anchor in a photo the tracker lost; repeatable',
 	)
+	parser.add_argument(
+		'--pad',
+		metavar='COLOUR',
+		help='let the crop overhang photos, filled with transparent, black, white or #rrggbb; '
+		'omit to shrink the crop until every photo fills it',
+	)
 	parser.add_argument('--fps', type=float, default=4)
 	parser.add_argument('--out', type=Path, default=Path('out.mp4'))
 	args = parser.parse_args()
 
 	# ponytail: filename order; the exported AVIFs carry no capture time to sort by
 	paths = sorted(args.photos)
+	fill = parse_fill(args.pad) if args.pad else None
+	encoder(args.out, fill is not None and len(fill) == 4)
 	frames = [load(p) for p in paths]
 	boxes = {0: parse_box(args.box) if args.box else pick_box(frames[0])}
 	names = [p.name for p in paths]
@@ -232,12 +291,12 @@ def main():
 		assert name in names, f'--at {name}: not one of the photos'
 		boxes[names.index(name)] = parse_box(value)
 
-	path, sizes, sources, size = plan(frames, boxes)
+	path, sizes, sources, size = plan(frames, boxes, pad=fill is not None)
 	for p, (fw, fh), hit in zip(paths, sizes, path):
 		print(f'{p.name}  {fw}x{fh}  anchor {hit.x:.0f},{hit.y:.0f}  scale {hit.scale:.2f}  {hit.note}')
 	print(f'clip {size[0]}x{size[1]}')
 
-	render(frames, sources, size, args.out, args.fps)
+	render(frames, sources, size, fill, args.out, args.fps)
 	write_rects(paths, sizes, sources, args.out.with_suffix('.json'))
 	print(f'wrote {args.out}')
 
@@ -267,9 +326,22 @@ def demo():
 	assert path[1].note == 'your box'
 
 	_, _, sources, size = plan(frames, {0: box})
-	crops = [cut(f, src, size).astype(int) for f, src in zip(frames, sources)]
+	crops = [place(f, src, size, None).astype(int) for f, src in zip(frames, sources)]
 	for c in crops[1:]:
 		assert np.abs(c - crops[0]).mean() < 8, 'locked crops of a static world must match'
+
+	# Padded: a bigger crop that overhangs some photos; where every photo shows, they must still agree.
+	_, _, sources, padded = plan(frames, {0: box}, pad=True)
+	assert padded[0] * padded[1] > size[0] * size[1]
+	crops = [place(f, src, padded, (0, 0, 0, 0)).astype(int) for f, src in zip(frames, sources)]
+	alpha = np.stack([c[..., 3] for c in crops])
+	assert (alpha == 0).any(), 'some photo should fall short of the padded crop'
+	solid = (alpha == 255).all(axis=0)
+	assert solid.any()
+	for c in crops[1:]:
+		assert np.abs(c[solid] - crops[0][solid]).mean() < 8, 'padding must not move the anchor'
+
+	assert parse_fill('transparent') == (0, 0, 0, 0) and parse_fill('#ff8000') == (255, 128, 0)
 
 	hidden = [Hit(0, 0, 1, True, ''), Hit(9, 9, 9, False, ''), Hit(20, 40, 2, True, '')]
 	assert fill_lost(hidden, [(100, 100)] * 3)[1][:3] == (10, 20, 1.5)
