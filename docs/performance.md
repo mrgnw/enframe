@@ -60,10 +60,47 @@ Peak RSS rose by about 45 MB, from the 8 frames in flight during render.
 
 ## Where the time goes now
 
-About 3.7 s wall clock: ~0.4 s `uv run` and imports, 0.6 s decode, 1.45 s track (57 SIFT runs at 1024 px), 1.3 s render (ProRes-bound).
+```sh
+bash analysis/profile.sh 9
+bash analysis/profile.sh 9 --frames
+```
+
+`analysis/profile_stages.py` charges each second of the main thread to exactly one stage (self-time, children subtracted), so the rows add up to the wall clock. It also times the ffmpeg pipe, and per phase it records process CPU time, which shows how many cores the phase keeps busy. Medians of 9 runs, with other apps running, so totals sit above the 3.71 s quiet-machine figure; the shares are what matter.
+
+**Clip only, 3.90 s:**
+
+| stage | seconds | share |
+|-|-|-|
+| render: ffmpeg ProRes encode (blocked writing 1.03 + finishing 0.52) | 1.55 | 40% |
+| track: SIFT, whole photo (33 tracked photos) | 0.96 | 25% |
+| decode 57 AVIFs | 0.67 | 17% |
+| track: SIFT in box (24 marked photos) | 0.46 | 12% |
+| `uv run`, Python start, imports | 0.16 | 4% |
+| everything else (matching, RANSAC, plan, placing frames, JSON) | 0.10 | 3% |
+
+**With `--frames`, 4.46 s:** render grows from 1.58 s to 2.09 s. The main thread now waits on the PNG workers (1.25 s) more than on ffmpeg (0.82 s). PNG compression is the largest CPU cost of the run: 9.6 thread-seconds across 8 threads.
+
+**Cores busy per phase:**
+
+| phase | wall s | CPU s | cores busy |
+|-|-|-|-|
+| decode | 0.67 | 3.75 | 5.6 |
+| track | 1.50 | 9.03 | 6.0 |
+| render, clip only (Python side) | 1.58 | 1.41 | 0.9, plus ffmpeg at 11 CPU-s ≈ 7 cores |
+| render, with `--frames` | 2.09 | 7.19 | 3.4, plus ffmpeg |
+
+The three phases run one after another, and each already keeps 6–7 of 12 cores busy. That is why more threading gave little: the next gains have to come from doing less work.
+
+The crop size depends on every photo's anchor (`crop_rects` takes min or median margins over all of them). So no frame can be rendered or encoded until tracking has finished. Encoding cannot overlap tracking. Only decode and tracking can overlap.
 
 ## Further ideas, ranked
 
+0. **For click-to-mark, skip the clip and cache features between runs.**
+   - Each new mark re-runs everything: decode 0.67 s, SIFT 1.42 s, encode 1.55 s.
+   - Marking needs only the JSON, so a JSON-only run drops the 1.55 s encode.
+   - Masked SIFT equals whole-photo SIFT filtered to the box (see "SIFT reuse"). Each photo's whole-photo features therefore depend only on the file, not on the marks. They can be cached on disk, keyed by path and mtime.
+   - A re-run would then load features and match. Estimated, not measured: about 0.3–0.5 s instead of about 4 s.
+   - Output is unchanged by construction. This matters most for the enframe integration in `docs/wasm.md` (`spike-wasm`), which re-runs `anchor.py` on every click.
 1. **Smaller `TRACK_EDGE` (768)** would save about 0.5 s with the same LOST set on Girona. It needs an accuracy check first, for example `analysis/grids.py` contact sheets at lens switches, since 1024 was chosen for them.
 2. **Faster encode for previews.** ProRes 4444 sets a ~1.2 s floor. A draft mode that writes VP9 or x264 with `-preset ultrafast`, or `--frames` alone, would skip it. This changes the output, so it belongs behind a flag.
 3. **Overlap decode with tracking.** Pillow reads image sizes without decoding, so `k` can be known up front. Tracking photo i could then run while photo i+1 decodes. Both stages already use several cores, so expect 0.2-0.3 s at most.
