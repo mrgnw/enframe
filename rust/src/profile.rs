@@ -1,8 +1,8 @@
 //! Wall, CPU and peak memory per step, and thread-seconds per kind of work, written as one JSON line to
 //! the file named by PINFRAME_PROFILE. Without it, nothing is measured.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy)]
@@ -49,9 +49,11 @@ pub fn start() {
 		return;
 	}
 	ON.store(true, Ordering::Relaxed);
-	std::thread::spawn(|| loop {
-		SAMPLES.lock().unwrap().push((Instant::now(), resident_bytes()));
-		std::thread::sleep(Duration::from_millis(5));
+	std::thread::spawn(|| {
+		loop {
+			SAMPLES.lock().unwrap().push((Instant::now(), resident_bytes()));
+			std::thread::sleep(Duration::from_millis(5));
+		}
 	});
 }
 

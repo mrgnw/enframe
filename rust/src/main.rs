@@ -11,8 +11,8 @@ mod render;
 mod sift;
 mod track;
 
-use profile::{step, work, Work};
-use render::{ordered, place, Keep};
+use profile::{Work, step, work};
+use render::{Keep, ordered, place};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::sync_channel;
@@ -290,7 +290,7 @@ fn find_features(small: &pixels::Image) -> sift::Features {
 /// kornia-imgproc's SIFT, with its float descriptors (whole numbers, as OpenCV's) stored as bytes.
 #[cfg(feature = "kornia")]
 fn find_features(small: &pixels::Image) -> sift::Features {
-	use kornia_imgproc::features::{sift_detect_and_compute, FirstOctave, SiftConfig, SiftWorkspace};
+	use kornia_imgproc::features::{FirstOctave, SiftConfig, SiftWorkspace, sift_detect_and_compute};
 	thread_local! {
 		static WORKSPACE: std::cell::RefCell<SiftWorkspace> = std::cell::RefCell::new(SiftWorkspace::new());
 	}
@@ -332,7 +332,7 @@ fn find_features(small: &pixels::Image) -> sift::Features {
 /// OpenCV's own SIFT through the opencv crate, its float descriptors stored as bytes.
 #[cfg(feature = "opencv")]
 fn find_features(small: &pixels::Image) -> sift::Features {
-	use opencv::core::{no_array, Mat, Vector};
+	use opencv::core::{Mat, Vector, no_array};
 	use opencv::features::SIFT;
 	use opencv::prelude::*;
 	let run = || -> opencv::Result<sift::Features> {
@@ -475,11 +475,7 @@ fn render(job: &RenderJob, sink: &mut Sink) {
 			let path = dir.join(format!("{:04}.png", i + 1));
 			save_png(&path, &frame).unwrap_or_else(|e| fail(&format!("{}: {e}", path.display())));
 		}
-		if job.avif {
-			Frame::Yuv(work(Work::Place, || avif::to_yuv420(&frame)))
-		} else {
-			Frame::Rgb(frame)
-		}
+		if job.avif { Frame::Yuv(work(Work::Place, || avif::to_yuv420(&frame))) } else { Frame::Rgb(frame) }
 	};
 	let mut waited = std::time::Instant::now();
 	ordered(job.paths.len(), job.threads, QUEUE_DEPTH * job.threads, place_one, |_, frame| {

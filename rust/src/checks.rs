@@ -208,7 +208,7 @@ fn encode_bench() {
 #[test]
 #[ignore]
 fn kornia_sift_matches_opencv() {
-	use kornia_imgproc::features::{sift_detect_and_compute, FirstOctave, SiftConfig, SiftWorkspace};
+	use kornia_imgproc::features::{FirstOctave, SiftConfig, SiftWorkspace, sift_detect_and_compute};
 	for name in ["IMG_4667", "IMG_4791"] {
 		let rgb = avif::decode(&Path::new(SAMPLES).join(format!("{name}.avif")), 1).unwrap();
 		let small = pixels::shrink_area(&pixels::gray(&rgb), 0.5);
@@ -387,4 +387,53 @@ fn task_memory() {
 		std::hint::black_box(crate::sift::detect_and_compute(&small));
 	}
 	println!("task_memory: {} px, peak {} bytes, before {before}", w * h, crate::profile::peak_rss());
+}
+/// What a new mark costs when every photo's features are already in memory, as they could be in a
+/// long-running app: tracking, filling lost photos and planning the crop for all 57 Girona photos.
+#[test]
+#[ignore]
+fn retrack_bench() {
+	let mut paths: Vec<_> = std::fs::read_dir(SAMPLES)
+		.unwrap()
+		.flatten()
+		.map(|e| e.path())
+		.filter(|p| p.extension().is_some_and(|x| x == "avif"))
+		.collect();
+	paths.sort();
+	let sizes: Vec<(u32, u32)> = paths.iter().map(|p| avif::oriented_size(p).unwrap()).collect();
+	let k = crate::track::track_factor(&sizes);
+	let features: Vec<crate::sift::Features> = std::thread::scope(|scope| {
+		let handles: Vec<_> = paths
+			.chunks(paths.len().div_ceil(12))
+			.map(|chunk| {
+				scope.spawn(move || {
+					chunk
+						.iter()
+						.map(|p| {
+							let gray = pixels::gray(&avif::decode(p, 1).unwrap());
+							crate::sift::detect_and_compute(&pixels::shrink_area(&gray, k))
+						})
+						.collect::<Vec<_>>()
+				})
+			})
+			.collect();
+		handles.into_iter().flat_map(|h| h.join().unwrap()).collect()
+	});
+	let mut marks = vec![None; paths.len()];
+	marks[0] = Some(crate::track::Mark(vec![1010.0, 410.0, 1030.0, 400.0]));
+	let mut best = std::time::Duration::MAX;
+	for _ in 0..5 {
+		let started = std::time::Instant::now();
+		let photos = features.iter().zip(&sizes).map(|(f, &(w, h))| crate::track::Photo {
+			small: ((w as f64 * k).round() as usize, (h as f64 * k).round() as usize),
+			features: crate::sift::Features {
+				keypoints: f.keypoints.clone(),
+				descriptors: f.descriptors.clone(),
+			},
+		});
+		let path = crate::track::fill_lost(crate::track::track(photos, &sizes, k, &marks), &sizes);
+		std::hint::black_box(crate::track::plan(&path, &sizes, true));
+		best = best.min(started.elapsed());
+	}
+	println!("retrack_bench: track + plan of {} photos from features in memory: {best:?}", paths.len());
 }

@@ -1,7 +1,7 @@
 //! AVIF through libavif: photo headers and decode (dav1d), and the animated clip encode (libaom).
 
 use crate::avif_sys::*;
-use crate::pixels::{orient, Image};
+use crate::pixels::{Image, orient};
 use std::ffi::{CStr, CString};
 use std::path::Path;
 

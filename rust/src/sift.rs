@@ -351,11 +351,7 @@ fn in_layer_extrema(above: &[f32], row: &[f32], below: &[f32], threshold: f32, c
 
 #[inline(always)]
 fn is_extremum(val: f32, dog: Dog, layer: usize, r: usize, c: usize) -> bool {
-	if val > 0.0 {
-		beats(|v| val >= v, dog, layer, r, c)
-	} else {
-		beats(|v| val <= v, dog, layer, r, c)
-	}
+	if val > 0.0 { beats(|v| val >= v, dog, layer, r, c) } else { beats(|v| val <= v, dog, layer, r, c) }
 }
 
 /// Whether `wins` holds against all 26 neighbours in scale space. Generic, so each comparison inlines.
@@ -564,11 +560,7 @@ fn fast_atan2(y: f32, x: f32) -> f32 {
 	let a = cc.mul_add(P7, P5).mul_add(cc, P3).mul_add(cc, P1) * c;
 	let a = if ax >= ay { a } else { 90.0 - a };
 	let a = if x < 0.0 { 180.0 - a } else { a };
-	if y < 0.0 {
-		360.0 - a
-	} else {
-		a
-	}
+	if y < 0.0 { 360.0 - a } else { a }
 }
 
 /// Gradient samples around a keypoint: x and y differences, the squared-distance weight and histogram
