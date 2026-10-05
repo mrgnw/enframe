@@ -15,6 +15,7 @@ from typing import NamedTuple, NoReturn
 
 import cv2
 import numpy as np
+import psutil
 from PIL import ExifTags, Image, ImageOps, ImageSequence
 
 MIN_INLIERS = 8
@@ -24,16 +25,18 @@ RATIO_TEST = 0.8
 RANSAC_TOLERANCE = 0.03
 MAX_STEP_ZOOM = 6
 MAX_STEP_TURN = 15
-RENDER_WORKERS = 8
-# On the M4 Pro (8 performance + 4 efficiency cores), Girona decode + SIFT: 4 threads 1.6 s,
-# 6 threads 1.5 s, 8 threads 1.6 s with more memory; one photo at a time 2.3 s.
-PREPARE_WORKERS = 6
-# Results queued ahead of the consumer: results come back in order, so a queue no deeper than the
-# workers idles them behind one slow photo. Queued results are small (features, or one clip frame).
-PREPARE_AHEAD = 3 * PREPARE_WORKERS
-RENDER_AHEAD = 3 * RENDER_WORKERS
-# Share of physical RAM for decoded photos kept from the first pass, so render need not decode them again.
-KEEP_SHARE = 0.25
+# Threads and memory are planned at start from the cores, the free memory and these measured costs
+# (analysis/task_memory.py, analysis/threads_sweep.py; M4 Pro, 2026-10-05). Re-measure them after
+# changing libraries or TRACK_EDGE.
+PREPARE_FIXED_BYTES = 150 * 2**20  # SIFT on a TRACK_EDGE image, whatever the photo size
+PREPARE_BYTES_PER_PIXEL = 18  # decode buffers, RGB and gray at full size: 3 MP 208 MB, 49 MP 1019 MB
+RENDER_BYTES_PER_PIXEL = 25  # decode buffers, RGB, padded piece and clip frame: 3 MP 80 MB, 49 MP 1203 MB
+FEATURE_BYTES = 4 * 2**20  # one photo's features at TRACK_EDGE; the largest of Girona's is 3.6 MB
+# Results queued per thread. They come back in order, so 1-2 per thread idled threads behind one slow
+# photo (3.03 s on Girona); 3-4 kept them busy (2.83-2.94 s).
+QUEUE_DEPTH = 3
+# Policy: plan within this share of the memory free at start, leaving the rest to other apps.
+MEMORY_SHARE = 0.75
 # libaom's fastest preset; on the Girona clip it encodes as fast as ProRes at 1/12 the size, 40 dB PSNR.
 AVIF_SPEED = 10
 AVIF_QUALITY = 75
@@ -143,8 +146,42 @@ class Keep:
 		return load(path) if rgb is None else rgb
 
 
-def physical_memory() -> int:
-	return os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
+class Resources(NamedTuple):
+	prepare_threads: int
+	render_threads: int
+	keep_bytes: int  # decoded photos held from the first pass so render need not decode them again
+
+
+def performance_cores() -> int:
+	"""The fastest cores: performance cores on Apple silicon, every physical core elsewhere. Results come
+	back in order, so a thread on a slower efficiency core holds up the rest: on the M4 Pro 12 threads
+	ran slower than 8."""
+	try:
+		read = subprocess.run(['sysctl', '-n', 'hw.perflevel0.physicalcpu'], capture_output=True, text=True)
+		return int(read.stdout)
+	except (OSError, ValueError):
+		return psutil.cpu_count(logical=False) or os.cpu_count() or 1
+
+
+def plan_resources(largest_pixels: int, free_bytes: int, cores: int) -> Resources:
+	"""Threads, each with its queued results, and memory for kept photos, all within MEMORY_SHARE of the
+	free memory, from the measured cost of the largest photo."""
+	budget = int(free_bytes * MEMORY_SHARE)
+	prepare_cost = (
+		PREPARE_FIXED_BYTES + PREPARE_BYTES_PER_PIXEL * largest_pixels + QUEUE_DEPTH * FEATURE_BYTES
+	)
+	# A queued clip frame is RGBA, and the clip is never larger than the photos it is cut from.
+	render_cost = (RENDER_BYTES_PER_PIXEL + QUEUE_DEPTH * 4) * largest_pixels
+	prepare_threads = min(cores, budget // prepare_cost)
+	render_threads = min(cores, budget // render_cost)
+	if prepare_threads < 1 or render_threads < 1:
+		need = max(prepare_cost, render_cost) / MEMORY_SHARE / 2**30
+		fail(
+			f'a {largest_pixels / 1e6:.0f} MP photo needs about {need:.1f} GB free; {free_bytes / 2**30:.1f} GB is'
+		)
+	# Kept photos last through both passes, so they get what neither pass's threads need.
+	working = max(prepare_threads * prepare_cost, render_threads * render_cost)
+	return Resources(prepare_threads, render_threads, budget - working)
 
 
 def prepare_file(path: Path, size: tuple[int, int], k: float, keep: Keep) -> Photo:
@@ -154,12 +191,13 @@ def prepare_file(path: Path, size: tuple[int, int], k: float, keep: Keep) -> Pho
 	return prepare(rgb, k)
 
 
-def load_photos(paths: list[Path], sizes, k: float, keep: Keep) -> Iterator[Photo]:
+def load_photos(paths: list[Path], sizes, k: float, keep: Keep, threads: int) -> Iterator[Photo]:
 	"""Decode and find features photo by photo across threads, yielding them in order. AVIF decoding and
 	SIFT each keep only about half the cores busy, so one photo's decode beside another's SIFT fills the
 	rest. buffersize caps the photos in flight, so memory does not grow with the number of photos."""
-	with ThreadPoolExecutor(PREPARE_WORKERS) as pool:
-		yield from pool.map(prepare_file, paths, sizes, repeat(k), repeat(keep), buffersize=PREPARE_AHEAD)
+	with ThreadPoolExecutor(threads) as pool:
+		queue = QUEUE_DEPTH * threads
+		yield from pool.map(prepare_file, paths, sizes, repeat(k), repeat(keep), buffersize=queue)
 
 
 class Hit(NamedTuple):
@@ -395,10 +433,11 @@ def render(
 	out: Path,
 	fps: float,
 	keep: Keep,
+	threads: int,
 	frames_dir: Path | None = None,
 	filters: str | None = None,
 ):
-	"""Place each photo, kept or decoded again, and hand it on in order, holding at most RENDER_AHEAD frames."""
+	"""Place each photo, kept or decoded again, and hand it on in order, holding at most QUEUE_DEPTH frames per thread."""
 	alpha = fill is not None and len(fill) == 4
 
 	def finish(i: int, path: Path, source) -> np.ndarray:
@@ -408,8 +447,9 @@ def render(
 		return frame
 
 	# libavif, zlib and OpenCV release the GIL, so photos are decoded, placed and saved in parallel.
-	with ThreadPoolExecutor(RENDER_WORKERS) as pool:
-		placed = pool.map(finish, range(1, len(paths) + 1), paths, sources, buffersize=RENDER_AHEAD)
+	with ThreadPoolExecutor(threads) as pool:
+		queue = QUEUE_DEPTH * threads
+		placed = pool.map(finish, range(1, len(paths) + 1), paths, sources, buffersize=queue)
 		if out.suffix == '.avif':
 			write_avif(placed, len(paths), size, alpha, out, fps)
 		else:
@@ -603,10 +643,15 @@ def main():
 			fail(f'--frames {args.frames}: already has PNGs; empty it first')
 
 	k = track_factor(sizes)
-	keep = Keep(int(physical_memory() * KEEP_SHARE))
-	path, sizes, sources, size = plan(
-		load_photos(paths, sizes, k, keep), sizes, k, marks, pad=fill is not None
+	free = psutil.virtual_memory().available
+	resources = plan_resources(max(w * h for w, h in sizes), free, performance_cores())
+	print(
+		f'{free / 2**30:.1f} GB free: {resources.prepare_threads} prepare threads, '
+		f'{resources.render_threads} render threads, up to {resources.keep_bytes / 2**30:.1f} GB of kept photos'
 	)
+	keep = Keep(resources.keep_bytes)
+	photos = load_photos(paths, sizes, k, keep, resources.prepare_threads)
+	path, sizes, sources, size = plan(photos, sizes, k, marks, pad=fill is not None)
 	for p, (fw, fh), hit in zip(paths, sizes, path):
 		print(f'{p.name}  {fw}x{fh}  anchor {hit.x:.0f},{hit.y:.0f}  scale {hit.scale:.2f}  {hit.note}')
 	print(f'clip {size[0]}x{size[1]}')
@@ -616,7 +661,18 @@ def main():
 	rects = args.out.with_suffix('.json')
 	clip_partial, rects_partial = partial(args.out), partial(rects)
 	try:
-		render(paths, sources, size, fill, clip_partial, args.fps, keep, args.frames, args.vf)
+		render(
+			paths,
+			sources,
+			size,
+			fill,
+			clip_partial,
+			args.fps,
+			keep,
+			resources.render_threads,
+			args.frames,
+			args.vf,
+		)
 		write_rects(paths, sizes, sources, path, rects_partial)
 		clip_partial.replace(args.out)
 		rects_partial.replace(rects)
@@ -689,7 +745,7 @@ def demo():
 			Image.fromarray(frame).save(p)
 		sizes = [oriented_size(p) for p in paths]
 		k = track_factor(sizes)
-		pooled = load_photos(paths, sizes, k, Keep(0))
+		pooled = load_photos(paths, sizes, k, Keep(0), 2)
 		for photo, frame in zip(pooled, frames):
 			alone = prepare(frame, k)
 			assert [p.pt for p in photo.keypoints] == [p.pt for p in alone.keypoints]
@@ -714,6 +770,15 @@ def demo():
 
 	assert parse_fill('transparent') == (0, 0, 0, 0) and parse_fill('#ff8000') == (255, 128, 0)
 
+	# Threads stop at the fast cores and then at memory; kept photos get what the threads leave.
+	gb = 2**30
+	girona = plan_resources(2048 * 1536, 4 * gb, 8)
+	assert girona.prepare_threads == 8 and girona.render_threads == 8 and girona.keep_bytes > gb, girona
+	iphone_48mp = plan_resources(8064 * 6048, 4 * gb, 8)
+	assert 1 <= iphone_48mp.prepare_threads < 8 and iphone_48mp.render_threads >= 1, iphone_48mp
+	for case in (girona, iphone_48mp, plan_resources(8064 * 6048, 64 * gb, 8)):
+		assert 0 <= case.keep_bytes <= 0.75 * 64 * gb, case
+
 	# Bad input stops with a message, never a traceback, and good input passes.
 	def stops(action) -> bool:
 		try:
@@ -737,6 +802,7 @@ def demo():
 	assert stops(lambda: read_sizes([Path('only-one.avif')]))
 	assert stops(lambda: read_sizes([Path('a/x.avif'), Path('b/x.avif')]))
 	assert stops(lambda: read_sizes([Path('missing-1.avif'), Path('missing-2.avif')]))
+	assert stops(lambda: plan_resources(8064 * 6048, gb // 2, 8)), 'a 48 MP photo cannot fit in 0.5 GB'
 	two = [Path('a.avif'), Path('b.avif')]
 	for ats in (['b.avif'], ['c.avif=1,1'], ['a.avif=1,1'], ['b.avif=1,1', 'b.avif=2,2'], ['b.avif=500,1']):
 		assert stops(lambda: read_marks('0,0,10,10', ats, two, [photo, photo])), ats
