@@ -58,14 +58,9 @@ Peak RSS rose by about 45 MB, from the 8 frames in flight during render.
 | Faster ProRes | prores_ks: 1.22 s for 57 frames, using 10 cores | `-threads 12`: 1.24 s. `prores_videotoolbox`: 1.16 s (less CPU, same wall clock). RGBA to 10-bit YUV conversion costs 0.09 s. No setting makes ProRes 4444 faster. |
 | Smaller `TRACK_EDGE` | 768: track 0.94 s, total 2.97 s. 512: track 0.67 s, total 2.66 s | Rects change beyond 1e-4. At 512 one more photo (IMG_4696) is LOST. Accuracy is untested against ground truth. |
 
-## Where the time goes now
+## Where the time went before threading (ProRes output)
 
-```sh
-bash analysis/profile.sh 9
-bash analysis/profile.sh 9 --frames
-```
-
-`analysis/profile_stages.py` charges each second of the main thread to exactly one stage (self-time, children subtracted), so the rows add up to the wall clock. It also times the ffmpeg pipe, and per phase it records process CPU time, which shows how many cores the phase keeps busy. Medians of 9 runs, with other apps running, so totals sit above the 3.71 s quiet-machine figure; the shares are what matter.
+Measured with an earlier version of `analysis/profile_stages.py`, which charged each second of the main thread to exactly one stage. The current breakdown is under "Where the time goes now". Medians of 9 runs, with other apps running, so totals sit above the 3.71 s quiet-machine figure; the shares are what matter.
 
 **Clip only, 3.90 s:**
 
@@ -112,6 +107,8 @@ FFMPEG=/opt/homebrew/bin/ffmpeg uv run analysis/codecs.py
 | ProRes 4444 (`.mov`) | 1.03 | 7.3 | 109.3 | 63.0 | lossless |
 | VP9 alpha crf 30 (`.webm`) | 8.89 | 26.1 | 6.2 | 38.9 | 70.7 |
 | HEVC + alpha, VideoToolbox HW, q 80 | 0.85 | 0.2 | 12.9 | 38.1 | 71.7 |
+| ProRes 4444, VideoToolbox HW | 0.39 | 0.2 | 67.0 | 50.7 | lossless |
+| animated AVIF, aom speed 6 (Pillow's default) | 8.18 | 37.2 | 10.1 | 41.0 | lossless |
 | **animated AVIF, aom speed 10, q 75 (new default)** | 1.01 | 4.2 | 9.3 | 40.0 | 71.9 |
 | animated AVIF, aom speed 10, q 85 | 1.06 | 4.5 | 12.7 | 41.5 | 73.0 |
 
@@ -198,6 +195,68 @@ What still scales: a few numbers per photo (sizes, hits, crop rects), and the pe
 - Input is checked against the photo headers before any decoding: at least two photos with distinct names, readable headers, `--box` with 4 numbers, every `--at` naming a photo once (and not the first), points and boxes inside their photo, a positive zoom and `--fps`, a valid `--pad` colour, a supported `--out` extension in an existing folder, `--vf` only with ffmpeg outputs, and ffmpeg on `PATH` when needed. Bad input stops in well under a second.
 - Errors the user can fix exit with `pinframe: <what to do>` and code 1 through `fail()`, even under `python -O`. Tracking failures say what to do next: draw a bigger first box, mark more photos, or use `--pad`. Asserts remain only for invariants.
 - The clip and its `.json` are written under hidden `.<name>.partial.<ext>` names and renamed together. A failed encode, tested with `--vf nosuchfilter`, leaves the previous clip and `.json` byte-identical, with no partial files.
+
+## Resource planning
+
+Threads and memory are planned at start by `plan_resources`, from what the machine has and what the work costs, instead of fixed numbers:
+
+- **Threads = performance cores** (`sysctl hw.perflevel0.physicalcpu`; physical cores elsewhere). Results come back in order, so a thread on a slower efficiency core holds up the others. Girona sweep (`analysis/threads_sweep.py`), 3 runs each:
+
+  | prepare threads | 2 | 4 | 6 | 8 | 12 |
+  |-|-|-|-|-|-|
+  | seconds | 3.07 | 2.93 | 2.90 | **2.83** | 3.18 |
+  | peak MB | 1343 | 1448 | 1572 | 1892 | 2181 |
+
+  Render threads: 4 → 2.97 s, **8 → 2.83 s**, 12 → 2.89 s. Queue depth per thread: 1x → 3.03 s, 2x → 3.04 s, **3x → 2.83 s**, 4x → 2.94 s.
+- **Capped by memory.** The budget is 3/4 of what psutil reports as available at start: memory free now or reclaimable without swapping. The remaining quarter is left for other apps during the run. Each thread costs its measured working set plus its queued results (`analysis/task_memory.py`, each task in a fresh process):
+
+  | photo | prepare task | render task |
+  |-|-|-|
+  | 2048x1536 (3.1 MP) | 208 MB | 80 MB |
+  | 4032x3024 (12.2 MP) | 325 MB | 309 MB |
+  | 8064x6048 (48.8 MP) | 1019 MB | 1203 MB |
+
+  Prepare is modeled as 150 MB (SIFT always runs at `TRACK_EDGE`) + 18 B per photo pixel. Render is modeled as 25 B per pixel. One photo's queued features take at most about 4 MB (Girona's largest is 3.6 MB).
+- **Kept photos get what the threads leave**, so render can skip the second decode. If even one thread cannot fit, pinframe stops with `a N MP photo needs about X GB free; Y GB is`.
+
+Measured on eight 8064x6048 photos (`analysis/large_photos.py`):
+
+| version | free at start | threads (prepare, render) | wall | system CPU | peak RSS |
+|-|-|-|-|-|-|
+| fixed numbers (`67fa831`) | about 5 GB | 6, 8 | 13.8 s | 6.4 s | 3.8 GB, with 1.47 M page reclaims |
+| planned | 5.1 GB | 3, 2 | 7.9 s | | 3.9 GB (budget 3.8 GB) |
+| planned | 7.5 GB | 5, 3 | 6.4 s | 3.7 s | 5.1 GB (budget 5.6 GB) |
+
+The fixed version spent its extra time in the kernel reclaiming memory. Free memory moved between 3.6 and 7.5 GB across runs as other apps changed, and the plan followed it. On Girona with 3.6 GB free it chooses 8 and 8 threads and 1.0 GB for kept photos, which holds all 57.
+
+## Where the time goes now
+
+```sh
+bash analysis/profile.sh 9
+```
+
+Girona, 57 photos, transparent AVIF, 9 runs, medians. Steps run one after another, so their wall times add up to the run. CPU covers every thread of the process. Peak memory is the highest RSS sampled every 5 ms during the step.
+
+| step | wall s | share | CPU s | cores busy | peak memory |
+|-|-|-|-|-|-|
+| start Python (uv), import numpy, OpenCV, Pillow | 0.16 | 6% | | | 62 MB |
+| check input and plan resources | 0.01 | 0% | 0.01 | 1.0 | 66 MB |
+| decode, extract features, track | 1.58 | 56% | 14.22 | 9.0 | 1802 MB |
+| plan the crop | 0.00 | 0% | | | 1344 MB |
+| render: place and encode | 1.06 | 38% | 5.51 | 5.2 | 1474 MB |
+| write the JSON | 0.00 | 0% | | | |
+| **whole run** | **2.81** | | **19.8** | **7.1** | **1802 MB** |
+
+| work inside the steps | thread-seconds |
+|-|-|
+| decode photos (AVIF, dav1d) | 3.50 |
+| SIFT features | 8.52 |
+| match + RANSAC | 0.24 |
+| place frames (resize + warp) | 0.89 |
+| encode AVIF (libaom; main-thread time, its own threads add the rest of render's CPU) | 1.05 |
+| encoder waiting for a placed frame | 0.01 |
+
+SIFT is the largest cost: 8.5 of the run's 19.8 CPU-seconds. The AVIF encoder is the next longest stretch of wall time, about 1 s, and it is never kept waiting for a frame. Peak memory is reached during tracking: the kept photos (540 MB) plus 8 threads' decode buffers and SIFT pyramids.
 
 ## Further ideas, ranked
 
