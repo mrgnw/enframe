@@ -1,10 +1,11 @@
 """Run pinframe on 48 MP photos and compare peak memory with the planned budget.
 
-uv run analysis/large_photos.py
+uv run analysis/large_photos.py  (BIN=rust/target/release/pinframe runs the Rust prototype)
 Upscales the 8 turbine photos (IMG_4698-4705) to 8064x6048 AVIFs once, into out/large/, then runs them with
 the turbine box and mark scaled to match.
 """
 
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -34,7 +35,7 @@ def scaled(numbers: tuple[int, ...]) -> str:
 if __name__ == '__main__':
 	photos = [upscaled(s) for s in SOURCES]
 	cmd = [
-		'/usr/bin/time', '-l', 'uv', 'run', 'anchor.py', *map(str, photos),
+		'/usr/bin/time', '-l', *os.environ.get('BIN', 'uv run anchor.py').split(), *map(str, photos),
 		'--box', scaled((840, 550, 400, 350)), '--at', f'IMG_4703.avif={scaled((746, 554, 400, 350))}',
 		'--pad', 'transparent', '--out', str(WORK / 'clip.avif'),
 	]  # fmt: skip
