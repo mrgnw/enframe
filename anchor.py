@@ -1,12 +1,14 @@
 import argparse
 import json
 import math
+import os
 import subprocess
 import sys
 from collections.abc import Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from itertools import repeat
 import tempfile
+import threading
 from pathlib import Path
 from typing import NamedTuple
 
@@ -29,6 +31,8 @@ PREPARE_WORKERS = 6
 # workers idles them behind one slow photo. Queued results are small (features, or one clip frame).
 PREPARE_AHEAD = 3 * PREPARE_WORKERS
 RENDER_AHEAD = 3 * RENDER_WORKERS
+# Share of physical RAM for decoded photos kept from the first pass, so render need not decode them again.
+KEEP_SHARE = 0.25
 # libaom's fastest preset; on the Girona clip it encodes as fast as ProRes at 1/12 the size, 40 dB PSNR.
 AVIF_SPEED = 10
 AVIF_QUALITY = 75
@@ -110,18 +114,44 @@ def prepare(rgb: np.ndarray, k: float) -> Photo:
 	return Photo(small.shape, kp, des)
 
 
-def prepare_file(path: Path, size: tuple[int, int], k: float) -> Photo:
+class Keep:
+	"""Decoded photos held from the first pass for render, within a byte budget shared by the threads.
+	A photo that does not fit is decoded again at render, so memory stays bounded for any photo count."""
+
+	def __init__(self, budget: int):
+		self.budget = budget
+		self.photos: dict[Path, np.ndarray] = {}
+		self.lock = threading.Lock()
+
+	def offer(self, path: Path, rgb: np.ndarray):
+		with self.lock:
+			if rgb.nbytes <= self.budget:
+				self.budget -= rgb.nbytes
+				self.photos[path] = rgb
+
+	def take(self, path: Path) -> np.ndarray:
+		with self.lock:
+			rgb = self.photos.pop(path, None)
+		return load(path) if rgb is None else rgb
+
+
+def physical_memory() -> int:
+	return os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
+
+
+def prepare_file(path: Path, size: tuple[int, int], k: float, keep: Keep) -> Photo:
 	rgb = load(path)
 	assert (rgb.shape[1], rgb.shape[0]) == size, f'{path.name}: decoded {rgb.shape} but header says {size}'
+	keep.offer(path, rgb)
 	return prepare(rgb, k)
 
 
-def load_photos(paths: list[Path], sizes, k: float) -> Iterator[Photo]:
+def load_photos(paths: list[Path], sizes, k: float, keep: Keep) -> Iterator[Photo]:
 	"""Decode and find features photo by photo across threads, yielding them in order. AVIF decoding and
 	SIFT each keep only about half the cores busy, so one photo's decode beside another's SIFT fills the
 	rest. buffersize caps the photos in flight, so memory does not grow with the number of photos."""
 	with ThreadPoolExecutor(PREPARE_WORKERS) as pool:
-		yield from pool.map(prepare_file, paths, sizes, repeat(k), buffersize=PREPARE_AHEAD)
+		yield from pool.map(prepare_file, paths, sizes, repeat(k), repeat(keep), buffersize=PREPARE_AHEAD)
 
 
 class Hit(NamedTuple):
@@ -355,14 +385,15 @@ def render(
 	fill: tuple[int, ...] | None,
 	out: Path,
 	fps: float,
+	keep: Keep,
 	frames_dir: Path | None = None,
 	filters: str | None = None,
 ):
-	"""Decode each photo again, place it and hand it on in order, holding at most RENDER_AHEAD frames."""
+	"""Place each photo, kept or decoded again, and hand it on in order, holding at most RENDER_AHEAD frames."""
 	alpha = fill is not None and len(fill) == 4
 
 	def finish(i: int, path: Path, source) -> np.ndarray:
-		frame = np.ascontiguousarray(place(load(path), source, size, fill))
+		frame = np.ascontiguousarray(place(keep.take(path), source, size, fill))
 		if frames_dir is not None:
 			Image.fromarray(frame).save(frames_dir / f'{i:04d}.png')
 		return frame
@@ -479,6 +510,7 @@ def main():
 		encoder(args.out, fill is not None and len(fill) == 4)
 	sizes = [oriented_size(p) for p in paths]
 	k = track_factor(sizes)
+	keep = Keep(int(physical_memory() * KEEP_SHARE))
 	boxes = {0: parse_box(args.box) if args.box else pick_box(load(paths[0]))}
 	names = [p.name for p in paths]
 	for fix in args.at:
@@ -486,12 +518,14 @@ def main():
 		assert name in names, f'--at {name}: not one of the photos'
 		boxes[names.index(name)] = parse_box(value)
 
-	path, sizes, sources, size = plan(load_photos(paths, sizes, k), sizes, k, boxes, pad=fill is not None)
+	path, sizes, sources, size = plan(
+		load_photos(paths, sizes, k, keep), sizes, k, boxes, pad=fill is not None
+	)
 	for p, (fw, fh), hit in zip(paths, sizes, path):
 		print(f'{p.name}  {fw}x{fh}  anchor {hit.x:.0f},{hit.y:.0f}  scale {hit.scale:.2f}  {hit.note}')
 	print(f'clip {size[0]}x{size[1]}')
 
-	render(paths, sources, size, fill, args.out, args.fps, args.frames, args.vf)
+	render(paths, sources, size, fill, args.out, args.fps, keep, args.frames, args.vf)
 	write_rects(paths, sizes, sources, path, args.out.with_suffix('.json'))
 	print(f'wrote {args.out}')
 
@@ -559,11 +593,18 @@ def demo():
 			Image.fromarray(frame).save(p)
 		sizes = [oriented_size(p) for p in paths]
 		k = track_factor(sizes)
-		pooled = load_photos(paths, sizes, k)
+		pooled = load_photos(paths, sizes, k, Keep(0))
 		for photo, frame in zip(pooled, frames):
 			alone = prepare(frame, k)
 			assert [p.pt for p in photo.keypoints] == [p.pt for p in alone.keypoints]
 			assert np.array_equal(photo.descriptors, alone.descriptors)
+
+		# Keep holds photos only within its budget; the rest are decoded again when taken.
+		keep = Keep(frames[0].nbytes)
+		keep.offer(paths[0], frames[0])
+		keep.offer(paths[1], frames[1])
+		assert keep.take(paths[0]) is frames[0] and np.array_equal(keep.take(paths[1]), frames[1])
+		assert not keep.photos, 'taking a photo releases it'
 
 		# The default output streams frames in, and keeps every frame, the frame rate and the transparency.
 		clip = Path(tmp) / 'clip.avif'
