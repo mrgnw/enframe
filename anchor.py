@@ -62,12 +62,13 @@ class Hit(NamedTuple):
 	note: str
 
 
-def track(frames: list[np.ndarray], boxes: dict[int, tuple[int, int, int, int]]) -> list[Hit]:
+def track(frames: list[np.ndarray], boxes: dict[int, tuple[int, ...]]) -> list[Hit]:
 	"""Per frame: anchor position, its scale relative to the first box, and how it was found.
 
-	boxes maps a frame index to an x,y,w,h the user drew; frame 0 needs one, later ones fix lost frames.
+	boxes maps a frame index to an x,y,w,h the user drew, or an x,y point that keeps the current scale.
+	Frame 0 needs a box; later ones fix lost frames.
 	"""
-	assert 0 in boxes, 'the first photo needs a box'
+	assert 0 in boxes and len(boxes[0]) == 4, 'the first photo needs a box'
 	# One factor for every frame, so differing resolutions show up as scale, like a lens change.
 	k = min(1.0, TRACK_EDGE / max(max(f.shape[:2]) for f in frames))
 	small = [resize(gray(f), k) for f in frames]
@@ -80,9 +81,15 @@ def track(frames: list[np.ndarray], boxes: dict[int, tuple[int, int, int, int]])
 	scale = 1.0
 	kp, des = None, None
 	for i, g in enumerate(small):
-		if i in boxes:
+		fh, fw = frames[i].shape[:2]
+		if i in boxes and len(boxes[i]) == 2:
+			px, py = boxes[i]
+			assert 0 <= px < fw and 0 <= py < fh, f'point outside photo {i}'
+			cx, cy = px * k, py * k
+			region = (w * scale, h * scale)
+			note = 'your point'
+		elif i in boxes:
 			bx, by, bw, bh = boxes[i]
-			fh, fw = frames[i].shape[:2]
 			assert bw > 0 and bh > 0 and bx >= 0 and by >= 0, f'empty box on photo {i}'
 			assert bx + bw <= fw and by + bh <= fh, f'box outside photo {i}'
 			cx, cy = (bx + bw / 2) * k, (by + bh / 2) * k
@@ -103,8 +110,10 @@ def track(frames: list[np.ndarray], boxes: dict[int, tuple[int, int, int, int]])
 		path.append(Hit(cx / k, cy / k, scale, True, note))
 		# Clouds deform, so features come from the latest find, never from a lost frame.
 		fresh = features_in(sift, g, cx, cy, *region)
-		if i in boxes:
-			assert len(fresh[0]) >= MIN_INLIERS, f'only {len(fresh[0])} features in the box on photo {i}'
+		if i == 0:
+			assert len(fresh[0]) >= MIN_INLIERS, (
+				f'only {len(fresh[0])} features in the box; draw a bigger one'
+			)
 		if len(fresh[0]) >= MIN_INLIERS:
 			kp, des = fresh
 	return path
@@ -244,9 +253,11 @@ def plan(frames: list[np.ndarray], boxes, pad: bool = False):
 	return path, sizes, sources, (round(cw * typical / 2) * 2, round(ch * typical / 2) * 2)
 
 
-def parse_box(value: str) -> tuple[int, int, int, int]:
+def parse_box(value: str, allow_point: bool = False) -> tuple[int, ...]:
 	box = tuple(int(v) for v in value.split(','))
-	assert len(box) == 4, f'{value}: a box is x,y,w,h'
+	assert len(box) == 4 or (allow_point and len(box) == 2), f'{value}: expected x,y,w,h' + (
+		' or x,y' if allow_point else ''
+	)
 	return box
 
 
@@ -266,8 +277,9 @@ def main():
 		'--at',
 		action='append',
 		default=[],
-		metavar='PHOTO=x,y,w,h',
-		help='box the anchor in a photo the tracker lost; repeatable',
+		metavar='PHOTO=x,y[,w,h]',
+		help='mark the anchor in a photo the tracker lost: a point keeps the zoom, a box also sets it; '
+		'repeatable',
 	)
 	parser.add_argument(
 		'--pad',
@@ -289,7 +301,7 @@ def main():
 	for fix in args.at:
 		name, _, value = fix.partition('=')
 		assert name in names, f'--at {name}: not one of the photos'
-		boxes[names.index(name)] = parse_box(value)
+		boxes[names.index(name)] = parse_box(value, allow_point=True)
 
 	path, sizes, sources, size = plan(frames, boxes, pad=fill is not None)
 	for p, (fw, fh), hit in zip(paths, sizes, path):
@@ -324,6 +336,11 @@ def demo():
 			assert hit.found and abs(hit.x - ex) <= 2 and abs(hit.y - ey) <= 2, (path, truth)
 			assert abs(hit.scale / es - 1) < 0.03, (path, truth)
 	assert path[1].note == 'your box'
+
+	# A point on a photo at the same zoom moves the anchor there and keeps the scale.
+	same_zoom = [frames[0], np.dstack([world[400:700, 450:850]] * 3)]
+	path = track(same_zoom, {0: box, 1: (150, 200)})
+	assert path[1][:3] == (150, 200, 1.0) and path[1].note == 'your point', path
 
 	_, _, sources, size = plan(frames, {0: box})
 	crops = [place(f, src, size, None).astype(int) for f, src in zip(frames, sources)]
