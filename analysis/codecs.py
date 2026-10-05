@@ -8,6 +8,7 @@ import os
 import resource
 import shutil
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -36,8 +37,9 @@ def svt(preset: int, crf: int):
 	return f'AV1 SVT-AV1 preset {preset} crf {crf}', '.mp4', args
 
 
-def avif(speed: int, quality: int):
-	return f'AVIF animated, aom speed {speed} q {quality}', '.avif', {'speed': speed, 'quality': quality}
+def avif(speed: int, quality: int, note: str = ''):
+	label = f'AVIF animated, CPU (libaom) speed {speed} q {quality}{note}'
+	return label, '.avif', {'speed': speed, 'quality': quality}
 
 
 OPAQUE = [
@@ -45,8 +47,9 @@ OPAQUE = [
 	*[hevc(q) for q in (65, 75, 80, 85)],
 	*[svt(10, crf) for crf in (32, 27, 23)],
 	svt(8, 27),
-	avif(10, 75),
+	avif(10, 75, ' (default .avif)'),
 	avif(10, 85),
+	avif(8, 75),
 ]
 ALPHA = [
 	(
@@ -59,9 +62,16 @@ ALPHA = [
 		'.webm',
 		['-c:v', 'libvpx-vp9', '-pix_fmt', 'yuva420p', '-crf', '30', '-b:v', '0'],
 	),
+	(
+		'ProRes 4444 VideoToolbox HW',
+		'.mov',
+		['-c:v', 'prores_videotoolbox', '-profile:v', '4444', '-pix_fmt', 'bgra'],
+	),
 	*[hevc(q, alpha=True) for q in (75, 80, 85)],
-	avif(10, 75),
+	avif(10, 75, ' (default .avif)'),
 	avif(10, 85),
+	avif(8, 75),
+	avif(6, 75, " (Pillow's default speed)"),
 ]
 
 
@@ -99,7 +109,13 @@ def encode_ffmpeg(frames, alpha: bool, args: list[str], out: Path) -> tuple[floa
 		*args, str(out),
 	]  # fmt: skip
 	cpu, start = children_cpu(), time.perf_counter()
-	subprocess.run(cmd, input=b''.join(f.tobytes() for f in frames), check=True)
+	# Errors go to a file, not a pipe: with only stdin piped, communicate() writes the frames in one call
+	# instead of 512-byte chunks, which cost about 0.8 s here.
+	with tempfile.TemporaryFile() as errors:
+		done = subprocess.run(cmd, input=b''.join(f.tobytes() for f in frames), stderr=errors)
+		errors.seek(0)
+		if done.returncode != 0:
+			raise subprocess.CalledProcessError(done.returncode, cmd, stderr=errors.read().decode())
 	return time.perf_counter() - start, children_cpu() - cpu
 
 
@@ -169,9 +185,11 @@ def table(title: str, frames_dir: Path, alpha: bool, configs):
 		if isinstance(spec, list) and spec[spec.index('-c:v') + 1] not in encoders:
 			print(f'| {label} | not in this ffmpeg build |')
 			continue
-		print(
-			measure(label, frames, alpha, suffix, spec, WORK / f'{frames_dir.name}-{i}{suffix}'), flush=True
-		)
+		try:
+			row = measure(label, frames, alpha, suffix, spec, WORK / f'{frames_dir.name}-{i}{suffix}')
+		except subprocess.CalledProcessError as error:
+			row = f'| {label} | failed: {error.stderr.strip().splitlines()[-1] if error.stderr else error} |'
+		print(row, flush=True)
 
 
 if __name__ == '__main__':
