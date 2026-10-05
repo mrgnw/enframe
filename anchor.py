@@ -222,7 +222,15 @@ def encoder(out: Path, alpha: bool) -> list[str]:
 	return ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18']
 
 
-def render(frames, sources, size: tuple[int, int], fill: tuple[int, ...] | None, out: Path, fps: float):
+def render(
+	frames,
+	sources,
+	size: tuple[int, int],
+	fill: tuple[int, ...] | None,
+	out: Path,
+	fps: float,
+	frames_dir: Path | None = None,
+):
 	alpha = fill is not None and len(fill) == 4
 	w, h = size
 	cmd = [
@@ -232,8 +240,11 @@ def render(frames, sources, size: tuple[int, int], fill: tuple[int, ...] | None,
 	]  # fmt: skip
 	with subprocess.Popen(cmd, stdin=subprocess.PIPE) as ffmpeg:
 		assert ffmpeg.stdin is not None
-		for rgb, source in zip(frames, sources):
-			ffmpeg.stdin.write(np.ascontiguousarray(place(rgb, source, size, fill)).tobytes())
+		for i, (rgb, source) in enumerate(zip(frames, sources), start=1):
+			frame = np.ascontiguousarray(place(rgb, source, size, fill))
+			if frames_dir is not None:
+				Image.fromarray(frame).save(frames_dir / f'{i:04d}.png')
+			ffmpeg.stdin.write(frame.tobytes())
 		ffmpeg.stdin.close()
 	assert ffmpeg.returncode == 0, f'ffmpeg exited {ffmpeg.returncode}'
 
@@ -302,7 +313,16 @@ def main():
 	)
 	parser.add_argument('--fps', type=float, default=4)
 	parser.add_argument('--out', type=Path, default=Path('out.mp4'))
+	parser.add_argument(
+		'--frames',
+		type=Path,
+		metavar='DIR',
+		help='also save each aligned photo as DIR/0001.png, 0002.png, ... (with alpha when padding is transparent)',
+	)
 	args = parser.parse_args()
+	if args.frames:
+		args.frames.mkdir(parents=True, exist_ok=True)
+		assert not any(args.frames.glob('*.png')), f'--frames {args.frames}: already has PNGs; empty it first'
 
 	# ponytail: filename order; the exported AVIFs carry no capture time to sort by
 	paths = sorted(args.photos)
@@ -321,7 +341,7 @@ def main():
 		print(f'{p.name}  {fw}x{fh}  anchor {hit.x:.0f},{hit.y:.0f}  scale {hit.scale:.2f}  {hit.note}')
 	print(f'clip {size[0]}x{size[1]}')
 
-	render(frames, sources, size, fill, args.out, args.fps)
+	render(frames, sources, size, fill, args.out, args.fps, args.frames)
 	write_rects(paths, sizes, sources, args.out.with_suffix('.json'))
 	print(f'wrote {args.out}')
 
