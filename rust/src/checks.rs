@@ -154,3 +154,53 @@ fn sift_bench() {
 	}
 	println!("sift_bench: fastest {best:?}, checksum {sum}");
 }
+/// Decode time split: dav1d alone versus dav1d plus the conversion to RGB.
+#[test]
+#[ignore]
+fn decode_bench() {
+	let path = Path::new(SAMPLES).join("IMG_4667.avif");
+	for threads in [1, 2, 4] {
+		let mut best = std::time::Duration::MAX;
+		for _ in 0..7 {
+			let started = std::time::Instant::now();
+			std::hint::black_box(avif::decode(&path, threads).unwrap());
+			best = best.min(started.elapsed());
+		}
+		println!("decode_bench: {threads} dav1d threads, decode + RGB {best:?}");
+	}
+	let rgb = avif::decode(&path, 1).unwrap();
+	let mut best = std::time::Duration::MAX;
+	for _ in 0..7 {
+		let started = std::time::Instant::now();
+		std::hint::black_box(pixels::shrink_area(&pixels::gray(&rgb), 0.5));
+		best = best.min(started.elapsed());
+	}
+	println!("decode_bench: gray + half {best:?}");
+}
+/// One clip frame's RGBA to YUV 4:2:0 conversion in libavif (no libyuv) against the whole add.
+#[test]
+#[ignore]
+fn encode_bench() {
+	use crate::avif_sys::*;
+	let (w, h) = (1442u32, 1196u32);
+	let pixels: Vec<u8> = (0..(w * h * 4) as usize).map(|i| (i * 7 % 251) as u8).collect();
+	let mut best = std::time::Duration::MAX;
+	for _ in 0..7 {
+		unsafe {
+			let image = avifImageCreate(w, h, 8, AVIF_PIXEL_FORMAT_YUV420);
+			(*image).yuvRange = AVIF_RANGE_FULL;
+			(*image).matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT601 as _;
+			let mut rgb = avifRGBImage::default();
+			avifRGBImageSetDefaults(&mut rgb, image);
+			rgb.format = AVIF_RGB_FORMAT_RGBA;
+			rgb.depth = 8;
+			rgb.pixels = pixels.as_ptr() as *mut u8;
+			rgb.rowBytes = w * 4;
+			let started = std::time::Instant::now();
+			assert_eq!(avifImageRGBToYUV(image, &rgb), AVIF_RESULT_OK);
+			best = best.min(started.elapsed());
+			avifImageDestroy(image);
+		}
+	}
+	println!("encode_bench: RGBA to YUV420 + alpha {best:?} per frame");
+}

@@ -397,6 +397,13 @@ struct RenderJob<'a> {
 	keep: &'a Keep,
 	threads: usize,
 	frames: Option<&'a Path>,
+	avif: bool,
+}
+
+/// A placed frame as the sink takes it: YUV for libavif, RGB(A) bytes for ffmpeg.
+enum Frame {
+	Yuv(avif::Yuv),
+	Rgb(pixels::Image),
 }
 
 /// Places each photo, kept or decoded again, on worker threads and hands the frames to the sink in order.
@@ -413,17 +420,20 @@ fn render(job: &RenderJob, sink: &mut Sink) {
 			let path = dir.join(format!("{:04}.png", i + 1));
 			save_png(&path, &frame).unwrap_or_else(|e| fail(&format!("{}: {e}", path.display())));
 		}
-		frame
+		if job.avif { Frame::Yuv(work(Work::Place, || avif::to_yuv420(&frame))) } else { Frame::Rgb(frame) }
 	};
 	let mut waited = std::time::Instant::now();
 	ordered(job.paths.len(), job.threads, QUEUE_DEPTH * job.threads, place_one, |_, frame| {
 		profile::add(Work::EncoderWait, waited.elapsed());
-		match sink {
-			Sink::Avif(encoder) => work(Work::Encode, || encoder.add(&frame)).unwrap_or_else(|e| fail(&e)),
-			Sink::Ffmpeg(child) => {
-				// ffmpeg prints why it quit (a bad --vf, say); its exit code is reported below.
-				let _ = child.stdin.as_mut().unwrap().write_all(&frame.pixels);
+		match (&mut *sink, frame) {
+			(Sink::Avif(encoder), Frame::Yuv(yuv)) => {
+				work(Work::Encode, || encoder.add(&yuv)).unwrap_or_else(|e| fail(&e))
 			}
+			(Sink::Ffmpeg(child), Frame::Rgb(rgb)) => {
+				// ffmpeg prints why it quit (a bad --vf, say); its exit code is reported below.
+				let _ = child.stdin.as_mut().unwrap().write_all(&rgb.pixels);
+			}
+			_ => unreachable!("frames are made for the sink"),
 		}
 		waited = std::time::Instant::now();
 	});
@@ -612,6 +622,7 @@ fn main() {
 			keep: &keep,
 			threads: resources.render_threads,
 			frames: args.frames.as_deref(),
+			avif: suffix(&args.out) == "avif",
 		};
 		render(&job, &mut sink);
 		finish_sink(sink, &clip_partial);

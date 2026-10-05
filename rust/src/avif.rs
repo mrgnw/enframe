@@ -147,6 +147,52 @@ fn yuv444_to_rgb(image: &avifImage, rgb: &mut [u8]) {
 	}
 }
 
+/// A clip frame as full-range BT.601 YUV 4:2:0, with alpha when the padding is transparent.
+pub struct Yuv {
+	width: usize,
+	height: usize,
+	planes: [Vec<u8>; 3],
+	alpha: Option<Vec<u8>>,
+}
+
+/// RGB(A) to full-range BT.601 YUV 4:2:0, chroma averaged over each 2x2 block, as libavif computes it.
+/// Done here on the render threads; libavif without libyuv takes 8 ms a frame on the encoding thread.
+pub fn to_yuv420(frame: &Image) -> Yuv {
+	const KR: f32 = 0.299;
+	const KB: f32 = 0.114;
+	const KG: f32 = 1.0 - KR - KB;
+	let (w, h, cn) = (frame.width, frame.height, frame.channels);
+	assert!(w % 2 == 0 && h % 2 == 0 && (cn == 3 || cn == 4), "clip frames are even-sized RGB(A)");
+	let (cw, ch) = (w / 2, h / 2);
+	let mut y_plane = vec![0u8; w * h];
+	let (mut u_plane, mut v_plane) = (vec![0u8; cw * ch], vec![0u8; cw * ch]);
+	let mut alpha = (cn == 4).then(|| vec![0u8; w * h]);
+	let unit = |v: f32| (v * 255.0).round().clamp(0.0, 255.0) as u8;
+	for cy in 0..ch {
+		let mut u_sum = vec![0f32; cw];
+		let mut v_sum = vec![0f32; cw];
+		for y in [2 * cy, 2 * cy + 1] {
+			let row = frame.row(y);
+			for x in 0..w {
+				let p = &row[x * cn..x * cn + 3];
+				let (r, g, b) = (p[0] as f32 / 255.0, p[1] as f32 / 255.0, p[2] as f32 / 255.0);
+				let luma = KR * r + KG * g + KB * b;
+				y_plane[y * w + x] = unit(luma);
+				u_sum[x / 2] += (b - luma) / (2.0 * (1.0 - KB));
+				v_sum[x / 2] += (r - luma) / (2.0 * (1.0 - KR));
+				if let Some(a) = alpha.as_mut() {
+					a[y * w + x] = row[x * cn + 3];
+				}
+			}
+		}
+		for x in 0..cw {
+			u_plane[cy * cw + x] = unit(u_sum[x] / 4.0 + 0.5);
+			v_plane[cy * cw + x] = unit(v_sum[x] / 4.0 + 0.5);
+		}
+	}
+	Yuv { width: w, height: h, planes: [y_plane, u_plane, v_plane], alpha }
+}
+
 /// An animated AVIF written frame by frame, with the settings `anchor.py` passes to Pillow.
 pub struct Encoder {
 	encoder: *mut avifEncoder,
@@ -175,8 +221,8 @@ impl Encoder {
 		Encoder { encoder, frame_ms, xmp, frames: 0 }
 	}
 
-	pub fn add(&mut self, frame: &Image) -> Result<(), String> {
-		assert!(frame.channels == 3 || frame.channels == 4);
+	/// Encodes one frame. libavif reads the planes in place; it neither copies nor frees them.
+	pub fn add(&mut self, frame: &Yuv) -> Result<(), String> {
 		unsafe {
 			let image = avifImageCreate(frame.width as u32, frame.height as u32, 8, AVIF_PIXEL_FORMAT_YUV420);
 			assert!(!image.is_null(), "libavif could not allocate a frame");
@@ -184,18 +230,19 @@ impl Encoder {
 			(*image).colorPrimaries = AVIF_COLOR_PRIMARIES_BT709 as _;
 			(*image).transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_SRGB as _;
 			(*image).matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT601 as _;
+			for (i, plane) in frame.planes.iter().enumerate() {
+				(*image).yuvPlanes[i] = plane.as_ptr() as *mut u8;
+				(*image).yuvRowBytes[i] = (if i == 0 { frame.width } else { frame.width / 2 }) as u32;
+			}
+			(*image).imageOwnsYUVPlanes = AVIF_FALSE as avifBool;
+			if let Some(alpha) = &frame.alpha {
+				(*image).alphaPlane = alpha.as_ptr() as *mut u8;
+				(*image).alphaRowBytes = frame.width as u32;
+				(*image).imageOwnsAlphaPlane = AVIF_FALSE as avifBool;
+			}
 			let mut result = AVIF_RESULT_OK;
 			if self.frames == 0 {
 				result = avifImageSetMetadataXMP(image, self.xmp.as_ptr(), self.xmp.len());
-			}
-			if result == AVIF_RESULT_OK {
-				let mut rgb = avifRGBImage::default();
-				avifRGBImageSetDefaults(&mut rgb, image);
-				rgb.format = if frame.channels == 4 { AVIF_RGB_FORMAT_RGBA } else { AVIF_RGB_FORMAT_RGB };
-				rgb.depth = 8;
-				rgb.pixels = frame.pixels.as_ptr() as *mut u8;
-				rgb.rowBytes = (frame.width * frame.channels) as u32;
-				result = avifImageRGBToYUV(image, &rgb);
 			}
 			if result == AVIF_RESULT_OK {
 				result = avifEncoderAddImage(self.encoder, image, self.frame_ms, AVIF_ADD_IMAGE_FLAG_NONE);
