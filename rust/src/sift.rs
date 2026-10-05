@@ -255,13 +255,16 @@ fn find_extrema(
 	let threshold = (0.5 * CONTRAST as f64 / LAYERS as f64 * 255.0).floor() as f32;
 	let (w, h) = (dog[0].width, dog[0].height);
 	let mut hist = [0f32; ORI_BINS];
+	let mut candidate = vec![false; w];
 	for layer in 1..=LAYERS {
 		let (prev, cur, next) = (&dog[layer - 1].data, &dog[layer].data, &dog[layer + 1].data);
 		for r in BORDER..h.saturating_sub(BORDER) {
+			let row = |y: usize| &cur[y * w..(y + 1) * w];
+			in_layer_extrema(row(r - 1), row(r), row(r + 1), threshold, &mut candidate);
 			for c in BORDER..w.saturating_sub(BORDER) {
 				let i = r * w + c;
 				let val = cur[i];
-				if val.abs() <= threshold || !is_extremum(val, i, w, prev, cur, next) {
+				if !candidate[c] || !is_extremum(val, i, w, prev, cur, next) {
 					continue;
 				}
 				let Some((kp, layer, r1, c1)) = adjust_local_extrema(dog, o, layer, r, c) else { continue };
@@ -302,6 +305,28 @@ fn find_extrema(
 				}
 			}
 		}
+	}
+}
+
+/// Marks the pixels of a DoG row that pass the threshold and beat their 8 neighbours in the same layer,
+/// a necessary condition for an extremum. Branch-free, so it vectorizes; `is_extremum` then checks the
+/// few that pass against all 26 neighbours.
+fn in_layer_extrema(above: &[f32], row: &[f32], below: &[f32], threshold: f32, candidate: &mut [bool]) {
+	let w = row.len();
+	for c in BORDER..w.saturating_sub(BORDER) {
+		let ring = [
+			above[c - 1],
+			above[c],
+			above[c + 1],
+			row[c - 1],
+			row[c + 1],
+			below[c - 1],
+			below[c],
+			below[c + 1],
+		];
+		let (hi, lo) = ring.iter().fold((f32::MIN, f32::MAX), |(hi, lo), &v| (hi.max(v), lo.min(v)));
+		let v = row[c];
+		candidate[c] = (v.abs() > threshold) & ((v > 0.0) & (v >= hi) | (v < 0.0) & (v <= lo));
 	}
 }
 
