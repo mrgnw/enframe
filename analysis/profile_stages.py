@@ -1,19 +1,21 @@
-"""Where a pinframe run's wall clock goes, as self-time per stage that sums to the total.
+"""Time, CPU and memory for each step of a pinframe run, through analysis/profile.sh (medians of N runs).
 
-Run through analysis/profile.sh, which repeats the Girona benchmark and prints medians. Main-thread stages
-add up to the run; worker-thread time (place, PNG saves) overlaps the render wait and is listed apart.
+Steps run one after another on the main thread, so their wall times add up to the run. CPU is the whole
+process (every thread) during the step; cores busy is CPU over wall. Peak memory is the highest RSS
+sampled every 5 ms during the step. The work table splits the threaded parts by what the threads did.
 """
 
 import json
 import os
 import resource
 import statistics
-import subprocess
 import sys
 import threading
 import time
 from collections import defaultdict
 from pathlib import Path
+
+import psutil
 
 started = time.perf_counter()
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -21,62 +23,56 @@ import anchor  # noqa: E402
 
 imported = time.perf_counter()
 
-LABELS = {
-	'load': 'decode photos (Pillow AVIF + EXIF)',
-	'load_photos': 'decode + SIFT on threads: wait',
-	'prepare': 'prepare photo: other',
-	'oriented_size': 'read photo headers',
-	'gray': 'track: gray',
-	'resize': 'track: downscale to 1024',
-	'sift whole photo': 'track: SIFT on whole photo',
-	'sift in box': 'track: SIFT in box (marked photos)',
-	'features_in': 'track: filter features to box',
-	'box_mask': 'track: box mask',
-	'similarity': 'track: match + RANSAC',
-	'plausible': 'track: plausibility check',
-	'track': 'track: loop overhead',
-	'fill_lost': 'plan: interpolate lost',
-	'crop_rects': 'plan: crop rects',
-	'plan': 'plan: other',
-	'render': 'render: wait for placed frames',
-	'write_avif': 'render: AVIF encode, incl. waiting for placed frames',
-	'pipe_to_ffmpeg': 'render: feed ffmpeg, incl. waiting for placed frames',
-	'pipe write': 'render: blocked writing to ffmpeg',
-	'pipe close': 'render: close pipe',
-	'ffmpeg wait': 'render: wait for ffmpeg to finish',
-	'write_rects': 'write JSON',
-	'place': 'place (resize + warp)',
-	'pillow save': 'Pillow save: the AVIF clip, or --frames PNGs',
+# Each step is the main-thread calls that make it up.
+STEPS = {
+	'check input and plan resources': ('check_output', 'read_sizes', 'read_marks', 'plan_resources'),
+	'decode, find features, track': ('track',),
+	'plan the crop': ('fill_lost', 'crop_rects'),
+	'render: place and encode': ('render',),
+	'write the JSON': ('write_rects',),
+}
+# Thread-seconds of the work inside the steps, wherever it ran.
+WORK = {
+	'load': 'decode photos (AVIF, dav1d)',
+	'sift': 'find features (SIFT)',
+	'similarity': 'match + RANSAC',
+	'place': 'place frames (resize + warp)',
+	'avif encode': 'encode AVIF (libaom, in-process)',
+	'frame wait': 'encoder waiting for a placed frame',
+	'png save': 'save --frames PNGs',
+	'ffmpeg': 'ffmpeg (separate process, CPU)',
 }
 
-# Top-level phases get wall and process-wide CPU time, to show how many cores each one keeps busy.
-PHASES = ('load_photos', 'track', 'render')
-
-spent = defaultdict(float)
-calls = defaultdict(int)
-phase_wall = defaultdict(float)
-phase_cpu = defaultdict(float)
-local = threading.local()
+windows = defaultdict(list)  # step -> [(start, end, cpu)]
+work = defaultdict(float)
+samples: list[tuple[float, int]] = []
 
 
-def timed(name, fn):
+def sample_memory(stop: threading.Event):
+	process = psutil.Process()
+	while not stop.is_set():
+		samples.append((time.perf_counter(), process.memory_info().rss))
+		stop.wait(0.005)
+
+
+def step_timer(step: str, fn):
 	def wrapper(*args, **kwargs):
-		stack = local.__dict__.setdefault('stack', [])
-		stack.append(0.0)
-		start, cpu_start = time.perf_counter(), time.process_time()
+		start, cpu = time.perf_counter(), time.process_time()
 		try:
 			return fn(*args, **kwargs)
 		finally:
-			total = time.perf_counter() - start
-			children = stack.pop()
-			thread = 'main' if threading.current_thread() is threading.main_thread() else 'worker'
-			spent[f'{thread}:{name}'] += total - children
-			calls[f'{thread}:{name}'] += 1
-			if name in PHASES and thread == 'main':
-				phase_wall[name] += total
-				phase_cpu[name] += time.process_time() - cpu_start
-			if stack:
-				stack[-1] += total
+			windows[step].append((start, time.perf_counter(), time.process_time() - cpu))
+
+	return wrapper
+
+
+def work_timer(name: str, fn):
+	def wrapper(*args, **kwargs):
+		start = time.perf_counter()
+		try:
+			return fn(*args, **kwargs)
+		finally:
+			work[name] += time.perf_counter() - start
 
 	return wrapper
 
@@ -86,81 +82,66 @@ class TimedSift:
 		self.sift = sift
 
 	def detectAndCompute(self, image, mask):
-		name = 'sift whole photo' if mask is None else 'sift in box'
-		return timed(name, self.sift.detectAndCompute)(image, mask)
-
-
-class TimedPipe:
-	def __init__(self, pipe):
-		self.pipe = pipe
-
-	def write(self, data):
-		return timed('pipe write', self.pipe.write)(data)
-
-	def close(self):
-		return timed('pipe close', self.pipe.close)()
-
-	def __getattr__(self, name):
-		return getattr(self.pipe, name)
-
-
-class TimedPopen(subprocess.Popen):
-	def __init__(self, *args, **kwargs):
-		super().__init__(*args, **kwargs)
-		if self.stdin is not None:
-			self.stdin = TimedPipe(self.stdin)
-
-	def wait(self, timeout=None):
-		return timed('ffmpeg wait', super().wait)(timeout)
+		return work_timer('sift', self.sift.detectAndCompute)(image, mask)
 
 
 def instrument():
-	for name in (
-		'load',
-		'oriented_size',
-		'prepare',
-		'load_photos',
-		'gray',
-		'resize',
-		'features_in',
-		'box_mask',
-		'similarity',
-		'plausible',
-		'track',
-		'fill_lost',
-		'crop_rects',
-		'plan',
-		'place',
-		'render',
-		'write_avif',
-		'pipe_to_ffmpeg',
-		'write_rects',
-	):
-		setattr(anchor, name, timed(name, getattr(anchor, name)))
-	anchor.Image.Image.save = timed('pillow save', anchor.Image.Image.save)
+	for step, names in STEPS.items():
+		for name in names:
+			setattr(anchor, name, step_timer(step, getattr(anchor, name)))
+	for name in ('load', 'similarity', 'place'):
+		setattr(anchor, name, work_timer(name, getattr(anchor, name)))
 	sift_create = anchor.cv2.SIFT_create
 	anchor.cv2.SIFT_create = lambda: TimedSift(sift_create())
-	anchor.subprocess.Popen = TimedPopen
+
+	# Pillow's save runs the AVIF encoder; inside it, StreamedClip.tobytes waits for the next placed frame.
+	save, pull = anchor.Image.Image.save, anchor.StreamedClip.tobytes
+
+	def timed_save(image, fp, format=None, **params):
+		name = 'avif encode' if isinstance(image, anchor.StreamedClip) else 'png save'
+		waited, start = work['frame wait'], time.perf_counter()
+		try:
+			return save(image, fp, format, **params)
+		finally:
+			work[name] += time.perf_counter() - start - (work['frame wait'] - waited)
+
+	anchor.Image.Image.save = timed_save
+	anchor.StreamedClip.tobytes = work_timer('frame wait', pull)
+
+
+def peak_between(start: float, end: float) -> int:
+	return max((rss for t, rss in samples if start <= t <= end), default=0)
 
 
 def profile(log: Path):
+	stop = threading.Event()
+	sampler = threading.Thread(target=sample_memory, args=(stop,), daemon=True)
+	sampler.start()
 	instrument()
 	main_started = time.perf_counter()
 	anchor.main()
 	ended = time.perf_counter()
+	stop.set()
+	sampler.join()
 	me = resource.getrusage(resource.RUSAGE_SELF)
 	kids = resource.getrusage(resource.RUSAGE_CHILDREN)
+	steps = {
+		step: {
+			'wall': sum(end - start for start, end, _ in spans),
+			'cpu': sum(cpu for _, _, cpu in spans),
+			'peak': max(peak_between(start, end) for start, end, _ in spans),
+		}
+		for step, spans in windows.items()
+	}
 	row = {
-		'seconds': dict(spent),
-		'calls': dict(calls),
-		'phase wall': dict(phase_wall),
-		'phase cpu': dict(phase_cpu),
 		'imports': imported - started,
 		'main': ended - main_started,
 		'script': ended - started,
-		'python cpu': me.ru_utime + me.ru_stime,
-		'ffmpeg cpu': kids.ru_utime + kids.ru_stime,
-		'peak MB': me.ru_maxrss / 2**20,
+		'steps': steps,
+		'work': dict(work) | {'ffmpeg': kids.ru_utime + kids.ru_stime},
+		'cpu': me.ru_utime + me.ru_stime + kids.ru_utime + kids.ru_stime,
+		'peak': me.ru_maxrss,
+		'import peak': peak_between(0, main_started),
 	}
 	with log.open('a') as f:
 		f.write(json.dumps(row) + '\n')
@@ -168,53 +149,49 @@ def profile(log: Path):
 
 def summarize(log: Path, walls: Path):
 	runs = [json.loads(line) for line in log.read_text().splitlines()]
-	wall = statistics.median(float(v) for v in walls.read_text().split())
 	assert runs, f'no runs in {log}'
+	wall = statistics.median(float(v) for v in walls.read_text().split())
 
 	def median(get) -> float:
 		return statistics.median(get(run) for run in runs)
 
-	keys = sorted({k for run in runs for k in run['seconds']})
-	main_keys = [k for k in keys if k.startswith('main:')]
-	worker_keys = [k for k in keys if k.startswith('worker:')]
-	script = median(lambda r: r['script'])
+	mb = 2**20
+	startup = wall - median(lambda r: r['script']) + median(lambda r: r['imports'])
 	rows = [
-		('uv run + Python start', wall - script, ''),
-		('import numpy, cv2, PIL', median(lambda r: r['imports']), ''),
+		('start Python (uv), import numpy, OpenCV, Pillow', startup, None, median(lambda r: r['import peak']))
 	]
-	for k in main_keys:
-		name = k.removeprefix('main:')
-		rows.append(
-			(LABELS.get(name, name), median(lambda r: r['seconds'].get(k, 0)), runs[0]['calls'].get(k, ''))
-		)
-	rows.append(('other main()', median(lambda r: r['main'] - sum(r['seconds'][k] for k in main_keys)), ''))
-	small = [row for row in rows if row[1] < 0.01]
-	rows = [row for row in rows if row[1] >= 0.01]
-	rows.append((f'{len(small)} stages under 0.01 s each', sum(seconds for _, seconds, _ in small), ''))
+	for step in STEPS:
+		if all(step in r['steps'] for r in runs):
+			rows.append(
+				(
+					step,
+					median(lambda r: r['steps'][step]['wall']),
+					median(lambda r: r['steps'][step]['cpu']),
+					median(lambda r: r['steps'][step]['peak']),
+				)
+			)
+	stepped = sum(seconds for _, seconds, _, _ in rows[1:])
+	rows.append(('other: printing, renaming the outputs', median(lambda r: r['main']) - stepped, None, None))
 
+	print(f'{len(runs)} runs, medians\n')
+	print('| step | wall s | share | CPU s | cores busy | peak memory |')
+	print('|-|-|-|-|-|-|')
+	for label, seconds, cpu, peak in rows:
+		cpu_cells = f'{cpu:.2f} | {cpu / seconds:.1f}' if cpu is not None and seconds > 0.005 else ' | '
+		peak_cell = f'{peak / mb:.0f} MB' if peak else ''
+		print(f'| {label} | {seconds:.2f} | {seconds / wall:.0%} | {cpu_cells} | {peak_cell} |')
+	cpu = median(lambda r: r['cpu'])
+	peak = median(lambda r: r['peak']) / mb
 	print(
-		f'{len(runs)} runs, median wall clock {wall:.2f} s, peak RSS {median(lambda r: r["peak MB"]):.0f} MB\n'
+		f'| **whole run** | **{wall:.2f}** | | **{cpu:.1f}** | **{cpu / wall:.1f}** | **{peak:.0f} MB** |\n'
 	)
-	print('| stage (main thread, medians; sums to about the wall clock) | calls | seconds | share |')
-	print('|-|-|-|-|')
-	for label, seconds, n in sorted(rows, key=lambda row: -row[1]):
-		print(f'| {label} | {n} | {seconds:.2f} | {seconds / wall:.0%} |')
-	print(f'| **total** | | **{wall:.2f}** | |\n')
-	print('| on worker threads (overlaps the waits above) | calls | thread-seconds |')
-	print('|-|-|-|')
-	for k in worker_keys:
-		name = k.removeprefix('worker:')
-		print(
-			f'| {LABELS.get(name, name)} | {runs[0]["calls"][k]} | {median(lambda r: r["seconds"].get(k, 0)):.2f} |'
-		)
-	print(f'| ffmpeg encode (CPU, all cores) | | {median(lambda r: r["ffmpeg cpu"]):.2f} |\n')
-	print('| phase | wall s | Python CPU s | cores busy |')
-	print('|-|-|-|-|')
-	for name in PHASES:
-		w = median(lambda r: r['phase wall'][name])
-		c = median(lambda r: r['phase cpu'][name])
-		print(f'| {name} | {w:.2f} | {c:.2f} | {c / w:.1f} |')
-	print(f'\nPython process CPU {median(lambda r: r["python cpu"]):.2f} s over {wall:.2f} s wall')
+
+	print('| work inside the steps | thread-seconds |')
+	print('|-|-|')
+	for name, label in WORK.items():
+		seconds = median(lambda r: r['work'].get(name, 0.0))
+		if seconds >= 0.005:
+			print(f'| {label} | {seconds:.2f} |')
 
 
 if __name__ == '__main__':
