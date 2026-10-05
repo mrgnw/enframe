@@ -87,10 +87,15 @@ Across scene changes, "the same cloud" is a judgement call. Where the shots allo
 
 ## Next steps, in order
 
-- **Point picking in enframe.** Draw a box on the first photo, then mark any photo flagged `LOST`. The box UI, normalized coordinates and crop export already exist there, and the `.json` output matches that model. Marking 24 photos by typing coordinates is the slow part today.
+- **Point picking in enframe.** Draw a box on the first photo, then mark any photo flagged `LOST`. The box UI, normalized coordinates and crop export already exist there, and the `.json` output matches that model. Marking 24 photos by typing coordinates is the slow part today. [docs/wasm.md](docs/wasm.md) settles where the tracking should run.
 - **Zoom from EXIF.** Original iPhone files record the focal length, which gives each photo's lens directly. These AVIF exports had none, so lens switches were measured or marked by hand.
 - **A choice between same-size and full-frame.** Keeping the cloud the same size shrinks zoomed photos. An option to keep each photo's own zoom would fill the frame instead, with the cloud changing size at lens switches.
 - **Soft lock.** Today the anchor is pinned exactly. Letting it drift a little along a smoothed path may look more natural.
+
+## Research
+
+- [docs/prior-art.md](docs/prior-art.md) — tools that keep one feature fixed across a sequence, and how they name their options.
+- [docs/wasm.md](docs/wasm.md) — can this run in the browser? Pyodide matches a pair correctly but 12x slower than native, SIFT is missing from opencv.js, and browsers can't encode transparent video. Recommendation: track on the server behind enframe-serve, mark in the browser. The proof of concept is in `wasm/`.
 
 ## No-code alternative
 
