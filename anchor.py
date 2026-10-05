@@ -10,7 +10,6 @@ import numpy as np
 from PIL import Image, ImageOps
 
 MIN_INLIERS = 8
-MIN_SHAPE = 0.4
 MIN_CROP = 64
 TRACK_EDGE = 1024
 RATIO_TEST = 0.8
@@ -54,18 +53,6 @@ def similarity(kp, des, kp2, des2, tolerance: float):
 	return M, int(inliers.sum())
 
 
-def shape_match(prev: np.ndarray, g: np.ndarray, cx: float, cy: float, w: float, h: float):
-	"""Find the anchor by overall shape at the current scale; catches a cloud whose detail has changed."""
-	t = cv2.getRectSubPix(prev, (max(1, round(w)), max(1, round(h))), (cx, cy))
-	th, tw = t.shape
-	if th > g.shape[0] or tw > g.shape[1]:
-		return None
-	_, score, _, (x, y) = cv2.minMaxLoc(cv2.matchTemplate(g, t, cv2.TM_CCOEFF_NORMED))
-	if score < MIN_SHAPE:
-		return None
-	return x + tw / 2, y + th / 2, score
-
-
 class Hit(NamedTuple):
 	x: float
 	y: float
@@ -74,42 +61,49 @@ class Hit(NamedTuple):
 	note: str
 
 
-def track(frames: list[np.ndarray], box: tuple[int, int, int, int]) -> list[Hit]:
-	"""Per frame: anchor position, its scale relative to the first frame, and how it was found."""
-	bx, by, bw, bh = box
-	fh, fw = frames[0].shape[:2]
-	assert bw > 0 and bh > 0, 'empty box'
-	assert bx >= 0 and by >= 0 and bx + bw <= fw and by + bh <= fh, 'box outside first frame'
+def track(frames: list[np.ndarray], boxes: dict[int, tuple[int, int, int, int]]) -> list[Hit]:
+	"""Per frame: anchor position, its scale relative to the first box, and how it was found.
 
+	boxes maps a frame index to an x,y,w,h the user drew; frame 0 needs one, later ones fix lost frames.
+	"""
+	assert 0 in boxes, 'the first photo needs a box'
 	# One factor for every frame, so differing resolutions show up as scale, like a lens change.
 	k = min(1.0, TRACK_EDGE / max(max(f.shape[:2]) for f in frames))
 	small = [resize(gray(f), k) for f in frames]
 	sift = cv2.SIFT_create()
-	cx, cy, w, h = (bx + bw / 2) * k, (by + bh / 2) * k, bw * k, bh * k
-	kp, des = features_in(sift, small[0], cx, cy, w, h)
-	assert len(kp) >= MIN_INLIERS, f'only {len(kp)} features in the box; draw a bigger one'
+	first_area = boxes[0][2] * boxes[0][3]
+	w, h = boxes[0][2] * k, boxes[0][3] * k
 
-	path = [Hit(cx / k, cy / k, 1.0, True, 'your box')]
+	path: list[Hit] = []
+	cx = cy = 0.0
 	scale = 1.0
-	last = small[0]
-	for g in small[1:]:
-		kp2, des2 = sift.detectAndCompute(g, None)
-		M, agreed = similarity(kp, des, kp2, des2, RANSAC_TOLERANCE * w * scale)
-		if M is not None and agreed >= MIN_INLIERS:
-			scale *= float(np.hypot(M[0, 0], M[1, 0]))
-			cx, cy = M @ np.array([cx, cy, 1.0])
-			note = f'{agreed} features'
+	kp, des = None, None
+	for i, g in enumerate(small):
+		if i in boxes:
+			bx, by, bw, bh = boxes[i]
+			fh, fw = frames[i].shape[:2]
+			assert bw > 0 and bh > 0 and bx >= 0 and by >= 0, f'empty box on photo {i}'
+			assert bx + bw <= fw and by + bh <= fh, f'box outside photo {i}'
+			cx, cy = (bx + bw / 2) * k, (by + bh / 2) * k
+			# A drawn box says how big the anchor is, so a fix works across a lens switch too.
+			scale = float(np.sqrt(bw * bh / first_area))
+			region = (bw * k, bh * k)
+			note = 'your box'
 		else:
-			shape = shape_match(last, g, cx, cy, w * scale, h * scale)
-			if shape is None:
+			kp2, des2 = sift.detectAndCompute(g, None)
+			M, agreed = similarity(kp, des, kp2, des2, RANSAC_TOLERANCE * w * scale)
+			if M is None or agreed < MIN_INLIERS:
 				path.append(Hit(cx / k, cy / k, scale, False, f'LOST ({agreed} features), estimated'))
 				continue
-			cx, cy, score = shape
-			note = f'shape {score:.2f}'
+			scale *= float(np.hypot(M[0, 0], M[1, 0]))
+			cx, cy = M @ np.array([cx, cy, 1.0])
+			region = (w * scale, h * scale)
+			note = f'{agreed} features'
 		path.append(Hit(cx / k, cy / k, scale, True, note))
-		# Clouds deform, so match each frame against the last good one, never a lost one.
-		last = g
-		fresh = features_in(sift, g, cx, cy, w * scale, h * scale)
+		# Clouds deform, so features come from the latest find, never from a lost frame.
+		fresh = features_in(sift, g, cx, cy, *region)
+		if i in boxes:
+			assert len(fresh[0]) >= MIN_INLIERS, f'only {len(fresh[0])} features in the box on photo {i}'
 		if len(fresh[0]) >= MIN_INLIERS:
 			kp, des = fresh
 	return path
@@ -194,9 +188,9 @@ def pick_box(rgb: np.ndarray) -> tuple[int, int, int, int]:
 	return tuple(int(v) for v in box)
 
 
-def plan(frames: list[np.ndarray], box):
+def plan(frames: list[np.ndarray], boxes):
 	sizes = [(f.shape[1], f.shape[0]) for f in frames]
-	path = fill_lost(track(frames, box), sizes)
+	path = fill_lost(track(frames, boxes), sizes)
 	scaled_sizes = [(fw / hit.scale, fh / hit.scale) for (fw, fh), hit in zip(sizes, path)]
 	scaled_anchors = [(hit.x / hit.scale, hit.y / hit.scale) for hit in path]
 	rects = crop_rects(scaled_sizes, scaled_anchors)
@@ -207,10 +201,23 @@ def plan(frames: list[np.ndarray], box):
 	return path, sizes, sources, (round(cw * typical / 2) * 2, round(ch * typical / 2) * 2)
 
 
+def parse_box(value: str) -> tuple[int, int, int, int]:
+	box = tuple(int(v) for v in value.split(','))
+	assert len(box) == 4, f'{value}: a box is x,y,w,h'
+	return box
+
+
 def main():
 	parser = argparse.ArgumentParser(description='Pin one feature in place across a photo sequence.')
 	parser.add_argument('photos', nargs='+', type=Path)
 	parser.add_argument('--box', help='x,y,w,h of the anchor in the first photo; omit to draw it')
+	parser.add_argument(
+		'--at',
+		action='append',
+		default=[],
+		metavar='PHOTO=x,y,w,h',
+		help='box the anchor in a photo the tracker lost; repeatable',
+	)
 	parser.add_argument('--fps', type=float, default=4)
 	parser.add_argument('--out', type=Path, default=Path('out.mp4'))
 	args = parser.parse_args()
@@ -218,10 +225,14 @@ def main():
 	# ponytail: filename order; the exported AVIFs carry no capture time to sort by
 	paths = sorted(args.photos)
 	frames = [load(p) for p in paths]
-	box = tuple(int(v) for v in args.box.split(',')) if args.box else pick_box(frames[0])
-	assert len(box) == 4, '--box needs x,y,w,h'
+	boxes = {0: parse_box(args.box) if args.box else pick_box(frames[0])}
+	names = [p.name for p in paths]
+	for fix in args.at:
+		name, _, value = fix.partition('=')
+		assert name in names, f'--at {name}: not one of the photos'
+		boxes[names.index(name)] = parse_box(value)
 
-	path, sizes, sources, size = plan(frames, box)
+	path, sizes, sources, size = plan(frames, boxes)
 	for p, (fw, fh), hit in zip(paths, sizes, path):
 		print(f'{p.name}  {fw}x{fh}  anchor {hit.x:.0f},{hit.y:.0f}  scale {hit.scale:.2f}  {hit.note}')
 	print(f'clip {size[0]}x{size[1]}')
@@ -245,13 +256,17 @@ def demo():
 		truth.append(((anchor[0] - x) * s, (anchor[1] - y) * s, s))
 
 	tx, ty, _ = truth[0]
-	box = (round(tx) - 60, round(ty) - 60, 120, 120)
-	path = track(frames, box)
-	for hit, (ex, ey, es) in zip(path, truth):
-		assert hit.found and abs(hit.x - ex) <= 2 and abs(hit.y - ey) <= 2, (path, truth)
-		assert abs(hit.scale / es - 1) < 0.03, (path, truth)
+	box = (round(tx) - 80, round(ty) - 80, 160, 160)
+	ux, uy, _ = truth[1]
+	# Tracked alone, then with the user boxing frame 1: its box size must carry the 0.5 scale onward.
+	for boxes in ({0: box}, {0: box, 1: (round(ux) - 40, round(uy) - 40, 80, 80)}):
+		path = track(frames, boxes)
+		for hit, (ex, ey, es) in zip(path, truth):
+			assert hit.found and abs(hit.x - ex) <= 2 and abs(hit.y - ey) <= 2, (path, truth)
+			assert abs(hit.scale / es - 1) < 0.03, (path, truth)
+	assert path[1].note == 'your box'
 
-	_, _, sources, size = plan(frames, box)
+	_, _, sources, size = plan(frames, {0: box})
 	crops = [cut(f, src, size).astype(int) for f, src in zip(frames, sources)]
 	for c in crops[1:]:
 		assert np.abs(c - crops[0]).mean() < 8, 'locked crops of a static world must match'
