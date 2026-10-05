@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pinframe · preview and export</title>
+<link rel="stylesheet" href="pin.css">
+<style>
+	.clip {
+		position: relative;
+		max-width: min(100%, calc((100vh - 110px) * 1442 / 1196));
+		aspect-ratio: 1442 / 1196;
+		width: 100%;
+		border-radius: 6px;
+		overflow: hidden;
+		box-shadow: var(--shadow-lg);
+		background: #000;
+		transition: clip-path 0.3s var(--ease);
+	}
+	.clip.checker {
+		background-color: #2a2d33;
+		background-image:
+			linear-gradient(45deg, #1d2025 25%, transparent 25%, transparent 75%, #1d2025 75%),
+			linear-gradient(45deg, #1d2025 25%, transparent 25%, transparent 75%, #1d2025 75%);
+		background-size: 24px 24px;
+		background-position: 0 0, 12px 12px;
+	}
+	.clip img { position: absolute; inset: 0; width: 100%; height: 100%; display: none; }
+	.clip img.on { display: block; }
+	.clip .pin {
+		position: absolute;
+		width: 14px;
+		height: 14px;
+		translate: -50% -50%;
+		pointer-events: none;
+		opacity: 0;
+		transition: opacity 0.2s;
+	}
+	.clip:hover .pin { opacity: 1; }
+	.clip .pin::before, .clip .pin::after { content: ''; position: absolute; background: var(--accent); box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
+	.clip .pin::before { left: 50%; top: 0; width: 2px; height: 100%; translate: -50% 0; }
+	.clip .pin::after { top: 50%; left: 0; height: 2px; width: 100%; translate: 0 -50%; }
+
+	.transport { gap: 10px; padding-left: 6px; }
+	.transport .frame { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 6ch; }
+	.transport .frame b { color: var(--fg); font-weight: 600; }
+	.transport label { color: var(--muted); font-size: 12px; margin-left: 4px; }
+	.swatches { display: flex; gap: 4px; padding: 2px; }
+	.swatch {
+		width: 22px;
+		height: 22px;
+		border-radius: 999px;
+		border: 2px solid transparent;
+		outline: 1px solid var(--border);
+		outline-offset: -1px;
+		position: relative;
+	}
+	.swatch.on { border-color: var(--accent); }
+	.swatch.none { background: linear-gradient(135deg, transparent 46%, var(--lost) 46%, var(--lost) 54%, transparent 54%); }
+	.swatch.black { background: #000; }
+	.swatch.white { background: #fff; }
+	.swatch.transparent {
+		background-color: #999;
+		background-image: linear-gradient(45deg, #555 25%, transparent 25%, transparent 75%, #555 75%), linear-gradient(45deg, #555 25%, transparent 25%, transparent 75%, #555 75%);
+		background-size: 8px 8px;
+		background-position: 0 0, 4px 4px;
+	}
+	.swatch.custom { background: conic-gradient(#f0564a, #f5a524, #3fbf7f, #4b8bf5, #f0564a); }
+	.swatch.custom input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+
+	.export { width: 300px; top: 14px; right: 14px; }
+	.export h2 { margin: 0; font: 600 17px/1.2 var(--display); letter-spacing: -0.01em; }
+	.export .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+	.export .row > span:first-child { color: var(--muted); font-size: 13px; }
+	.export .seg button { padding: 0 9px; }
+	.export .field {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		height: 34px;
+		padding: 0 10px;
+		border-radius: 9px;
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid var(--border);
+		color: var(--fg);
+		font-size: 13px;
+		overflow: hidden;
+		white-space: nowrap;
+	}
+	.export .field .path { overflow: hidden; text-overflow: ellipsis; flex: 1; }
+	.export .field .ext { color: var(--accent); font-weight: 600; }
+	.export .check { display: flex; align-items: center; gap: 8px; color: var(--fg); font-size: 13px; cursor: pointer; }
+	.export .check input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+	.export .note { color: var(--muted); font-size: 12px; line-height: 1.4; }
+	.export .note.warn { color: var(--accent); }
+	.export .btn.primary { height: 36px; justify-content: center; }
+	.export .progress { height: 4px; border-radius: 4px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+	.export .progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.9s linear; }
+	.export .done { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+	.export .done b { font-weight: 600; }
+	.export .done .meta { color: var(--muted); font-variant-numeric: tabular-nums; }
+	.export .done a { color: var(--accent); text-decoration: none; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<main class="stage">
+	<div class="island tl">
+		<span class="wordmark">pin<b>frame</b></span>
+		<span class="sep"></span>
+		<span class="muted">girona clouds · 57 photos</span>
+	</div>
+
+	<div class="island tc steps">
+		<a class="step done" href="00-start.html"><span class="n">1</span>Box</a>
+		<a class="step done" href="01-marking.html"><span class="n">2</span>Fix</a>
+		<span class="step active"><span class="n">3</span>Export</span>
+	</div>
+
+	<div class="island panel export" id="export">
+		<h2>Export</h2>
+		<div class="row"><span>Format</span>
+			<div class="seg" id="format">
+				<button class="on" data-v="avif" title="Animated AVIF. Keeps transparency, plays in a browser as an image.">AVIF</button>
+				<button data-v="mp4" title="H.264. No transparency.">MP4</button>
+				<button data-v="mov" title="ProRes 4444 when transparent.">MOV</button>
+				<button data-v="webm" title="VP9.">WebM</button>
+			</div>
+		</div>
+		<div class="note" id="format-note">Plays in a browser as an image. About 9 MB.</div>
+		<label class="check"><input type="checkbox" id="frames"> Also save each aligned photo as PNG</label>
+		<div class="row"><span>Save as</span></div>
+		<div class="field"><span class="path" id="out-path">…/Pictures/girona clouds/girona clouds</span><span class="ext" id="out-ext">.avif</span></div>
+		<div class="note">A <code>.json</code> with every crop is written beside it.</div>
+		<button class="btn primary" id="export-btn">Export <kbd>⌘E</kbd></button>
+		<div class="progress" id="progress" hidden><i></i></div>
+		<div class="done" id="done" hidden>
+			<b>Wrote girona clouds.avif</b>
+			<span class="meta">1442×1196 · 57 frames · 4 fps · 9.1 MB · 1.0 s</span>
+			<a href="#" onclick="return false">Reveal in Finder</a>
+		</div>
+	</div>
+
+	<div class="island bc transport" id="transport">
+		<button class="btn icon" id="play" title="Play / pause (Space)">❚❚</button>
+		<span class="frame"><b id="frame-n">19</b> / 57</span>
+		<span class="sep"></span>
+		<label>fps</label>
+		<div class="seg" id="fps">
+			<button data-v="2">2</button>
+			<button class="on" data-v="4">4</button>
+			<button data-v="8">8</button>
+			<button data-v="12">12</button>
+		</div>
+		<span class="sep"></span>
+		<label>pad</label>
+		<div class="swatches" id="pad">
+			<button class="swatch none" data-v="none" title="No padding: the crop shrinks until every photo fills it"></button>
+			<button class="swatch black" data-v="black" title="Black"></button>
+			<button class="swatch white" data-v="white" title="White"></button>
+			<button class="swatch transparent on" data-v="transparent" title="Transparent (AVIF, MOV, WebM)"></button>
+			<label class="swatch custom" title="Any colour"><input type="color" id="custom" value="#4b8bf5"></label>
+		</div>
+		<span class="muted" id="size">1442×1196</span>
+	</div>
+
+	<div class="clip checker" id="clip">
+		<span class="pin" style="left: 58.4%; top: 46.1%"></span>
+	</div>
+</main>
+
+<nav class="filmstrip" id="filmstrip"></nav>
+
+<script src="assets/photos.js"></script>
+<script>
+	const N = PHOTOS.length;
+	const clip = document.getElementById('clip');
+	const $ = id => document.getElementById(id);
+	const imgs = PHOTOS.map((p, i) => {
+		const im = new Image();
+		im.src = `assets/frame-${String(i + 1).padStart(4, '0')}.webp`;
+		im.alt = p.name;
+		clip.prepend(im);
+		return im;
+	});
+
+	let frame = 18, fps = 4, playing = true, timer = null, pad = 'transparent', format = 'avif';
+
+	function show(i) {
+		imgs[frame].classList.remove('on');
+		frame = (i + N) % N;
+		imgs[frame].classList.add('on');
+		$('frame-n').textContent = frame + 1;
+		const strip = $('filmstrip');
+		strip.querySelector('.current')?.classList.remove('current');
+		const t = strip.children[frame];
+		t.classList.add('current');
+		t.scrollIntoView({ inline: 'center', block: 'nearest' });
+	}
+
+	function play(on) {
+		playing = on;
+		$('play').textContent = on ? '❚❚' : '▶';
+		clearInterval(timer);
+		if (on) timer = setInterval(() => show(frame + 1), 1000 / fps);
+	}
+
+	$('filmstrip').innerHTML = PHOTOS.map((p, i) =>
+		`<a class="thumb ${p.source}" data-i="${i}"><img src="assets/${p.name}-t.jpg" alt=""><span class="tip">${p.name} <b>${p.source}</b></span></a>`
+	).join('');
+	$('filmstrip').addEventListener('click', e => {
+		const t = e.target.closest('.thumb');
+		if (t) { play(false); show(+t.dataset.i); }
+	});
+
+	$('play').addEventListener('click', () => play(!playing));
+	$('fps').addEventListener('click', e => {
+		const b = e.target.closest('button');
+		if (!b) return;
+		$('fps').querySelector('.on').classList.remove('on');
+		b.classList.add('on');
+		fps = +b.dataset.v;
+		if (playing) play(true);
+	});
+
+	// ponytail: pad is simulated by the backdrop behind transparent frames; "none" fakes the shrunken crop with an inset.
+	function setPad(v, colour) {
+		pad = v;
+		for (const s of $('pad').querySelectorAll('.swatch')) s.classList.toggle('on', s.dataset.v === v || (v === 'custom' && s.classList.contains('custom')));
+		clip.classList.toggle('checker', v === 'transparent');
+		clip.style.background = v === 'transparent' ? '' : v === 'custom' ? colour : v === 'none' ? '#000' : v;
+		clip.style.clipPath = v === 'none' ? 'inset(16% 20% round 6px)' : '';
+		$('size').textContent = v === 'none' ? 'shrinks to fit every photo' : '1442×1196';
+		updateFormats();
+	}
+	$('pad').addEventListener('click', e => {
+		const s = e.target.closest('.swatch');
+		if (s && s.dataset.v) setPad(s.dataset.v);
+	});
+	$('custom').addEventListener('input', e => setPad('custom', e.target.value));
+
+	const NOTES = {
+		avif: 'Plays in a browser as an image. About 9 MB.',
+		mp4: 'H.264 through ffmpeg. Plays everywhere.',
+		mov: 'ProRes 4444 through ffmpeg, for video editors. About 109 MB.',
+		webm: 'VP9 through ffmpeg.',
+	};
+	function updateFormats() {
+		const mp4 = $('format').querySelector('[data-v="mp4"]');
+		mp4.disabled = pad === 'transparent';
+		mp4.title = mp4.disabled ? 'Transparent padding needs AVIF, MOV or WebM' : 'H.264. No transparency.';
+		if (mp4.disabled && format === 'mp4') setFormat('avif');
+	}
+	function setFormat(v) {
+		format = v;
+		for (const b of $('format').children) b.classList.toggle('on', b.dataset.v === v);
+		$('out-ext').textContent = `.${v}`;
+		$('format-note').textContent = NOTES[v];
+	}
+	$('format').addEventListener('click', e => {
+		const b = e.target.closest('button');
+		if (b && !b.disabled) setFormat(b.dataset.v);
+	});
+
+	$('export-btn').addEventListener('click', () => {
+		$('export-btn').hidden = true;
+		$('progress').hidden = false;
+		requestAnimationFrame(() => $('progress').querySelector('i').style.width = '100%');
+		setTimeout(() => { $('progress').hidden = true; $('done').hidden = false; }, 1000);
+	});
+	window.addEventListener('keydown', e => {
+		if (e.key === ' ') { e.preventDefault(); play(!playing); }
+		else if (e.key === 'ArrowRight') { play(false); show(frame + 1); }
+		else if (e.key === 'ArrowLeft') { play(false); show(frame - 1); }
+		else if (e.key === 'e' && e.metaKey) { e.preventDefault(); $('export-btn').click(); }
+	});
+
+	show(frame);
+	play(true);
+	updateFormats();
+</script>
+</body>
+</html>

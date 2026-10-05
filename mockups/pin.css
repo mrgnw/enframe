@@ -21,6 +21,8 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
+a { color: inherit; text-decoration: none; }
 
 html, body {
 	margin: 0;
