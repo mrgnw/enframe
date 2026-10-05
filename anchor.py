@@ -2,15 +2,17 @@ import argparse
 import json
 import math
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
 import sys
+from collections.abc import Iterable, Iterator
+from concurrent.futures import ThreadPoolExecutor
+from itertools import repeat
 import tempfile
 from pathlib import Path
 from typing import NamedTuple
 
 import cv2
 import numpy as np
-from PIL import Image, ImageOps, ImageSequence
+from PIL import ExifTags, Image, ImageOps, ImageSequence
 
 MIN_INLIERS = 8
 MIN_CROP = 64
@@ -19,10 +21,14 @@ RATIO_TEST = 0.8
 RANSAC_TOLERANCE = 0.03
 MAX_STEP_ZOOM = 6
 MAX_STEP_TURN = 15
-RENDER_AHEAD = 8
+RENDER_WORKERS = 8
 # On the M4 Pro (8 performance + 4 efficiency cores), Girona decode + SIFT: 4 threads 1.6 s,
 # 6 threads 1.5 s, 8 threads 1.6 s with more memory; one photo at a time 2.3 s.
 PREPARE_WORKERS = 6
+# Results queued ahead of the consumer: results come back in order, so a queue no deeper than the
+# workers idles them behind one slow photo. Queued results are small (features, or one clip frame).
+PREPARE_AHEAD = 3 * PREPARE_WORKERS
+RENDER_AHEAD = 3 * RENDER_WORKERS
 # libaom's fastest preset; on the Girona clip it encodes as fast as ProRes at 1/12 the size, 40 dB PSNR.
 AVIF_SPEED = 10
 AVIF_QUALITY = 75
@@ -33,12 +39,12 @@ def load(path: Path) -> np.ndarray:
 		return np.asarray(ImageOps.exif_transpose(im).convert('RGB'))
 
 
-def header_sizes(paths: list[Path]) -> list[tuple[int, int]]:
-	sizes = []
-	for path in paths:
-		with Image.open(path) as im:
-			sizes.append(im.size)
-	return sizes
+def oriented_size(path: Path) -> tuple[int, int]:
+	"""Width and height after EXIF rotation, as load() returns it, read from the header alone."""
+	with Image.open(path) as im:
+		w, h = im.size
+		turned = im.getexif().get(ExifTags.Base.Orientation, 1) in (5, 6, 7, 8)
+	return (h, w) if turned else (w, h)
 
 
 def gray(rgb: np.ndarray) -> np.ndarray:
@@ -85,15 +91,15 @@ def similarity(kp, des, kp2, des2, tolerance: float):
 
 
 class Photo(NamedTuple):
-	rgb: np.ndarray
+	"""What tracking needs from a photo. The pixels are dropped; render decodes the photo again."""
+
 	small_shape: tuple[int, ...]  # the downscaled gray image SIFT ran on
 	keypoints: tuple
 	descriptors: np.ndarray | None
 
 
 def track_factor(sizes) -> float:
-	"""One downscale for every photo, so differing resolutions show up as scale, like a lens change.
-	The long edge is the same whichever way EXIF rotates the photo."""
+	"""One downscale for every photo, so differing resolutions show up as scale, like a lens change."""
 	return min(1.0, TRACK_EDGE / max(max(size) for size in sizes))
 
 
@@ -101,14 +107,21 @@ def prepare(rgb: np.ndarray, k: float) -> Photo:
 	small = resize(gray(rgb), k)
 	# A fresh SIFT per call, because photos are prepared on several threads at once.
 	kp, des = cv2.SIFT_create().detectAndCompute(small, None)
-	return Photo(rgb, small.shape, kp, des)
+	return Photo(small.shape, kp, des)
 
 
-def load_photos(paths: list[Path], k: float) -> list[Photo]:
-	"""Decode and find features photo by photo across threads. AVIF decoding and SIFT each keep only about
-	half the cores busy, so running one photo's decode beside another's SIFT fills the rest."""
+def prepare_file(path: Path, size: tuple[int, int], k: float) -> Photo:
+	rgb = load(path)
+	assert (rgb.shape[1], rgb.shape[0]) == size, f'{path.name}: decoded {rgb.shape} but header says {size}'
+	return prepare(rgb, k)
+
+
+def load_photos(paths: list[Path], sizes, k: float) -> Iterator[Photo]:
+	"""Decode and find features photo by photo across threads, yielding them in order. AVIF decoding and
+	SIFT each keep only about half the cores busy, so one photo's decode beside another's SIFT fills the
+	rest. buffersize caps the photos in flight, so memory does not grow with the number of photos."""
 	with ThreadPoolExecutor(PREPARE_WORKERS) as pool:
-		return list(pool.map(lambda path: prepare(load(path), k), paths))
+		yield from pool.map(prepare_file, paths, sizes, repeat(k), buffersize=PREPARE_AHEAD)
 
 
 class Hit(NamedTuple):
@@ -130,12 +143,13 @@ def plausible(M: np.ndarray) -> tuple[bool, float, float]:
 	return 1 / MAX_STEP_ZOOM <= step <= MAX_STEP_ZOOM and abs(turn) <= MAX_STEP_TURN, step, turn
 
 
-def track(photos: list[Photo], k: float, marks: dict[int, tuple[float, ...]]) -> list[Hit]:
+def track(photos: Iterable[Photo], sizes, k: float, marks: dict[int, tuple[float, ...]]) -> list[Hit]:
 	"""Per photo: anchor position, its scale relative to the first box, and how it was found.
 
-	k is the downscale the photos' features were found at. marks maps a photo index to where the user put
-	the anchor: x,y or a box x,y,w,h, plus an optional zoom relative to the first photo. Photo 0 needs a
-	box; later marks fix photos the tracker lost and keep the zoom unless they give one.
+	Photos are consumed one at a time, in order. sizes are their full-resolution sizes and k the downscale
+	their features were found at. marks maps a photo index to where the user put the anchor: x,y or a box
+	x,y,w,h, plus an optional zoom relative to the first photo. Photo 0 needs a box; later marks fix
+	photos the tracker lost and keep the zoom unless they give one.
 	"""
 	assert 0 in marks and len(marks[0]) == 4, 'the first photo needs a box'
 	path: list[Hit] = []
@@ -143,8 +157,7 @@ def track(photos: list[Photo], k: float, marks: dict[int, tuple[float, ...]]) ->
 	rw, rh = marks[0][2] * k, marks[0][3] * k
 	scale = 1.0
 	kp, des = None, None
-	for i, photo in enumerate(photos):
-		fh, fw = photo.rgb.shape[:2]
+	for i, (photo, (fw, fh)) in enumerate(zip(photos, sizes, strict=True)):
 		kp2, des2 = photo.keypoints, photo.descriptors
 		mark = marks.get(i)
 		if mark is not None:
@@ -276,18 +289,44 @@ def encoder(out: Path, alpha: bool) -> list[str]:
 	return ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18']
 
 
-def write_avif(frames, out: Path, fps: float):
+class StreamedClip(Image.Image):
+	"""A multi-frame image whose frames are pulled from an iterator as the encoder asks for them.
+
+	Pillow's save_all seeks frame by frame and calls tobytes() on each, so the AVIF encoder holds one
+	frame at a time instead of the whole clip. seek() only moves the index, because Pillow also walks
+	every frame once to check their modes before encoding.
+	"""
+
+	def __init__(self, frames: Iterable[np.ndarray], count: int, size: tuple[int, int], mode: str):
+		super().__init__()
+		self._frames = iter(frames)
+		self._mode, self._size = mode, size
+		self.n_frames, self.is_animated = count, count > 1
+		self._index = self._pulled = 0
+
+	def seek(self, frame: int) -> None:
+		if frame >= self.n_frames:
+			raise EOFError
+		self._index = frame
+
+	def tell(self) -> int:
+		return self._index
+
+	def tobytes(self, encoder_name: str = 'raw', *args) -> bytes:
+		assert encoder_name == 'raw' and self._index == self._pulled, 'frames must be encoded once, in order'
+		self._pulled += 1
+		frame = next(self._frames)
+		assert frame.shape[:2] == (self.size[1], self.size[0]) and frame.shape[2] == len(self.mode)
+		return frame.tobytes()
+
+
+def write_avif(
+	frames: Iterable[np.ndarray], count: int, size: tuple[int, int], alpha: bool, out: Path, fps: float
+):
 	"""Animated AVIF through Pillow's libavif: small, keeps transparency, and needs no ffmpeg."""
-	images = [Image.fromarray(frame) for frame in frames]
-	images[0].save(
-		out,
-		'AVIF',
-		save_all=True,
-		append_images=images[1:],
-		duration=round(1000 / fps),
-		speed=AVIF_SPEED,
-		quality=AVIF_QUALITY,
-	)
+	clip = StreamedClip(frames, count, size, 'RGBA' if alpha else 'RGB')
+	clip.save(out, 'AVIF', save_all=True, duration=round(1000 / fps), speed=AVIF_SPEED, quality=AVIF_QUALITY)
+	assert clip._pulled == count, f'encoded {clip._pulled} of {count} frames'
 
 
 def pipe_to_ffmpeg(frames, size: tuple[int, int], alpha: bool, out: Path, fps: float, filters: str | None):
@@ -310,7 +349,7 @@ def pipe_to_ffmpeg(frames, size: tuple[int, int], alpha: bool, out: Path, fps: f
 
 
 def render(
-	frames,
+	paths: list[Path],
 	sources,
 	size: tuple[int, int],
 	fill: tuple[int, ...] | None,
@@ -319,19 +358,22 @@ def render(
 	frames_dir: Path | None = None,
 	filters: str | None = None,
 ):
-	def finish(i: int, rgb: np.ndarray, source) -> np.ndarray:
-		frame = np.ascontiguousarray(place(rgb, source, size, fill))
+	"""Decode each photo again, place it and hand it on in order, holding at most RENDER_AHEAD frames."""
+	alpha = fill is not None and len(fill) == 4
+
+	def finish(i: int, path: Path, source) -> np.ndarray:
+		frame = np.ascontiguousarray(place(load(path), source, size, fill))
 		if frames_dir is not None:
 			Image.fromarray(frame).save(frames_dir / f'{i:04d}.png')
 		return frame
 
-	# zlib and OpenCV release the GIL, so frames are placed and saved in parallel; buffersize bounds those held.
-	with ThreadPoolExecutor(RENDER_AHEAD) as pool:
-		placed = pool.map(finish, range(1, len(frames) + 1), frames, sources, buffersize=RENDER_AHEAD)
+	# libavif, zlib and OpenCV release the GIL, so photos are decoded, placed and saved in parallel.
+	with ThreadPoolExecutor(RENDER_WORKERS) as pool:
+		placed = pool.map(finish, range(1, len(paths) + 1), paths, sources, buffersize=RENDER_AHEAD)
 		if out.suffix == '.avif':
-			write_avif(placed, out, fps)
+			write_avif(placed, len(paths), size, alpha, out, fps)
 		else:
-			pipe_to_ffmpeg(placed, size, fill is not None and len(fill) == 4, out, fps, filters)
+			pipe_to_ffmpeg(placed, size, alpha, out, fps, filters)
 
 
 def write_rects(paths: list[Path], sizes, sources, path: list[Hit], out: Path):
@@ -359,9 +401,8 @@ def pick_box(rgb: np.ndarray) -> tuple[int, int, int, int]:
 	return tuple(int(v) for v in box)
 
 
-def plan(photos: list[Photo], k: float, boxes, pad: bool = False):
-	sizes = [(photo.rgb.shape[1], photo.rgb.shape[0]) for photo in photos]
-	path = fill_lost(track(photos, k, boxes), sizes)
+def plan(photos: Iterable[Photo], sizes, k: float, boxes, pad: bool = False):
+	path = fill_lost(track(photos, sizes, k, boxes), sizes)
 	scaled_sizes = [(fw / hit.scale, fh / hit.scale) for (fw, fh), hit in zip(sizes, path)]
 	scaled_anchors = [(hit.x / hit.scale, hit.y / hit.scale) for hit in path]
 	rects = crop_rects(scaled_sizes, scaled_anchors, pad)
@@ -436,22 +477,21 @@ def main():
 		assert args.vf is None, '--vf runs through ffmpeg: use a .mp4, .mov or .webm --out'
 	else:
 		encoder(args.out, fill is not None and len(fill) == 4)
-	k = track_factor(header_sizes(paths))
-	photos = load_photos(paths, k)
-	frames = [photo.rgb for photo in photos]
-	boxes = {0: parse_box(args.box) if args.box else pick_box(frames[0])}
+	sizes = [oriented_size(p) for p in paths]
+	k = track_factor(sizes)
+	boxes = {0: parse_box(args.box) if args.box else pick_box(load(paths[0]))}
 	names = [p.name for p in paths]
 	for fix in args.at:
 		name, _, value = fix.partition('=')
 		assert name in names, f'--at {name}: not one of the photos'
 		boxes[names.index(name)] = parse_box(value)
 
-	path, sizes, sources, size = plan(photos, k, boxes, pad=fill is not None)
+	path, sizes, sources, size = plan(load_photos(paths, sizes, k), sizes, k, boxes, pad=fill is not None)
 	for p, (fw, fh), hit in zip(paths, sizes, path):
 		print(f'{p.name}  {fw}x{fh}  anchor {hit.x:.0f},{hit.y:.0f}  scale {hit.scale:.2f}  {hit.note}')
 	print(f'clip {size[0]}x{size[1]}')
 
-	render(frames, sources, size, fill, args.out, args.fps, args.frames, args.vf)
+	render(paths, sources, size, fill, args.out, args.fps, args.frames, args.vf)
 	write_rects(paths, sizes, sources, path, args.out.with_suffix('.json'))
 	print(f'wrote {args.out}')
 
@@ -469,9 +509,10 @@ def demo():
 		frames.append(np.dstack([resize(world[y : y + h, x : x + w], s)] * 3))
 		truth.append(((anchor[0] - x) * s, (anchor[1] - y) * s, s))
 
-	def prepared(images: list[np.ndarray]) -> tuple[list[Photo], float]:
-		k = track_factor([image.shape[:2] for image in images])
-		return [prepare(image, k) for image in images], k
+	def prepared(images: list[np.ndarray]) -> tuple[list[Photo], list[tuple[int, int]], float]:
+		sizes = [(image.shape[1], image.shape[0]) for image in images]
+		k = track_factor(sizes)
+		return [prepare(image, k) for image in images], sizes, k
 
 	tx, ty, _ = truth[0]
 	box = (round(tx) - 80, round(ty) - 80, 160, 160)
@@ -516,16 +557,18 @@ def demo():
 		paths = [Path(tmp) / f'{i}.png' for i in range(len(frames))]
 		for frame, p in zip(frames, paths):
 			Image.fromarray(frame).save(p)
-		k = track_factor(header_sizes(paths))
-		pooled = load_photos(paths, k)
+		sizes = [oriented_size(p) for p in paths]
+		k = track_factor(sizes)
+		pooled = load_photos(paths, sizes, k)
 		for photo, frame in zip(pooled, frames):
 			alone = prepare(frame, k)
 			assert [p.pt for p in photo.keypoints] == [p.pt for p in alone.keypoints]
 			assert np.array_equal(photo.descriptors, alone.descriptors)
 
-		# The default output keeps every frame, the frame rate and the transparency.
+		# The default output streams frames in, and keeps every frame, the frame rate and the transparency.
 		clip = Path(tmp) / 'clip.avif'
-		write_avif([place(f, src, padded, (0, 0, 0, 0)) for f, src in zip(frames, sources)], clip, 4)
+		streamed = (place(f, src, padded, (0, 0, 0, 0)) for f, src in zip(frames, sources))
+		write_avif(streamed, len(frames), padded, True, clip, 4)
 		with Image.open(clip) as im:
 			assert im.n_frames == len(frames) and im.mode == 'RGBA', (im.n_frames, im.mode)
 			alpha = [np.asarray(frame)[..., 3] for frame in ImageSequence.Iterator(im)]

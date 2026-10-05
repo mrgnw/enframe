@@ -25,7 +25,7 @@ LABELS = {
 	'load': 'decode photos (Pillow AVIF + EXIF)',
 	'load_photos': 'decode + SIFT on threads: wait',
 	'prepare': 'prepare photo: other',
-	'header_sizes': 'read photo headers',
+	'oriented_size': 'read photo headers',
 	'gray': 'track: gray',
 	'resize': 'track: downscale to 1024',
 	'sift whole photo': 'track: SIFT on whole photo',
@@ -117,7 +117,7 @@ class TimedPopen(subprocess.Popen):
 def instrument():
 	for name in (
 		'load',
-		'header_sizes',
+		'oriented_size',
 		'prepare',
 		'load_photos',
 		'gray',
