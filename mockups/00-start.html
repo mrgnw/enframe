@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>pinframe · choose photos and box the feature</title>
 <link rel="stylesheet" href="pin.css">
 <style>
@@ -44,6 +44,14 @@
 		z-index: 4;
 	}
 	.filmstrip.empty { min-height: 84px; }
+	@media (max-width: 700px) {
+		.stage { grid-template-rows: auto minmax(0, 1fr); }
+		.dock { justify-self: stretch; }
+		.drop { padding: 48px 20px; }
+		.drop h1 { font-size: 32px; }
+		.prompt { bottom: 16px; }
+		.mock { top: auto; bottom: 120px; }
+	}
 	.filmstrip .thumb.pending { opacity: 0.5; }
 	.filmstrip .thumb.pending::after { background: var(--faint); }
 	.tracking .thumb.pending img { filter: saturate(0.4); }
@@ -61,23 +69,25 @@
 </div>
 
 <main class="stage" id="stage">
-	<div class="island tl">
-		<span class="wordmark">pin<b>frame</b></span>
-		<span class="sep" id="folder-sep" hidden></span>
-		<span class="muted" id="folder" hidden>girona clouds · 57 photos</span>
-	</div>
+	<div class="dock top">
+		<div class="island start">
+			<span class="wordmark">pin<b>frame</b></span>
+			<span class="sep desk" id="folder-sep" hidden></span>
+			<span class="muted desk" id="folder" hidden>girona clouds · 57 photos</span>
+		</div>
 
-	<div class="island tc steps" id="steps" hidden>
-		<span class="step active" id="step-box"><span class="n">1</span>Box</span>
-		<span class="step"><span class="n">2</span>Fix</span>
-		<span class="step"><span class="n">3</span>Export</span>
-	</div>
+		<div class="island steps mid desk" id="steps" hidden>
+			<span class="step active" id="step-box"><span class="n">1</span>Box</span>
+			<span class="step"><span class="n">2</span>Fix</span>
+			<span class="step"><span class="n">3</span>Export</span>
+		</div>
 
-	<div class="island tr" id="action" hidden>
-		<span class="muted" id="box-size">1030 × 400</span>
-		<span class="sep"></span>
-		<button class="btn primary" id="track">Track <kbd>⏎</kbd></button>
-		<div class="bar"></div>
+		<div class="island end" id="action" hidden>
+			<span class="muted" id="box-size">1030 × 400</span>
+			<span class="sep"></span>
+			<button class="btn primary" id="track">Track <kbd class="desk">⏎</kbd></button>
+			<div class="bar"></div>
+		</div>
 	</div>
 
 	<section class="drop" id="drop">
@@ -136,7 +146,7 @@
 		$('filmstrip').innerHTML = loaded ? PHOTOS.map((p, i) =>
 			`<a class="thumb pending${i === 0 ? ' current' : ''}"><img src="assets/${p.name}-t.jpg" alt=""><span class="tip">${p.name}</span></a>`
 		).join('') : '';
-		$('track').innerHTML = 'Track <kbd>⏎</kbd>';
+		$('track').innerHTML = 'Track <kbd class="desk">⏎</kbd>';
 		$('action').querySelector('.bar').className = 'bar';
 		if (s === 'tracking') runTracking();
 	}

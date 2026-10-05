@@ -393,9 +393,9 @@ kbd {
 .mock button { padding: 2px 8px; border-radius: 999px; color: var(--accent); }
 .mock button.on { background: var(--accent); color: var(--accent-fg); }
 
-/* rows of islands. Floating over the photo on desktop, stacked above and below it on a phone. */
+/* docks: rows of islands. Floating over the photo on desktop, stacked above and below it on a phone. */
 
-.row {
+.dock {
 	position: absolute;
 	left: 14px;
 	right: 14px;
@@ -405,20 +405,21 @@ kbd {
 	gap: 8px;
 	pointer-events: none;
 }
-.row.top { top: 14px; align-items: start; }
-.row.bottom { bottom: 14px; align-items: end; }
-.row > * { pointer-events: auto; }
-.row > .island { position: relative; inset: auto; translate: none; }
-.row > .start { grid-column: 1; justify-self: start; }
-.row > .mid { grid-column: 2; justify-self: center; }
-.row > .end { grid-column: 3; justify-self: end; }
+.dock.top { top: 14px; align-items: start; }
+.dock.bottom { bottom: 14px; align-items: end; }
+.dock > * { pointer-events: auto; }
+.dock > .island { position: relative; inset: auto; translate: none; }
+.dock > .start { grid-column: 1; justify-self: start; }
+.dock > .mid { grid-column: 2; justify-self: center; }
+.dock > .end { grid-column: 3; justify-self: end; }
 .phone { display: none !important; }
 
 @media (max-width: 700px) {
 	body { height: 100dvh; }
 	.desk { display: none !important; }
 	.phone { display: revert !important; }
-	.row {
+	.island.phone { display: flex !important; }
+	.dock {
 		position: static;
 		display: flex;
 		flex-wrap: wrap;
@@ -427,8 +428,8 @@ kbd {
 		gap: 6px;
 		padding: 8px 8px 6px;
 	}
-	.row.top { justify-content: space-between; flex-wrap: nowrap; }
-	.row.bottom { padding: 6px 8px 8px; }
+	.dock.top { justify-content: space-between; flex-wrap: nowrap; }
+	.dock.bottom { padding: 6px 8px 8px; }
 	.island { height: 44px; padding: 0 6px 0 12px; }
 	.btn { height: 36px; }
 	.btn.icon { width: 36px; }

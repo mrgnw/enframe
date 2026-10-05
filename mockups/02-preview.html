@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>pinframe · preview and export</title>
 <link rel="stylesheet" href="pin.css">
 <style>
@@ -100,21 +100,36 @@
 	.export .done b { font-weight: 600; }
 	.export .done .meta { color: var(--muted); font-variant-numeric: tabular-nums; }
 	.export .done a { color: var(--accent); text-decoration: none; font-weight: 600; }
+	@media (max-width: 700px) {
+		.stage { grid-template-rows: none; align-content: start; overflow-y: auto; gap: 8px; padding-bottom: 12px; }
+		.dock { justify-self: stretch; order: 0; }
+		.dock .phone { padding-right: 14px; font-weight: 600; }
+		.clip { order: 1; width: calc(100% - 16px); max-width: none; }
+		.island.transport, .island.export { position: static; translate: none; width: calc(100% - 16px); }
+		.transport { order: 2; height: auto; flex-wrap: wrap; justify-content: center; padding: 6px 10px; border-radius: 14px; row-gap: 4px; }
+		.transport .sep { display: none; }
+		.export { order: 3; }
+		.export .kbd, .export kbd { display: none; }
+	}
 </style>
 </head>
 <body>
 
 <main class="stage">
-	<div class="island tl">
-		<span class="wordmark">pin<b>frame</b></span>
-		<span class="sep"></span>
-		<span class="muted">girona clouds · 57 photos</span>
-	</div>
+	<div class="dock top">
+		<div class="island start">
+			<span class="wordmark">pin<b>frame</b></span>
+			<span class="sep desk"></span>
+			<span class="muted desk">girona clouds · 57 photos</span>
+		</div>
 
-	<div class="island tc steps">
-		<a class="step done" href="00-start.html"><span class="n">1</span>Box</a>
-		<a class="step done" href="01-marking.html"><span class="n">2</span>Fix</a>
-		<span class="step active"><span class="n">3</span>Export</span>
+		<div class="island steps mid desk">
+			<a class="step done" href="00-start.html"><span class="n">1</span>Box</a>
+			<a class="step done" href="01-marking.html"><span class="n">2</span>Fix</a>
+			<span class="step active"><span class="n">3</span>Export</span>
+		</div>
+
+		<a class="island end phone" href="01-marking.html">‹ Fix</a>
 	</div>
 
 	<div class="island panel export" id="export">

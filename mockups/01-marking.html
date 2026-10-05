@@ -85,7 +85,7 @@
 		.looking .label { padding: 0; }
 		.looking .label .more { display: none; }
 		.looking .btn { margin-top: 2px; }
-		.overlay-msg { bottom: 12px; }
+		.overlay-msg { bottom: auto; top: 8px; }
 		.tools .btn.icon { width: 32px; height: 32px; }
 	}
 </style>
@@ -93,7 +93,7 @@
 <body>
 
 <main class="stage" id="stage">
-	<div class="row top">
+	<div class="dock top">
 		<div class="island start">
 			<span class="wordmark desk">pin<b>frame</b></span>
 			<span class="sep desk"></span>
@@ -129,7 +129,7 @@
 		</div>
 	</div>
 
-	<div class="row bottom">
+	<div class="dock bottom">
 		<div class="island looking start" id="looking">
 			<div class="patch" id="patch"></div>
 			<div class="label" id="looking-label"></div>
