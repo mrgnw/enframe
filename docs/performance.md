@@ -99,7 +99,7 @@ The crop size depends on every photo's anchor (`crop_rects` takes min or median 
 FFMPEG=/opt/homebrew/bin/ffmpeg uv run analysis/codecs.py
 ```
 
-**The `ffmpeg` on `PATH` was an Intel build.** `/Users/user/.local/bin/ffmpeg` is the x86_64 static build from evermeet.cx (8.1). It runs under Rosetta and shadows Homebrew's native arm64 ffmpeg 9.0.1 at `/opt/homebrew/bin/ffmpeg`. The Intel build can't open VideoToolbox encoders (`Cannot create compression session: -12908`) and lacks SVT-AV1. It also encodes slower: the Girona ProRes run takes 3.75 s through it against 3.42 s through the native build. Every ProRes number above was measured through it.
+**The `ffmpeg` on `PATH` was an Intel build.** `/Users/user/.local/bin/ffmpeg` is the x86_64 static build from evermeet.cx (8.1). It runs under Rosetta and shadows Homebrew's native arm64 ffmpeg 9.0.1 at `/opt/homebrew/bin/ffmpeg`. The Intel build can't open VideoToolbox encoders (`Cannot create compression session: -12908`) and lacks SVT-AV1. It also encodes slower: the Girona ProRes run takes 3.75 s through it against 3.42 s through the native build. Every ProRes number above was measured through it. **Fixed on 2026-10-05:** Homebrew's ffmpeg was upgraded to 9.0.2, and the Intel `ffmpeg` and `ffprobe` were moved to `/Users/user/.local/share/ffmpeg-x86_64-evermeet/`, so `PATH` now finds the native build. Its one gap: it has no libaom, and SVT-AV1 can't encode the one-plane alpha image that ffmpeg's AVIF muxer requires, so ffmpeg can't write AVIF with alpha. Pillow's libavif can.
 
 **No hardware AV1 encoder.** `VTCopyVideoEncoderList` on this machine lists hardware H.264, HEVC, HEVC with alpha ("Apple Muxed Alpha"), ProRes and JPEG encoders, but no `av01`. Apple's spec for this Mac lists "AV1 decode" only ([Mac mini (2024) tech specs](https://support.apple.com/en-us/121555)). AV1 and AVIF encoding run on the CPU.
 
@@ -140,6 +140,35 @@ End to end, transparent Girona, 9 runs each:
 
 AVIF holds every placed frame for Pillow's encoder, which adds about 450 MB of peak memory.
 
+## Threaded decode + SIFT
+
+```sh
+uv run analysis/prepare_threads.py
+```
+
+Before this change, all 57 photos were decoded and then SIFT ran photo by photo. Each phase kept only about 6 of 12 cores busy. Whole-photo SIFT depends only on the photo: a marked photo's box features are the whole-photo features filtered to the box (see "SIFT reuse"). So decode + SIFT can run as one parallel map over photos, and the tracking loop only filters and matches.
+
+Decode + SIFT for all 57 Girona photos, each variant in a fresh process, 3 runs; features are identical in every variant:
+
+| variant | threads | seconds | peak MB |
+|-|-|-|-|
+| decode all, then SIFT one photo at a time | 1 | 2.22–2.39 | 1019–1137 |
+| decode all, then SIFT on threads | 4 | 1.94–2.10 | 1364–1609 |
+| decode all, then SIFT on threads | 8 | 1.86–2.09 | 1748–2024 |
+| **decode + SIFT per photo on threads** | 4 | 1.55–1.67 | 1029–1047 |
+| **decode + SIFT per photo on threads (kept)** | 6 | 1.48–1.54 | 1243–1297 |
+| decode + SIFT per photo on threads | 8 | 1.55–1.71 | 1431–1594 |
+
+Threading SIFT alone gains little, because OpenCV already parallelizes each SIFT. Overlapping one photo's AVIF decode with another's SIFT fills the idle cores. `PREPARE_WORKERS = 6` is the best on the M4 Pro; at 8 the efficiency cores and memory traffic cost more than they add.
+
+End to end, Girona to `.avif`, 9 runs: **2.86 s** (from 3.42–3.57 s), with decode + SIFT 1.45 s on about 9.4 cores and the tracking loop 0.07 s. Peak memory is 1.86 GB, up from 1.5 GB. Rects are identical to the baseline.
+
+**Other ways to reuse earlier keypoints, and why they were not taken:**
+
+- **Search only near the last find** (crop the next photo to a window around the predicted anchor): about half the SIFT work on paper. But it makes each photo's features depend on the previous result. That serializes SIFT again, so it loses the threading above, and it can't be cached. It needs a window-size rule and a whole-photo fallback for lens switches and big jumps, and it changes the output (see the cropped-SIFT row under "Tried and rejected"). More moving parts for less gain than the threaded map.
+- **Optical flow from the previous keypoints** (pyramidal Lucas-Kanade): fast, but it assumes small motion between photos. These photos are seconds apart from a moving train and switch lenses, so it would need SIFT as a fallback anyway.
+- **Cache features across runs**: this is where earlier knowledge pays off most. Features are now a pure function of the photo, so a cache keyed by file path, mtime and `TRACK_EDGE` would make re-runs after a new mark skip SIFT entirely. See idea 0.
+
 ## Further ideas, ranked
 
 0. **For click-to-mark, skip the clip and cache features between runs.**
@@ -150,6 +179,6 @@ AVIF holds every placed frame for Pillow's encoder, which adds about 450 MB of p
    - Output is unchanged by construction. This matters most for the enframe integration in `docs/wasm.md` (`spike-wasm`), which re-runs `anchor.py` on every click.
 1. **Smaller `TRACK_EDGE` (768)** would save about 0.5 s with the same LOST set on Girona. It needs an accuracy check first, for example `analysis/grids.py` contact sheets at lens switches, since 1024 was chosen for them.
 2. **Faster encode for previews.** Done differently: the default output is now animated AVIF. See "Output encoding" above.
-3. **Overlap decode with tracking.** Pillow reads image sizes without decoding, so `k` can be known up front. Tracking photo i could then run while photo i+1 decodes. Both stages already use several cores, so expect 0.2-0.3 s at most.
+3. **Overlap decode with tracking.** Done, with a bigger gain than expected (0.7 s): see "Threaded decode + SIFT".
 4. **Hold less in memory.** Decoding twice (downscaled gray for tracking, full RGB in render) would bring peak RSS from ~1.1 GB to ~200 MB. It costs a second 0.6 s decode, unless render decodes on its worker threads.
-5. **Threaded whole-photo SIFT** (rejected above). Worth it only where memory is plentiful: 0.2 s for 500-800 MB. The 24 GB Mac mini has the room.
+5. **Threaded whole-photo SIFT.** Superseded by threading decode + SIFT together, which gains more for less memory.
