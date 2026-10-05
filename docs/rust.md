@@ -136,7 +136,7 @@ cd rust && cargo test --release -- --ignored --nocapture
 
 - **Where the 3e-4 comes from.** At IMG_4699 the box on IMG_4698 has 37 features in both versions, but three of their descriptors differ from OpenCV's by one level in one of 128 values. That lets a 21st pair pass the ratio test, which moves the least-squares fit and the scale (2.4923 against 2.492), and every later photo follows.
 - **Why the descriptors differ.** The sub-scale offset of each keypoint comes from solving a near-singular 3x3 system, which amplifies one-ulp differences about 1e5 times. The Rust port follows OpenCV's float operation order, including where clang fuses multiplies and adds, but the sizes still differ by about 35 float steps from the opencv-python wheel (built with Apple clang 15). No variant of the solve matched (`analysis/solve_probe.py`).
-- **kornia-imgproc** independently claims bit-exactness with `cv::SIFT` (presumably against a GCC build). On this Mac it is not bit-exact either, yet it gives byte-identical rects to the Rust port. So on this data the SIFT details below OpenCV's own build do not reach the output.
+- **kornia-imgproc** independently claims bit-exactness with `cv::SIFT` (presumably against a GCC build). On this Mac it is not bit-exact either, yet it gives byte-identical rects to the Rust port. So on this data it does not matter which of the two is used; only OpenCV's own build reproduces `anchor.py`'s rects.
 - **OpenCV's own SIFT** (a source build with Apple clang 21) through the Rust pipeline matches `anchor.py` within 8.2e-8. This confirms that the Rust matching, RANSAC (it replays OpenCV's random generator) and least-squares refinement reproduce OpenCV's.
 - **The frames** are placed in one separable resample per axis: bicubic when enlarging, an area filter when shrinking. `anchor.py` area-resizes, then warps bilinearly, which is a little softer on the shrunk frames (marked with a `ponytail:` comment in `render.rs`).
 
@@ -145,7 +145,7 @@ cd rust && cargo test --release -- --ignored --nocapture
 | option | features | speed, one photo | license | state |
 |-|-|-|-|-|
 | `opencv` crate + OpenCV 5 | OpenCV's, identical | 115 ms one core | MIT + Apache-2.0 | needs OpenCV built per platform; see "Build" |
-| this crate's port (`rust/src/sift.rs`) | within 0.002 px; rects 3e-4 | 135 ms one core | derived from OpenCV, Apache-2.0 | 860 lines, no dependencies |
+| this crate's port (`rust/src/sift.rs`) | within 0.002 px; rects 3e-4 | 136 ms one core | derived from OpenCV, Apache-2.0 | 860 lines, no dependencies |
 | kornia-imgproc 0.2 (Sep 2026, 722 stars) | not bit-exact here; same rects as the port | 94 ms one core, 18 ms on all | Apache-2.0 | 47 crates; end to end 2.27 s and 3.0 GB peak, against 2.21 s and 1.49 GB for the port |
 | sift-features 0.1.0 (2024, 8 stars) | different keypoints: none within 0.5 px and size of OpenCV's | 485–520 ms one core | MIT | unmaintained |
 | sift-wgpu 0.1.0 (Jan 2026, 5 stars) | not tried | | MIT on crates.io, no license file | early |
