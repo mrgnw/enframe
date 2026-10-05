@@ -120,7 +120,7 @@ fn layer_sigmas() -> [f64; LAYERS + 3] {
 }
 
 /// `resize(gray, 2x, INTER_LINEAR)` on floats: weights of 1/4 and 3/4, exact on 8-bit input.
-pub(crate) fn upscale2(gray: &Image) -> Plane {
+fn upscale2(gray: &Image) -> Plane {
 	let (w, h) = (gray.width, gray.height);
 	let taps = |d: usize, n: usize| -> (usize, usize, f32) {
 		let s = d as f32 * 0.5 - 0.25;

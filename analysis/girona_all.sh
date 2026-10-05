@@ -4,7 +4,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 OUT=${1:-out/all.avif}
-# PAD= (empty) runs without padding, the tool's default crop.
+# PAD= (empty) runs without padding, the tool's default crop. BIN=rust/target/release/pinframe runs the
+# Rust prototype instead of anchor.py.
 PAD=${PAD-transparent}
 
 fixes=(
@@ -33,4 +34,4 @@ fixes=(
 	--at IMG_4798.avif=1000,400
 )
 
-uv run "${RUN:-anchor.py}" "samples/girona clouds"/*.avif --box 1010,410,1030,400 "${fixes[@]}" ${PAD:+--pad "$PAD"} --out "$OUT" "${@:2}"
+${BIN:-uv run ${RUN:-anchor.py}} "samples/girona clouds"/*.avif --box 1010,410,1030,400 "${fixes[@]}" ${PAD:+--pad "$PAD"} --out "$OUT" "${@:2}"
