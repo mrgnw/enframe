@@ -1,16 +1,10 @@
 use std::path::PathBuf;
 
 fn main() {
-	let avif = pkg_config::Config::new()
-		.atleast_version("1.1")
-		.probe("libavif")
-		.expect("brew install libavif");
-	let header = avif
-		.include_paths
-		.iter()
-		.map(|p| p.join("avif/avif.h"))
-		.find(|p| p.exists())
-		.expect("avif/avif.h");
+	let avif =
+		pkg_config::Config::new().atleast_version("1.1").probe("libavif").expect("brew install libavif");
+	let header =
+		avif.include_paths.iter().map(|p| p.join("avif/avif.h")).find(|p| p.exists()).expect("avif/avif.h");
 	let bindings = bindgen::Builder::default()
 		.header(header.to_string_lossy())
 		.allowlist_item("avif.*")
