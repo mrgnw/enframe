@@ -116,7 +116,17 @@ def main():
 		flag = '' if score >= MIN_SCORE else '  LOST'
 		print(f'{p.name}  {fw}x{fh}  anchor {x},{y}  score {score:.2f}{flag}')
 
-	rects = crop_rects(sizes, [(x, y) for x, y, _ in path])
+	# A frame where the anchor is hidden can't hold it still, and its guess would shrink every crop.
+	kept = [i for i, (_, _, score) in enumerate(path) if score >= MIN_SCORE]
+	assert len(kept) >= 2, 'anchor found in fewer than two frames'
+	if len(kept) < len(paths):
+		print(f'dropped {len(paths) - len(kept)} lost frame(s)')
+	paths = [paths[i] for i in kept]
+	frames = [frames[i] for i in kept]
+	sizes = [sizes[i] for i in kept]
+	anchors = [path[i][:2] for i in kept]
+
+	rects = crop_rects(sizes, anchors)
 	_, _, cw, ch = rects[0]
 	smallest = min(fw * fh for fw, fh in sizes)
 	print(f'crop {cw}x{ch}, {cw * ch / smallest:.0%} of the smallest frame')
