@@ -16,6 +16,8 @@ The UI edits one document and shows one result.
 
 The document is the CLI's input: the ordered photo list, the first-photo box, and the marks (`photo → point | box | box+zoom`). The result is the sidecar JSON `anchor.py` already writes: per photo `file`, `x,y,w,h` (normalized, may overhang 0–1 with padding), `scale`, `source` (`tracked`, `mark`, `lost`). The UI never computes a crop; it draws what the sidecar says.
 
+The marking screen also needs each photo's anchor box, which the sidecar does not have yet. "Anchor box data" below gives the field and a derivation that works until it is added.
+
 Both are small. The document is a few hundred bytes and is what gets saved beside the folder (`<folder>.pin.json`, proposed), so a session can be reopened and the exact CLI call reproduced.
 
 ## Screens and states
@@ -58,9 +60,12 @@ The tracker's own estimate for a lost photo (interpolated from neighbours) is dr
 
 | Key | Does |
 |-|-|
-| `→` `←` | Next, previous photo |
+| `→` `←` | Step one photo. Stops at the ends. |
+| `Shift+→` `Shift+←` | Step ten photos. Shift is the 10-frame step in Premiere and Resolve. |
+| `Home` `End` | First, last photo |
 | `Tab`, `L` | Next lost photo (wraps) |
 | `Shift+Tab` | Previous lost photo |
+| `T` | Trail on or off; `−` `+` in the island set how many neighbours |
 | `Enter` | Accept the tracker's estimate for this photo as a mark (zero mouse) |
 | `Backspace`, `Delete` | Remove the mark on this photo; the photo becomes lost again |
 | `⌘Z`, `⌘⇧Z` | Undo, redo (marks only) |
@@ -68,7 +73,7 @@ The tracker's own estimate for a lost photo (interpolated from neighbours) is dr
 | `Space` | Play or pause the clip in Preview; in Fix, flip to the previous linked photo while held |
 | `Esc` | Cancel a drag in progress |
 
-**Mouse, complete list:** click = point mark; drag = search box; scroll = zoom; click on a filmstrip thumbnail = go there; click on the next-lost arrow = `Tab`.
+**Mouse, complete list:** click = point mark; drag = search box; scroll = zoom; press and drag on the filmstrip = scrub; a vertical wheel over the filmstrip scrolls it sideways; click on the next-lost arrow = `Tab`.
 
 After a mark the stage auto-advances to the next lost photo. Advancing is instant; the dots catch up when the re-track returns. A mark that fixes a scene change usually links several following photos too, so the next lost photo may be far away; the filmstrip scrolls to it.
 
@@ -85,7 +90,11 @@ The filmstrip is the only list. Every photo is a thumbnail, 56 px tall, in one s
 | `lost` | red, filled | dimmed to 55% | Needs a mark. The count in the island is the number of these. |
 | decode failed | grey X | 30% | Not in the clip. |
 
-No labels, no text per thumbnail. Hovering shows the filename and, for tracked photos, the feature count ("38 features"); for lost ones, "lost, 7 features, estimated". The current photo has a 2 px accent outline.
+No labels, no text per thumbnail. Hovering shows the filename and, for tracked photos, the feature count ("38 features"); for lost ones, "lost, 7 features, estimated".
+
+**Moving through the photos.** The user can go anywhere, not only to the next lost photo, to see where the anchor has been. Press and drag along the filmstrip to scrub: the stage switches to each photo the pointer crosses. Near either end of the strip it scrolls on its own, so one drag reaches all 57. A vertical wheel or a trackpad scrolls the strip without changing the photo. The keys are in the table above. Steps and scrubbing keep the current thumbnail in view. Jumps (`Tab`, `Home`, `End`) centre it. A re-track running in the background never blocks scrubbing.
+
+**Which photo is current** is shown three ways: a 2 px amber outline, the thumbnail lifted 4 px above its row, and the filename with its position ("IMG_4721 · 30 / 57") in the top-left island.
 
 A thin line runs above the dots showing which photos are **linked** to each other: a continuous bar across a tracked run, a break at every mark or lost photo. This is the derivative the user actually cares about: how many separate chains the clip has. One chain is the goal.
 
@@ -95,6 +104,56 @@ On the stage, state is the box:
 - `lost`: a dashed grey box at the estimated position, the ghost following the cursor, the reference patch in the island.
 
 Confidence (the inlier count) is shown on hover only. It is the tracker's honesty, not a decision input; the decision is binary (lost or not) and the dots show it.
+
+## Neighbour trail
+
+Over the current photo, the anchor boxes of up to N photos before it and N after it are drawn as **corner ticks only**. Each box gets four short L-shaped ticks and no outline. On a lost photo, the trail shows where the anchor was and where it goes next, so the click usually lands between the last violet ticks and the first teal ones. On a tracked photo, it shows the anchor's path, and a drift the tracker missed shows up as a kink.
+
+| Property | Choice | Why |
+|-|-|-|
+| Colour | Before: violet `#b49cff`. After: teal `#3fd8c4`. | Distinct from amber, which is the current box and marks, and from red, which is lost. A 3.5 px dark halo under each tick keeps both readable on sky, cloud and foliage. |
+| Opacity | Linear, from 0.9 at the nearest neighbour to 0.2 at the Nth. Far boxes are drawn first, so near ones sit on top. | The nearest neighbour is the one the click depends on. |
+| Tick length | 18% of the box's shorter side, clamped to 5–16 px | Small boxes still get visible ticks, and big ones don't turn back into outlines. |
+| Default N | 6 per side, adjustable from 5 to 10 with `−` `+`. `T` turns the trail off. | The Girona set's 57 photos form 27 linked chains, so most chains are one to three photos long. At 6, the trail crosses a scene change or two on each side, which is where lost photos are. The 6th neighbour is already at 0.2 opacity, so more would add clutter that can't be read. |
+| Cost | One SVG over the photo, with at most 20 groups of two paths each. It is redrawn on photo change and on resize. | No images and no blur, so scrubbing stays instant. |
+
+How the source changes the ticks:
+
+| Source | Ticks | Meaning |
+|-|-|-|
+| `tracked` | Solid, 1.75 px | Seen by the tracker |
+| `mark` | Solid, 2.5 px, with a small ring at the centre | Placed by the user. The ring is where they clicked, and it shows where a new scene starts. |
+| `lost` | Dashed, 3 px on and 3 px off, no ring | Interpolated from neighbours, never seen |
+
+**Coordinates.** Each neighbour's box is drawn at its own position in its own photo, normalized 0–1, so photos of different resolutions line up. The trail is then the anchor's path through the frame. A lens switch shows up as a jump in box size, which is useful information. In the mockup, the box goes from 0.35 to 0.90 of the photo width between IMG_4719 and IMG_4720, where the lens switches to 2.55x. Two side effects follow from this choice:
+
+- A neighbour of the other orientation, such as a landscape photo next to a portrait one, is drawn stretched. Its position is still right.
+- At large zoom a box can extend past the photo. Its ticks are drawn outside the photo edge rather than clipped, because the size is the information.
+
+### Anchor box data
+
+Per photo, the UI needs the anchor centre and the box the tracker followed, both normalized 0–1 to that photo. The sidecar has neither. The proposed addition to `anchor.py` is one field per row, with the centre x, centre y, width and height in the same units as the crop rect:
+
+```json
+{"file": "IMG_4720.avif", "x": -0.8613, "y": 0.0092, "w": 2.368, "h": 1.4717, "scale": 2.5543, "source": "tracked", "anchor": [0.3107, 0.4512, 0.898, 0.2245]}
+```
+
+The change is small. `track()` already holds the box as `rw, rh`, so it needs adding to `Hit` and writing out in `write_rects`.
+
+The box is **not** "the first box × scale". `track()` replaces `rw, rh` with each `--at` box and multiplies them by every tracked zoom step. So the followed box equals the first box × scale only until the first box mark. For the trail, the followed box is the right one: it is what the user last drew and what the tracker matched.
+
+**Derivation until the field exists.** `analysis/mockup_data.py` does this, and its centres match the anchors `anchor.py` prints to within 1.5 px on all 57 photos.
+
+1. **Centre.** The crop holds the anchor at one spot of the clip, so the anchor sits at the same fraction (u, v) of every crop rect. Photo 0's anchor is the centre of `--box bx,by,bw,bh`. With W0 and H0 as photo 0's pixel size:
+   - u = (bx + bw/2 − x0·W0) / (w0·W0)
+   - v = (by + bh/2 − y0·H0) / (h0·H0)
+   - For photo i: cx = xᵢ + u·wᵢ and cy = yᵢ + v·hᵢ.
+2. **Size.** The followed box divided by scale stays constant between box marks. Start with (bw, bh) / 1. At each `--at P=x,y,w,h[,zoom]`, it becomes (w, h) / scale_P. Photo i's box is that ratio × scaleᵢ, divided by photo i's pixel size.
+
+The derivation needs the marks and the photo sizes. The UI has both, because they are its own document. It is a stopgap, not the design, for two reasons:
+
+- It holds only while the crop is a pure scale and shift of the anchor. The README's "soft lock" next step would let the anchor drift inside the crop and break step 1.
+- Lost photos use the sidecar's interpolated scale, so their size is an estimate, like their position.
 
 ## Preview and export
 
@@ -151,3 +210,5 @@ Alternatives rejected:
 5. **Preview fidelity.** The browser draws the preview with bilinear resampling and ffmpeg with area or cubic. Is a visible difference acceptable in preview, or should preview fetch `--frames` PNGs from the server at reduced size?
 6. **EXIF zoom.** When photos carry focal length, should the UI pre-set the ghost zoom from it, or hide the zoom gesture entirely on those sets?
 7. **Where in enframe.** A route at `/pin` next to the framer at `/`, or a mode of the framer reached from a multi-select in the library?
+8. **Sidecar `anchor` field.** Is `[cx, cy, w, h]` per row, normalized to the photo, the right shape? Adding it to `anchor.py` removes the derivation and its soft-lock caveat.
+9. **Trail across scene changes.** Should the trail stop at a mark that starts a new scene, since positions from another scene are not comparable? The proposal is no: the mark's ring already shows where the scene changes, and stopping would hide lens switches that happen at a mark, such as IMG_4698 at 2.5x.
