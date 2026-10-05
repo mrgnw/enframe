@@ -61,3 +61,14 @@ uv run anchor.py
 Blender's 2D Stabilization does the same job for free on an image sequence: put one tracking marker on the feature, enable location stabilization, and set an anchor frame. For soft features like clouds, set the marker's motion model to Affine, enable Normalize, and raise Correlation to 0.9. It needs manual marker fixes when the track drifts, and a sudden lens switch means re-placing the marker by hand.
 
 The one-click stabilizers (ffmpeg `vidstab`, Warp Stabilizer, Resolve's automatic stabilizer, Hugin's `align_image_stack`) don't work here. They lock onto the dominant motion, which from a train is the landscape, not the cloud.
+
+## License
+
+This project is licensed under [MIT](LICENSE).
+
+It depends on these libraries, under their own licenses:
+
+- [OpenCV](https://github.com/opencv/opencv-python) — Apache-2.0 (keypoint tracking, image resizing)
+- [NumPy](https://numpy.org) — BSD-3-Clause (arrays)
+- [Pillow](https://python-pillow.org) — MIT-CMU (AVIF decoding)
+- [FFmpeg](https://ffmpeg.org) — LGPL/GPL depending on the build (video encoding; run as an external program, not bundled)
