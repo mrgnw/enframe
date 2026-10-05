@@ -36,12 +36,14 @@ LABELS = {
 	'crop_rects': 'plan: crop rects',
 	'plan': 'plan: other',
 	'render': 'render: wait for placed frames',
+	'write_avif': 'render: AVIF encode, incl. waiting for placed frames',
+	'pipe_to_ffmpeg': 'render: feed ffmpeg, incl. waiting for placed frames',
 	'pipe write': 'render: blocked writing to ffmpeg',
 	'pipe close': 'render: close pipe',
 	'ffmpeg wait': 'render: wait for ffmpeg to finish',
 	'write_rects': 'write JSON',
 	'place': 'place (resize + warp)',
-	'png save': 'PNG save (--frames)',
+	'pillow save': 'Pillow save: the AVIF clip, or --frames PNGs',
 }
 
 # Top-level phases get wall and process-wide CPU time, to show how many cores each one keeps busy.
@@ -124,10 +126,12 @@ def instrument():
 		'plan',
 		'place',
 		'render',
+		'write_avif',
+		'pipe_to_ffmpeg',
 		'write_rects',
 	):
 		setattr(anchor, name, timed(name, getattr(anchor, name)))
-	anchor.Image.Image.save = timed('png save', anchor.Image.Image.save)
+	anchor.Image.Image.save = timed('pillow save', anchor.Image.Image.save)
 	sift_create = anchor.cv2.SIFT_create
 	anchor.cv2.SIFT_create = lambda: TimedSift(sift_create())
 	anchor.subprocess.Popen = TimedPopen
