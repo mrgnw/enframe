@@ -35,6 +35,12 @@ Writes the clip and a `.json` beside it with each photo's crop rect, normalized 
 
 `--frames DIR` also saves every aligned photo as `DIR/0001.png`, `0002.png`, …, so other tools can take over: re-encode at another speed with `ffmpeg -framerate 8 -i DIR/%04d.png`, stack them in Siril, or preview them in enframe. The directory must hold no PNGs yet.
 
+`--vf` passes ffmpeg filters to the clip (not to `--frames`). `deflicker` evens exposure jumps between shots, `minterpolate=fps=24:mi_mode=blend` blends between photos instead of cutting, and `tpad=stop_mode=clone:stop_duration=2` holds the last photo for 2 seconds:
+
+```sh
+uv run anchor.py "samples/girona clouds"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif --box 840,550,400,350 --at IMG_4703.avif=746,554,400,350 --vf deflicker,tpad=stop_mode=clone:stop_duration=2 --out out/turbines.mp4
+```
+
 The whole sample folder, with every mark, is one script:
 
 ```sh

@@ -230,22 +230,27 @@ def render(
 	out: Path,
 	fps: float,
 	frames_dir: Path | None = None,
+	filters: str | None = None,
 ):
 	alpha = fill is not None and len(fill) == 4
 	w, h = size
 	cmd = [
 		'ffmpeg', '-y', '-loglevel', 'error',
 		'-f', 'rawvideo', '-pix_fmt', 'rgba' if alpha else 'rgb24', '-s', f'{w}x{h}', '-r', str(fps), '-i', '-',
-		*encoder(out, alpha), str(out),
+		*(['-vf', filters] if filters else []), *encoder(out, alpha), str(out),
 	]  # fmt: skip
 	with subprocess.Popen(cmd, stdin=subprocess.PIPE) as ffmpeg:
 		assert ffmpeg.stdin is not None
-		for i, (rgb, source) in enumerate(zip(frames, sources), start=1):
-			frame = np.ascontiguousarray(place(rgb, source, size, fill))
-			if frames_dir is not None:
-				Image.fromarray(frame).save(frames_dir / f'{i:04d}.png')
-			ffmpeg.stdin.write(frame.tobytes())
-		ffmpeg.stdin.close()
+		# ffmpeg prints why it quit (a bad --vf, say); the exit code below reports it without a traceback.
+		try:
+			for i, (rgb, source) in enumerate(zip(frames, sources), start=1):
+				frame = np.ascontiguousarray(place(rgb, source, size, fill))
+				if frames_dir is not None:
+					Image.fromarray(frame).save(frames_dir / f'{i:04d}.png')
+				ffmpeg.stdin.write(frame.tobytes())
+			ffmpeg.stdin.close()
+		except BrokenPipeError:
+			pass
 	assert ffmpeg.returncode == 0, f'ffmpeg exited {ffmpeg.returncode}'
 
 
@@ -319,6 +324,11 @@ def main():
 		metavar='DIR',
 		help='also save each aligned photo as DIR/0001.png, 0002.png, ... (with alpha when padding is transparent)',
 	)
+	parser.add_argument(
+		'--vf',
+		metavar='FILTERS',
+		help='ffmpeg video filters for the clip only, e.g. deflicker or tpad=stop_mode=clone:stop_duration=2',
+	)
 	args = parser.parse_args()
 	if args.frames:
 		args.frames.mkdir(parents=True, exist_ok=True)
@@ -341,7 +351,7 @@ def main():
 		print(f'{p.name}  {fw}x{fh}  anchor {hit.x:.0f},{hit.y:.0f}  scale {hit.scale:.2f}  {hit.note}')
 	print(f'clip {size[0]}x{size[1]}')
 
-	render(frames, sources, size, fill, args.out, args.fps, args.frames)
+	render(frames, sources, size, fill, args.out, args.fps, args.frames, args.vf)
 	write_rects(paths, sizes, sources, args.out.with_suffix('.json'))
 	print(f'wrote {args.out}')
 
