@@ -15,6 +15,8 @@ MIN_CROP = 64
 TRACK_EDGE = 1024
 RATIO_TEST = 0.8
 RANSAC_TOLERANCE = 0.03
+MAX_STEP_ZOOM = 6
+MAX_STEP_TURN = 15
 
 
 def load(path: Path) -> np.ndarray:
@@ -62,54 +64,69 @@ class Hit(NamedTuple):
 	note: str
 
 
-def track(frames: list[np.ndarray], boxes: dict[int, tuple[int, ...]]) -> list[Hit]:
+def plausible(M: np.ndarray) -> tuple[bool, float, float]:
+	"""Photo to photo, the anchor stays near the same zoom or jumps lens; it never spins."""
+	step = float(np.hypot(M[0, 0], M[1, 0]))
+	turn = float(np.degrees(np.arctan2(M[1, 0], M[0, 0])))
+	return 1 / MAX_STEP_ZOOM <= step <= MAX_STEP_ZOOM and abs(turn) <= MAX_STEP_TURN, step, turn
+
+
+def track(frames: list[np.ndarray], marks: dict[int, tuple[float, ...]]) -> list[Hit]:
 	"""Per frame: anchor position, its scale relative to the first box, and how it was found.
 
-	boxes maps a frame index to an x,y,w,h the user drew, or an x,y point that keeps the current scale.
-	Frame 0 needs a box; later ones fix lost frames.
+	marks maps a frame index to where the user put the anchor: x,y or a box x,y,w,h, plus an optional
+	zoom relative to the first photo. Frame 0 needs a box; later marks fix photos the tracker lost and
+	keep the zoom unless they give one.
 	"""
-	assert 0 in boxes and len(boxes[0]) == 4, 'the first photo needs a box'
+	assert 0 in marks and len(marks[0]) == 4, 'the first photo needs a box'
 	# One factor for every frame, so differing resolutions show up as scale, like a lens change.
 	k = min(1.0, TRACK_EDGE / max(max(f.shape[:2]) for f in frames))
 	small = [resize(gray(f), k) for f in frames]
 	sift = cv2.SIFT_create()
-	first_area = boxes[0][2] * boxes[0][3]
-	w, h = boxes[0][2] * k, boxes[0][3] * k
 
 	path: list[Hit] = []
 	cx = cy = 0.0
+	rw, rh = marks[0][2] * k, marks[0][3] * k
 	scale = 1.0
 	kp, des = None, None
 	for i, g in enumerate(small):
 		fh, fw = frames[i].shape[:2]
-		if i in boxes and len(boxes[i]) == 2:
-			px, py = boxes[i]
-			assert 0 <= px < fw and 0 <= py < fh, f'point outside photo {i}'
+		mark = marks.get(i)
+		if mark is not None:
+			assert len(mark) in (2, 4, 5), f'photo {i}: a mark is x,y or x,y,w,h with an optional zoom'
+			if len(mark) == 2:
+				px, py = mark
+			else:
+				bx, by, bw, bh = mark[:4]
+				assert bw > 0 and bh > 0 and bx >= 0 and by >= 0, f'empty box on photo {i}'
+				assert bx + bw <= fw and by + bh <= fh, f'box outside photo {i}'
+				px, py = bx + bw / 2, by + bh / 2
+				# The box is where to look; it says nothing about zoom unless a zoom is given.
+				rw, rh = bw * k, bh * k
+			assert 0 <= px < fw and 0 <= py < fh, f'mark outside photo {i}'
+			if len(mark) == 5:
+				assert mark[4] > 0, f'photo {i}: zoom must be positive'
+				scale = mark[4]
 			cx, cy = px * k, py * k
-			region = (w * scale, h * scale)
-			note = 'your point'
-		elif i in boxes:
-			bx, by, bw, bh = boxes[i]
-			assert bw > 0 and bh > 0 and bx >= 0 and by >= 0, f'empty box on photo {i}'
-			assert bx + bw <= fw and by + bh <= fh, f'box outside photo {i}'
-			cx, cy = (bx + bw / 2) * k, (by + bh / 2) * k
-			# A drawn box says how big the anchor is, so a fix works across a lens switch too.
-			scale = float(np.sqrt(bw * bh / first_area))
-			region = (bw * k, bh * k)
-			note = 'your box'
+			note = 'your mark'
 		else:
 			kp2, des2 = sift.detectAndCompute(g, None)
-			M, agreed = similarity(kp, des, kp2, des2, RANSAC_TOLERANCE * w * scale)
+			M, agreed = similarity(kp, des, kp2, des2, RANSAC_TOLERANCE * rw)
 			if M is None or agreed < MIN_INLIERS:
 				path.append(Hit(cx / k, cy / k, scale, False, f'LOST ({agreed} features), estimated'))
 				continue
-			scale *= float(np.hypot(M[0, 0], M[1, 0]))
+			ok, step, turn = plausible(M)
+			if not ok:
+				note = f'LOST (fit zooms {step:.2f}x, turns {turn:+.0f} deg), estimated'
+				path.append(Hit(cx / k, cy / k, scale, False, note))
+				continue
+			scale *= step
+			rw, rh = rw * step, rh * step
 			cx, cy = M @ np.array([cx, cy, 1.0])
-			region = (w * scale, h * scale)
 			note = f'{agreed} features'
 		path.append(Hit(cx / k, cy / k, scale, True, note))
 		# Clouds deform, so features come from the latest find, never from a lost frame.
-		fresh = features_in(sift, g, cx, cy, *region)
+		fresh = features_in(sift, g, cx, cy, rw, rh)
 		if i == 0:
 			assert len(fresh[0]) >= MIN_INLIERS, (
 				f'only {len(fresh[0])} features in the box; draw a bigger one'
@@ -253,12 +270,8 @@ def plan(frames: list[np.ndarray], boxes, pad: bool = False):
 	return path, sizes, sources, (round(cw * typical / 2) * 2, round(ch * typical / 2) * 2)
 
 
-def parse_box(value: str, allow_point: bool = False) -> tuple[int, ...]:
-	box = tuple(int(v) for v in value.split(','))
-	assert len(box) == 4 or (allow_point and len(box) == 2), f'{value}: expected x,y,w,h' + (
-		' or x,y' if allow_point else ''
-	)
-	return box
+def parse_box(value: str) -> tuple[float, ...]:
+	return tuple(float(v) for v in value.split(','))
 
 
 def parse_fill(value: str) -> tuple[int, ...]:
@@ -277,9 +290,9 @@ def main():
 		'--at',
 		action='append',
 		default=[],
-		metavar='PHOTO=x,y[,w,h]',
-		help='mark the anchor in a photo the tracker lost: a point keeps the zoom, a box also sets it; '
-		'repeatable',
+		metavar='PHOTO=x,y[,w,h[,zoom]]',
+		help='mark the anchor in a photo the tracker lost, as a point or a box to search; '
+		'keeps the zoom unless given one, relative to the first photo; repeatable',
 	)
 	parser.add_argument(
 		'--pad',
@@ -301,7 +314,7 @@ def main():
 	for fix in args.at:
 		name, _, value = fix.partition('=')
 		assert name in names, f'--at {name}: not one of the photos'
-		boxes[names.index(name)] = parse_box(value, allow_point=True)
+		boxes[names.index(name)] = parse_box(value)
 
 	path, sizes, sources, size = plan(frames, boxes, pad=fill is not None)
 	for p, (fw, fh), hit in zip(paths, sizes, path):
@@ -330,17 +343,23 @@ def demo():
 	box = (round(tx) - 80, round(ty) - 80, 160, 160)
 	ux, uy, _ = truth[1]
 	# Tracked alone, then with the user boxing frame 1: its box size must carry the 0.5 scale onward.
-	for boxes in ({0: box}, {0: box, 1: (round(ux) - 40, round(uy) - 40, 80, 80)}):
-		path = track(frames, boxes)
+	for marks in ({0: box}, {0: box, 1: (round(ux) - 40, round(uy) - 40, 80, 80, 0.5)}):
+		path = track(frames, marks)
 		for hit, (ex, ey, es) in zip(path, truth):
 			assert hit.found and abs(hit.x - ex) <= 2 and abs(hit.y - ey) <= 2, (path, truth)
 			assert abs(hit.scale / es - 1) < 0.03, (path, truth)
-	assert path[1].note == 'your box'
+	assert path[1].note == 'your mark'
 
 	# A point on a photo at the same zoom moves the anchor there and keeps the scale.
 	same_zoom = [frames[0], np.dstack([world[400:700, 450:850]] * 3)]
-	path = track(same_zoom, {0: box, 1: (150, 200)})
-	assert path[1][:3] == (150, 200, 1.0) and path[1].note == 'your point', path
+	for mark in ((150, 200), (100, 150, 100, 100)):
+		path = track(same_zoom, {0: box, 1: mark})
+		assert path[1][:3] == (150, 200, 1.0) and path[1].note == 'your mark', path
+
+	# A fit that spins or zooms 10x between two photos is a false match, not a camera move.
+	assert not plausible(np.float64([[10, 0, 0], [0, 10, 0]]))[0]
+	assert not plausible(np.float64([[0.7, -0.7, 0], [0.7, 0.7, 0]]))[0]
+	assert plausible(np.float64([[2.5, 0.05, 0], [-0.05, 2.5, 0]]))[0]
 
 	_, _, sources, size = plan(frames, {0: box})
 	crops = [place(f, src, size, None).astype(int) for f, src in zip(frames, sources)]
