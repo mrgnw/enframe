@@ -1,0 +1,18 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Sample photos stay local for now
+samples/
+.DS_Store
+
+# Outputs
+out/
+*.mp4
