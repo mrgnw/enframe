@@ -84,6 +84,8 @@
 	.trail .dot.lost { stroke-width: 1.5; stroke-dasharray: 2 2; fill: rgba(0, 0, 0, 0.35); }
 	.trail .before.dot { color: var(--before); }
 	.trail .after.dot { color: var(--after); }
+	.trail .pulse { stroke: #fff; stroke-width: 4; stroke-linecap: round; opacity: 0; transition: opacity 0.4s; }
+	.trail .pulse.lit { opacity: 0.75; }
 	.trail .pt.tracked { opacity: 0.85; }
 	.trail .pt.lost, .trail .pt.ghost { fill: rgba(0, 0, 0, 0.5); stroke-dasharray: 3 2; }
 	.trail .pt.lost { stroke: rgba(255, 255, 255, 0.9); stroke-width: 2; }
@@ -263,7 +265,22 @@
 
 	// The trail: a path through the points' centre in up to trailN photos each side, in order, with a dot per photo.
 	// Then the current photo's own points on top.
-	const fade = d => trailN === 1 ? 1 : 1 - 0.45 * (d - 1) / (trailN - 1);
+	// ?trail=fade|steps|pulse compares three ways to show distance from the current photo.
+	// fade: opacity 1 to 0.55 (round 2). steps: one OKLCH colour per photo, hue and lightness stepping with distance,
+	// at full opacity. pulse: steps, plus a light that walks the segments in photo order.
+	const TRAIL_MODE = ['fade', 'steps', 'pulse'].find(m => m === new URLSearchParams(location.search).get('trail')) ?? 'steps';
+	const PULSE_MS = 420, PULSE_REST = 3;
+	const RAMP = {
+		before: { near: [0.8, 0.14, 295], far: [0.72, 0.17, 352] },
+		after: { near: [0.82, 0.13, 182], far: [0.78, 0.17, 145] },
+	};
+	const spread = d => trailN === 1 ? 0 : (d - 1) / (trailN - 1);
+	const fade = d => TRAIL_MODE === 'fade' ? 1 - 0.45 * spread(d) : 1;
+	const stepColour = (side, d) => {
+		const { near, far } = RAMP[side], t = spread(d);
+		const [l, c, h] = near.map((v, i) => v + (far[i] - v) * t);
+		return TRAIL_MODE === 'fade' ? `var(--${side})` : `oklch(${l.toFixed(3)} ${c.toFixed(3)} ${h.toFixed(1)})`;
+	};
 
 	function drawOverlay(just = false) {
 		const W = photo.clientWidth, H = photo.clientHeight, p = photos[current];
@@ -277,23 +294,34 @@
 			const q = photos[current + k];
 			if (q) { const [x, y] = centre(q); cs.push({ q, k, x: x * W, y: y * H }); }
 		}
-		let lines = '', dots = '';
+		let lines = '', dots = '', pulses = '';
 		for (let j = 0; j + 1 < cs.length; j++) {
 			const a = cs[j], b = cs[j + 1];
 			const side = b.k <= 0 ? 'before' : 'after';
 			const d = Math.max(Math.abs(a.k), Math.abs(b.k));
 			const dash = a.q.source === 'lost' || b.q.source === 'lost' ? ' dashed' : '';
 			const seg = `M${a.x} ${a.y}L${b.x} ${b.y}`;
-			lines += `<g opacity="${fade(d).toFixed(2)}"><path class="line halo" d="${seg}"/><path class="line ${side}${dash}" d="${seg}"/></g>`;
+			lines += `<g opacity="${fade(d).toFixed(2)}"><path class="line halo" d="${seg}"/><path class="line ${side}${dash}" d="${seg}" style="stroke:${stepColour(side, d)}"/></g>`;
+			if (TRAIL_MODE === 'pulse') pulses += `<path class="pulse" d="${seg}"/>`;
 		}
 		for (const { q, k, x, y } of cs) {
 			if (k === 0) continue;
 			const side = k < 0 ? 'before' : 'after', d = Math.abs(k);
 			const r = q.source === 'mark' ? 5.5 : 4;
-			dots += `<g opacity="${fade(d).toFixed(2)}"><circle class="dot-halo" cx="${x}" cy="${y}" r="${r + 2.5}"/><circle class="dot ${side} ${q.source}" cx="${x}" cy="${y}" r="${r}"${q.source === 'mark' ? ` stroke="var(--${side})"` : ''}/></g>`;
+			dots += `<g opacity="${fade(d).toFixed(2)}"><circle class="dot-halo" cx="${x}" cy="${y}" r="${r + 2.5}"/><circle class="dot ${side} ${q.source}" cx="${x}" cy="${y}" r="${r}" style="color:${stepColour(side, d)}${q.source === 'tracked' ? '' : ';stroke:currentColor'}"/></g>`;
 		}
-		trail.innerHTML = lines + dots + own;
+		trail.innerHTML = lines + pulses + dots + own;
 	}
+
+	// One segment lights at a time, oldest first, then a short rest. Off when the system asks for reduced motion.
+	const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+	let pulseAt = 0;
+	if (TRAIL_MODE === 'pulse') setInterval(() => {
+		const segs = trail.querySelectorAll('.pulse');
+		if (reduceMotion.matches) pulseAt = -1;
+		segs.forEach((seg, i) => seg.classList.toggle('lit', i === pulseAt));
+		pulseAt = (pulseAt + 1) % (segs.length + PULSE_REST);
+	}, PULSE_MS);
 
 	function renderFilmstrip() {
 		const lost = photos.filter(p => p.source === 'lost').length;
