@@ -15,7 +15,6 @@ pinframe's Rust CLI is the main line and runs: `bash analysis/check.sh` passes 1
 
 | Card | What | Depends on | Touches | Model | Size |
 |-|-|-|-|-|-|
-| [A2](todos/A2-tracker-sensitivity.md) | Tracker sensitivity to tiny pixel differences | — | `rust/src/track.rs`, `check.sh` expectations | Opus | M |
 | [A3](todos/A3-track-edge.md) | Smaller tracking size for speed, if accuracy holds | — | `rust/src/track.rs` (constant), docs | Terra | S |
 | [A6](todos/A6-skip-photos.md) ⚑ | Skip photos where the feature is hidden | decision | `track.rs`, `main.rs`, README | Sonnet | S |
 | [B4](todos/B4-zoom-from-exif.md) | Seed lens-switch zoom from EXIF focal length | — | `rust/src/track.rs`, `decode.rs` | Opus | M |
@@ -25,9 +24,9 @@ pinframe's Rust CLI is the main line and runs: `bash analysis/check.sh` passes 1
 | [E3](todos/E3-marking-screen.md) | Marking screen in enframe | E2, E5 | enframe repo | Opus | L |
 | [E4](todos/E4-preview-export.md) | Preview and export screen in enframe | E3 | enframe repo | Sonnet | M |
 
-Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md), [A1](todos/done/1006-A1-tracking-benchmark.md), [B1](todos/done/1006-B1-colour.md), [F1](todos/done/1006-F1-python-reference.md), [B2](todos/done/1006-B2-capture-time-order.md), [A4](todos/done/1006-A4-search-window.md), [A5a](todos/done/1006-A5a-points-tracker.md), [D2](todos/done/1006-D2-build-downloads.md), [A5b](todos/done/1006-A5b-points-syntax.md) (design: [A5](todos/done/1006-A5-reference-points.md)).
+Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md), [A1](todos/done/1006-A1-tracking-benchmark.md), [B1](todos/done/1006-B1-colour.md), [F1](todos/done/1006-F1-python-reference.md), [B2](todos/done/1006-B2-capture-time-order.md), [A4](todos/done/1006-A4-search-window.md), [A5a](todos/done/1006-A5a-points-tracker.md), [D2](todos/done/1006-D2-build-downloads.md), [A5b](todos/done/1006-A5b-points-syntax.md) (design: [A5](todos/done/1006-A5-reference-points.md)), [A2](todos/done/1006-A2-tracker-sensitivity.md).
 
-Order is in [todos/_priority.md](todos/_priority.md). Running: none.
+Order is in [todos/_priority.md](todos/_priority.md). Running: A3.
 
 ## Decisions
 
