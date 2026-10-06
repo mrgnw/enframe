@@ -3,6 +3,7 @@
 
 mod avif;
 mod avif_sys;
+mod cache;
 #[cfg(test)]
 mod checks;
 mod decode;
@@ -24,6 +25,7 @@ use track::{Hit, Mark, Photo, Rect};
 /// libraries or TRACK_EDGE. PNG's measured working set is larger than AVIF and JPEG's.
 const PREPARE_FIXED_BYTES: usize = 130 << 20; // SIFT's pyramid at TRACK_EDGE, whatever the photo size
 const FEATURE_BYTES: usize = 1 << 20; // one photo's keypoints and byte descriptors; Girona's are under 1 MB
+const CACHE_HASH_BYTES: usize = 1 << 20; // one streaming BLAKE3 input buffer per prepare worker
 /// Results queued per thread; they come back in order, so a slow photo must not idle the others.
 const QUEUE_DEPTH: usize = 3;
 /// Policy: plan within this share of the memory free at start, leaving the rest to other apps.
@@ -33,7 +35,7 @@ const AVIF_QUALITY: i32 = 75;
 const CLIP_SUFFIXES: [&str; 4] = ["avif", "mp4", "mov", "webm"];
 
 const USAGE: &str = "usage: pinframe PHOTO... --box x,y,w,h [--at PHOTO=x,y[,w,h[,zoom]]]... [--pad COLOUR]
-                [--fps N] [--out CLIP] [--frames DIR] [--vf FILTERS]";
+				[--fps N] [--out CLIP-or-JSON] [--frames DIR] [--vf FILTERS] [--cache DIR|--no-cache]";
 
 /// Stops on input or photos pinframe cannot use: a message and exit code 1. Asserts stay for invariants.
 pub fn fail(message: &str) -> ! {
@@ -56,6 +58,8 @@ struct Args {
 	out: PathBuf,
 	frames: Option<PathBuf>,
 	vf: Option<String>,
+	cache: Option<PathBuf>,
+	no_cache: bool,
 }
 
 fn parse_args() -> Args {
@@ -68,6 +72,8 @@ fn parse_args() -> Args {
 		out: PathBuf::from("out.avif"),
 		frames: None,
 		vf: None,
+		cache: None,
+		no_cache: false,
 	};
 	let mut it = std::env::args().skip(1);
 	while let Some(arg) = it.next() {
@@ -80,6 +86,8 @@ fn parse_args() -> Args {
 			"--out" => args.out = PathBuf::from(value()),
 			"--frames" => args.frames = Some(PathBuf::from(value())),
 			"--vf" => args.vf = Some(value()),
+			"--cache" => args.cache = Some(PathBuf::from(value())),
+			"--no-cache" => args.no_cache = true,
 			"-h" | "--help" => {
 				println!("{USAGE}");
 				std::process::exit(0);
@@ -209,11 +217,17 @@ fn folder_of(path: &Path) -> PathBuf {
 
 fn check_output(out: &Path, alpha: bool, filters: Option<&str>) -> Result<(), String> {
 	let ext = suffix(out);
-	if !CLIP_SUFFIXES.contains(&ext.as_str()) {
-		return Err(format!("--out {}: use one of .avif, .mp4, .mov, .webm", out.display()));
+	if ext != "json" && !CLIP_SUFFIXES.contains(&ext.as_str()) {
+		return Err(format!("--out {}: use .json, .avif, .mp4, .mov or .webm", out.display()));
 	}
 	if !folder_of(out).is_dir() {
 		return Err(format!("--out {}: folder {} does not exist", out.display(), folder_of(out).display()));
+	}
+	if ext == "json" {
+		if filters.is_some() {
+			return Err("--vf needs a video --out, not .json".into());
+		}
+		return Ok(());
 	}
 	if ext == "avif" {
 		if filters.is_some() {
@@ -262,7 +276,7 @@ fn available_bytes() -> usize {
 
 fn plan_resources(largest_pixels: usize, prepare_decode_bytes: usize, render_decode_bytes: usize, free_bytes: usize, cores: usize) -> Result<Resources, String> {
 	let budget = (free_bytes as f64 * MEMORY_SHARE) as usize;
-	let prepare_cost = PREPARE_FIXED_BYTES + prepare_decode_bytes + QUEUE_DEPTH * FEATURE_BYTES;
+	let prepare_cost = PREPARE_FIXED_BYTES + prepare_decode_bytes + QUEUE_DEPTH * FEATURE_BYTES + CACHE_HASH_BYTES;
 	// A queued clip frame is RGBA, and the clip is never larger than the photos it is cut from.
 	let render_cost = render_decode_bytes + QUEUE_DEPTH * 4 * largest_pixels;
 	let prepare_threads = cores.min(budget / prepare_cost);
@@ -284,7 +298,27 @@ fn find_features(small: &pixels::Image) -> sift::Features {
 	sift::detect_and_compute(small)
 }
 
-fn prepare(path: &Path, size: (u32, u32), k: f64, keep: &Keep, i: usize) -> Photo {
+fn prepare(
+	path: &Path,
+	size: (u32, u32),
+	k: f64,
+	keep: Option<&Keep>,
+	i: usize,
+	cache: Option<&cache::FeatureCache>,
+) -> Photo {
+	let small = ((size.0 as f64 * k).round() as usize, (size.1 as f64 * k).round() as usize);
+	let key =
+		cache.and_then(|cache| cache::key(path, k, small, track::TRACK_EDGE).ok().map(|key| (cache, key)));
+	if let Some((cache, key)) = key.as_ref() {
+		if let Some(cached) = cache.load(key) {
+			if let Some(keep) = keep {
+				let rgb = work(Work::Decode, || decode::decode(path))
+					.unwrap_or_else(|e| fail(&format!("{}: {e}", path.display())));
+				keep.offer(i, rgb);
+			}
+			return Photo { small: cached.small, features: cached.features };
+		}
+	}
 	let rgb = work(Work::Decode, || decode::decode(path))
 		.unwrap_or_else(|e| fail(&format!("{}: {e}", path.display())));
 	assert_eq!(
@@ -298,7 +332,12 @@ fn prepare(path: &Path, size: (u32, u32), k: f64, keep: &Keep, i: usize) -> Phot
 		let small = if k < 1.0 { pixels::shrink_area(&gray, k) } else { gray };
 		Photo { small: (small.width, small.height), features: find_features(&small) }
 	});
-	keep.offer(i, rgb);
+	if let Some(keep) = keep {
+		keep.offer(i, rgb);
+	}
+	if let Some((cache, key)) = key {
+		cache.store(&key, photo.small, &photo.features);
+	}
 	photo
 }
 
@@ -450,7 +489,7 @@ struct Row {
 #[derive(serde::Serialize)]
 struct Sidecar {
 	run: String,
-	clip: String,
+	clip: Option<String>,
 	photos: Vec<Row>,
 }
 
@@ -461,7 +500,7 @@ fn write_rects(
 	path: &[Hit],
 	out: &Path,
 	run: &str,
-	clip: &str,
+	clip: Option<&str>,
 ) {
 	let photos = paths
 		.iter()
@@ -478,7 +517,7 @@ fn write_rects(
 			source: hit.source.name(),
 		})
 		.collect();
-	let sidecar = Sidecar { run: run.to_string(), clip: clip.to_string(), photos };
+	let sidecar = Sidecar { run: run.to_string(), clip: clip.map(str::to_string), photos };
 	let mut text = Vec::new();
 	let mut serializer = serde_json::Serializer::with_formatter(
 		&mut text,
@@ -510,11 +549,11 @@ fn partial(path: &Path, run: &str) -> PathBuf {
 }
 
 /// Renames the clip and its .json into place together, under an exclusive lock on the output folder.
-fn publish(pairs: [(&Path, &Path); 2], folder: &Path) {
+fn publish(pairs: &[(&Path, &Path)], folder: &Path) {
 	let dir = std::fs::File::open(folder).unwrap_or_else(|e| fail(&format!("{}: {e}", folder.display())));
 	use std::os::fd::AsRawFd;
 	unsafe { libc::flock(dir.as_raw_fd(), libc::LOCK_EX) };
-	for (from, to) in pairs {
+	for &(from, to) in pairs {
 		std::fs::rename(from, to).unwrap_or_else(|e| fail(&format!("{}: {e}", to.display())));
 	}
 }
@@ -522,63 +561,78 @@ fn publish(pairs: [(&Path, &Path); 2], folder: &Path) {
 fn main() {
 	profile::start();
 	let args = parse_args();
-	let (paths, sizes, marks, fill, k, resources) = step("check input and plan resources", || {
-		let mut paths = args.photos.clone();
-		// ponytail: filename order; the exported AVIFs carry no capture time to sort by
-		paths.sort();
-		let fill = args.pad.as_deref().map(parse_fill).transpose().unwrap_or_else(|e| fail(&e));
-		check_output(&args.out, fill.as_ref().is_some_and(|f| f.len() == 4), args.vf.as_deref())
-			.unwrap_or_else(|e| fail(&e));
-		if !(args.fps > 0.0) {
-			fail("--fps must be positive");
-		}
-		let sizes = read_sizes(&paths).unwrap_or_else(|e| fail(&e));
-		let marks = read_marks(args.box_.as_deref(), &args.at, &paths, &sizes).unwrap_or_else(|e| fail(&e));
-		if let Some(dir) = &args.frames {
-			std::fs::create_dir_all(dir)
-				.unwrap_or_else(|e| fail(&format!("--frames {}: {e}", dir.display())));
-			let has_png = std::fs::read_dir(dir).unwrap().flatten().any(|e| suffix(&e.path()) == "png");
-			if has_png {
-				fail(&format!("--frames {}: already has PNGs; empty it first", dir.display()));
+	let (paths, sizes, marks, fill, k, resources, cache, json_only) =
+		step("check input and plan resources", || {
+			let mut paths = args.photos.clone();
+			// ponytail: filename order; the exported AVIFs carry no capture time to sort by
+			paths.sort();
+			let fill = args.pad.as_deref().map(parse_fill).transpose().unwrap_or_else(|e| fail(&e));
+			check_output(&args.out, fill.as_ref().is_some_and(|f| f.len() == 4), args.vf.as_deref())
+				.unwrap_or_else(|e| fail(&e));
+			if args.no_cache && args.cache.is_some() {
+				fail("use either --cache DIR or --no-cache")
 			}
-		}
-		let k = track::track_factor(&sizes);
-		let free = available_bytes();
-		let largest = sizes.iter().map(|&(w, h)| w as usize * h as usize).max().unwrap();
-		let (prepare_decode_bytes, render_decode_bytes) = paths
-			.iter()
-			.zip(&sizes)
-			.map(|(path, &(w, h))| {
-				let pixels = w as usize * h as usize;
-				decode::memory_cost(path)
-					.map(|(prepare, render)| (prepare * pixels, render * pixels))
-					.map_err(|e| format!("{}: {e}", path.display()))
-			})
-			.collect::<Result<Vec<_>, _>>()
-			.unwrap_or_else(|e| fail(&e))
-			.into_iter()
-			.fold((0, 0), |(prepare_max, render_max), (prepare, render)| {
-				(prepare_max.max(prepare), render_max.max(render))
-			});
-		let resources =
-			plan_resources(largest, prepare_decode_bytes, render_decode_bytes, free, cores()).unwrap_or_else(|e| fail(&e));
-		println!(
-			"{:.1} GB free: {} prepare threads, {} render threads, up to {:.1} GB of kept photos",
-			free as f64 / (1u64 << 30) as f64,
-			resources.prepare_threads,
-			resources.render_threads,
-			resources.keep_bytes as f64 / (1u64 << 30) as f64
-		);
-		(paths, sizes, marks, fill, k, resources)
-	});
-	let keep = Keep::new(resources.keep_bytes);
+			let json_only = suffix(&args.out) == "json";
+			if json_only && args.frames.is_some() {
+				fail("--frames needs a clip --out, not .json")
+			}
+			if !(args.fps > 0.0) {
+				fail("--fps must be positive");
+			}
+			let sizes = read_sizes(&paths).unwrap_or_else(|e| fail(&e));
+			let marks =
+				read_marks(args.box_.as_deref(), &args.at, &paths, &sizes).unwrap_or_else(|e| fail(&e));
+			if let Some(dir) = &args.frames {
+				std::fs::create_dir_all(dir)
+					.unwrap_or_else(|e| fail(&format!("--frames {}: {e}", dir.display())));
+				let has_png = std::fs::read_dir(dir).unwrap().flatten().any(|e| suffix(&e.path()) == "png");
+				if has_png {
+					fail(&format!("--frames {}: already has PNGs; empty it first", dir.display()));
+				}
+			}
+			let k = track::track_factor(&sizes);
+			let free = available_bytes();
+			let largest = sizes.iter().map(|&(w, h)| w as usize * h as usize).max().unwrap();
+			let (prepare_decode_bytes, render_decode_bytes) = paths
+				.iter()
+				.zip(&sizes)
+				.map(|(path, &(w, h))| {
+					let pixels = w as usize * h as usize;
+					decode::memory_cost(path)
+						.map(|(prepare, render)| (prepare * pixels, render * pixels))
+						.map_err(|e| format!("{}: {e}", path.display()))
+				})
+				.collect::<Result<Vec<_>, _>>()
+				.unwrap_or_else(|e| fail(&e))
+				.into_iter()
+				.fold((0, 0), |(prepare_max, render_max), (prepare, render)| {
+					(prepare_max.max(prepare), render_max.max(render))
+				});
+			let resources = plan_resources(largest, prepare_decode_bytes, render_decode_bytes, free, cores())
+				.unwrap_or_else(|e| fail(&e));
+			println!(
+				"{:.1} GB free: {} prepare threads, {} render threads, up to {:.1} GB of kept photos",
+				free as f64 / (1u64 << 30) as f64,
+				resources.prepare_threads,
+				resources.render_threads,
+				resources.keep_bytes as f64 / (1u64 << 30) as f64
+			);
+			let cache = if args.no_cache {
+				None
+			} else {
+				let root = args.cache.clone().unwrap_or_else(default_cache_dir);
+				Some(cache::FeatureCache::new(root).unwrap_or_else(|e| fail(&e)))
+			};
+			(paths, sizes, marks, fill, k, resources, cache, json_only)
+		});
+	let keep = (!json_only).then(|| Keep::new(resources.keep_bytes));
 	let path = step("decode, find features, track", || {
 		let threads = resources.prepare_threads;
 		std::thread::scope(|scope| {
 			let (tx, rx) = sync_channel(1);
-			let (paths, sizes, keep) = (&paths, &sizes, &keep);
+			let (paths, sizes, keep, cache) = (&paths, &sizes, keep.as_ref(), cache.as_ref());
 			scope.spawn(move || {
-				let prepare_one = |i: usize| prepare(&paths[i], sizes[i], k, keep, i);
+				let prepare_one = |i: usize| prepare(&paths[i], sizes[i], k, keep, i, cache);
 				ordered(paths.len(), threads, QUEUE_DEPTH * threads, prepare_one, |_, photo| {
 					tx.send(photo).unwrap()
 				});
@@ -606,35 +660,57 @@ fn main() {
 	// Written under names unique to this run, then renamed together under the folder lock: a failed run
 	// leaves the previous pair as it was, and runs sharing an output publish whole pairs, one at a time.
 	let run = random_hex();
-	let rects = args.out.with_extension("json");
-	let (clip_partial, rects_partial) = (partial(&args.out, &run), partial(&rects, &run));
-	let cleanup = || {
-		let _ = std::fs::remove_file(&clip_partial);
-		let _ = std::fs::remove_file(&rects_partial);
-	};
+	let rects = if json_only { args.out.clone() } else { args.out.with_extension("json") };
+	let rects_partial = partial(&rects, &run);
+	let clip_partial = (!json_only).then(|| partial(&args.out, &run));
 	let alpha = fill.as_ref().is_some_and(|f| f.len() == 4);
-	step("render: place and encode", || {
-		let mut sink = open_sink(&clip_partial, size, alpha, args.fps, args.vf.as_deref(), &run);
-		let job = RenderJob {
-			paths: &paths,
-			sources: &sources,
-			size,
-			fill: fill.as_deref(),
-			keep: &keep,
-			threads: resources.render_threads,
-			frames: args.frames.as_deref(),
-			avif: suffix(&args.out) == "avif",
-		};
-		render(&job, &mut sink);
-		finish_sink(sink, &clip_partial);
-	});
+	if let Some(clip_partial) = clip_partial.as_ref() {
+		step("render: place and encode", || {
+			let mut sink = open_sink(clip_partial, size, alpha, args.fps, args.vf.as_deref(), &run);
+			let job = RenderJob {
+				paths: &paths,
+				sources: &sources,
+				size,
+				fill: fill.as_deref(),
+				keep: keep.as_ref().unwrap(),
+				threads: resources.render_threads,
+				frames: args.frames.as_deref(),
+				avif: suffix(&args.out) == "avif",
+			};
+			render(&job, &mut sink);
+			finish_sink(sink, clip_partial);
+		});
+	}
 	step("write the JSON", || {
-		write_rects(&paths, &sizes, &sources, &path, &rects_partial, &run, &file_name(&args.out));
-		publish([(&clip_partial, &args.out), (&rects_partial, &rects)], &folder_of(&args.out));
+		write_rects(
+			&paths,
+			&sizes,
+			&sources,
+			&path,
+			&rects_partial,
+			&run,
+			(!json_only).then(|| file_name(&args.out)).as_deref(),
+		);
+		let pairs = if let Some(clip_partial) = clip_partial.as_ref() {
+			vec![(clip_partial.as_path(), args.out.as_path()), (rects_partial.as_path(), rects.as_path())]
+		} else {
+			vec![(rects_partial.as_path(), rects.as_path())]
+		};
+		publish(&pairs, &folder_of(&args.out));
 	});
-	cleanup();
+	if let Some(clip_partial) = clip_partial {
+		let _ = std::fs::remove_file(clip_partial);
+	}
+	let _ = std::fs::remove_file(rects_partial);
 	println!("wrote {}", args.out.display());
 	profile::finish();
+}
+
+fn default_cache_dir() -> PathBuf {
+	std::env::var_os("HOME")
+		.map(PathBuf::from)
+		.unwrap_or_else(|| PathBuf::from("."))
+		.join("Library/Caches/pinframe")
 }
 #[cfg(test)]
 mod tests {
