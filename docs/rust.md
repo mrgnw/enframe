@@ -196,19 +196,7 @@ cd rust && cargo build --release
 - **Licenses for distribution.** libavif, dav1d and libaom are BSD-2-Clause: a binary must reproduce each copyright notice, the conditions and the disclaimer in its documentation or other materials. Also bundled are libyuv-derived scaling code in libavif (BSD-3-Clause, in libavif's `LICENSE`), and fastfeat (BSD-3-Clause) and vector (MIT) in libaom. libaom also comes under the Alliance for Open Media Patent License 1.0 (`PATENTS`), a royalty-free patent grant that ends for anyone who sues over AV1 patents; ship its text with the others. The texts are in each source tree under `OUT_DIR/src`.
 - **This spike installed** meson 1.12.1 and ninja 1.13.2 (Homebrew; meson pulled python@3.14 3.14.8), plus `cargo-pgo` 0.3.0 (4 MB, in `~/.cargo/bin`). The minimal OpenCV build lives in `/Volumes/disk/cache/opencv-spike` (375 MB with its source and build tree; safe to delete).
 
-Optional SIFT backends:
-
-```sh
-cargo build --release --features kornia
-```
-
-```sh
-OPENCV=/Volumes/disk/cache/opencv-spike/install
-```
-
-```sh
-PKG_CONFIG_PATH=$OPENCV/lib/pkgconfig OPENCV_PACKAGE_NAME=opencv5 RUSTFLAGS="-C link-arg=-Wl,-rpath,$OPENCV/lib" cargo build --release --features opencv
-```
+The `kornia` and `opencv` SIFT backends compared below (`--features kornia`, `--features opencv`) were spike-only, to measure against the crate's own SIFT. They're not in the crate: see "Correctness" and "SIFT in Rust" for what the comparison found.
 
 Run the Girona job, and the checks against Python's dumps:
 

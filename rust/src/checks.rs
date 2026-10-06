@@ -204,64 +204,6 @@ fn encode_bench() {
 	}
 	println!("encode_bench: RGBA to YUV420 + alpha {best:?} per frame");
 }
-/// kornia-imgproc's SIFT against OpenCV's dumped features, and its speed on one and on every thread.
-#[test]
-#[ignore]
-fn kornia_sift_matches_opencv() {
-	use kornia_imgproc::features::{FirstOctave, SiftConfig, SiftWorkspace, sift_detect_and_compute};
-	for name in ["IMG_4667", "IMG_4791"] {
-		let rgb = avif::decode(&Path::new(SAMPLES).join(format!("{name}.avif")), 1).unwrap();
-		let small = pixels::shrink_area(&pixels::gray(&rgb), 0.5);
-		let src: Vec<f32> = small.pixels.iter().map(|&v| v as f32).collect();
-		let cfg = SiftConfig::default();
-		let mut ws = SiftWorkspace::new();
-		let run = |ws: &mut SiftWorkspace| {
-			sift_detect_and_compute(
-				ws,
-				&src,
-				small.width,
-				small.height,
-				&cfg,
-				FirstOctave::Double,
-				usize::MAX,
-				false,
-			)
-			.unwrap()
-		};
-		let one = rayon::ThreadPoolBuilder::new().num_threads(1).build().unwrap();
-		let (mut single, mut all) = (std::time::Duration::MAX, std::time::Duration::MAX);
-		let mut features = run(&mut ws);
-		for _ in 0..5 {
-			let t = std::time::Instant::now();
-			features = one.install(|| run(&mut ws));
-			single = single.min(t.elapsed());
-			let t = std::time::Instant::now();
-			features = run(&mut ws);
-			all = all.min(t.elapsed());
-		}
-		let text = std::fs::read_to_string(format!("{DUMPS}/{name}.kp.json")).unwrap();
-		let opencv: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap();
-		let des = read_npy_f32(&format!("{DUMPS}/{name}.des.npy"));
-		let exact = features
-			.keypoints
-			.iter()
-			.zip(&opencv)
-			.filter(|(k, cv)| {
-				[k.x, k.y, k.size, k.angle, k.response]
-					.iter()
-					.zip(["x", "y", "size", "angle", "response"])
-					.all(|(v, key)| *v == cv[key].as_f64().unwrap() as f32)
-			})
-			.count();
-		let same_descriptors = features.descriptors == des;
-		println!(
-			"kornia {name}: {} keypoints (OpenCV {}), {exact} bit-exact, descriptors identical: {same_descriptors}; \
-			 {single:?} on 1 thread, {all:?} on all",
-			features.keypoints.len(),
-			opencv.len()
-		);
-	}
-}
 /// The IMG_4698 to IMG_4699 match with OpenCV's own descriptors (`uv run analysis/dump_ransac.py`):
 /// nearest neighbours, distances and the ratio test against BFMatcher's.
 #[test]
