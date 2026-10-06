@@ -37,3 +37,7 @@ Round 2 merged from branch `e5-trail-visibility`: a stronger halo that fades wit
 ## Round 3 (2026-10-06)
 
 Merged from branch `e5-trail-colour`. The trail shows distance from the current photo as stepped colour (OKLCH): violet to pink before, teal to green after, full opacity, round-2 halo kept. `?trail=steps` (default), `?trail=fade` (round 2), `?trail=pulse` (a white light steps along the trail every 420 ms, off when the system asks for less motion). Waiting for the user to compare them.
+
+## Round 4 (2026-10-06)
+
+The user: "Maybe pulse was the wrong word… I meant for it to look like the colors were flowing from one point to the next." Replace `?trail=pulse` with `?trail=flow`: the stepped colours move along the trail in photo order, each colour flowing from one point to the next. `steps` stays the default until the user picks.
