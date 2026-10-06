@@ -7,6 +7,8 @@ Decoding the same AVIF photos through macOS ImageIO instead of libavif changes p
 
 A1 (`docs/tracking.md`) measured it: IMG_4689/4690 move the rect by 1.60e-1 under ImageIO decoding, and IMG_4795 moves 29–45 px under every re-encode (PNG through `sips`, HEIC, JPEG q90). It also found that pinframe reduces 16-bit PNG to 8 bits by dropping the low byte instead of rounding; fix that here if it matters.
 
+After A4 (search window), IMG_4795 has two fits about 30–45 px apart, and the original run switched to the other one (32.6 px, scale 1.076 to 1.089). Neither could be confirmed right by eye. Decide which is correct, then make the tracker pick it reliably.
+
 ## Find out
 
 - At IMG_4689/4690, compare the two runs' matches, inlier counts and fitted transforms. Is RANSAC choosing between two near-equal solutions, are there few inliers, or is one photo's fit propagating down the chain?

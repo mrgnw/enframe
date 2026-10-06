@@ -1,3 +1,7 @@
+---
+branch: a4-search-window
+---
+
 # A4 · Look for the feature near where it should be
 
 Depends on: — · Blocks: A5 · Model: Opus · Size: M
@@ -15,6 +19,10 @@ The tracker matches the feature's keypoints against every keypoint in the next p
 
 ## Done when
 
-- [ ] A1 shows accuracy equal or better, and no more LOST photos.
-- [ ] The warm-cache Girona re-run is faster; before and after go in `docs/rust.md`.
-- [ ] `bash analysis/check.sh` passes, with its expected values updated in this branch if tracking changes.
+- [x] A1 shows accuracy equal or better, and no more LOST photos.
+- [x] The warm-cache Girona re-run is faster; before and after go in `docs/rust.md`.
+- [x] `bash analysis/check.sh` passes, with its expected values updated in this branch if tracking changes.
+
+## Result
+
+Matching looks within the reference features' bounds grown by `MOTION_MARGIN` (5) times the last step's motion, and falls back to the rest of the photo when that gives no plausible fit. Warm Girona re-run: match 100.6 to 47.7 ms, whole process 118 to 65 ms. Accuracy and every LOST set unchanged. IMG_4795 moved 32.6 px to its other near-equal fit, which shifts the stability numbers; see A2.

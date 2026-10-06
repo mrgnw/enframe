@@ -1,6 +1,6 @@
 # A5 · Several reference points instead of a box
 
-Depends on: A4 · Blocks: E3 · Model: Opus · Size: L (tracker first, then CLI, if it grows)
+Depends on: — · Blocks: E3 · Model: Opus · Size: L (tracker first, then CLI, if it grows)
 Touches: `rust/src/track.rs`, `rust/src/main.rs` (CLI, sidecar), README, `docs/rust.md`, `analysis/check.sh`, `analysis/girona_all.sh`
 
 ## Decision (2026-10-06)
