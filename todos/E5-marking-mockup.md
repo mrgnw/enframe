@@ -43,3 +43,10 @@ Merged from branch `e5-trail-colour`. The trail shows distance from the current 
 The user: "Maybe pulse was the wrong word… I meant for it to look like the colors were flowing from one point to the next." Replace `?trail=pulse` with `?trail=flow`: the stepped colours move along the trail in photo order, each colour flowing from one point to the next. `steps` stays the default until the user picks.
 
 Round 4 merged from branch `e5-trail-flow`: `?trail=flow` replaces `pulse` (full-colour dashes travel along a darker blended line in photo order, still under reduced motion); Skip (`S` or "Skip, hidden here") on lost photos, grey dot in the filmstrip, no trail dot for skipped photos. Waiting for the user to pick the trail style.
+
+## Round 5 (2026-10-06)
+
+The user picked: `steps` stays the default, `flow` stays as the option — but the flow rendering must be much smoother and cooler than travelling dashes.
+
+- [ ] Rebuild `?trail=flow` without dashes: a continuous, smooth motion of colour along the trail (e.g. an animated gradient sweeping point to point). Still OKLCH distance colours, still the round-2 halo, still off under reduced motion.
+- [ ] Screenshots at desktop and phone widths on the hardest Girona photos.

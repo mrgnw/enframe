@@ -42,14 +42,14 @@ One coordinating thread runs the plan; agents do the card work. The coordinator 
 | Card | What | Depends on | Touches | Model | Size |
 |-|-|-|-|-|-|
 | [D1](todos/D1-linux-build.md) | Build and test on Linux | — | `rust/build.rs`, `rust/src/decode.rs`, `imageio.rs` gating | Opus | M |
-| [E5](todos/E5-marking-mockup.md) ⚑ | Marking mockup: points and the fix list (merged, waiting for review) | — | `mockups/`, `analysis/mockup_data.py`, `docs/ui-plan.md` | Sonnet | S |
+| [E5](todos/E5-marking-mockup.md) | Marking mockup: round 5, smooth flow trail | — | `mockups/`, `analysis/mockup_data.py`, `docs/ui-plan.md` | Sonnet | S |
 | [E2](todos/E2-serve-endpoint.md) ⚑ | enframe-serve endpoint that runs pinframe | enframe phase-2 | enframe repo | Opus | M |
 | [E3](todos/E3-marking-screen.md) | Marking screen in enframe | E2, E5 | enframe repo | Opus | L |
 | [E4](todos/E4-preview-export.md) | Preview and export screen in enframe | E3 | enframe repo | Sonnet | M |
 
 Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md), [A1](todos/done/1006-A1-tracking-benchmark.md), [B1](todos/done/1006-B1-colour.md), [F1](todos/done/1006-F1-python-reference.md), [B2](todos/done/1006-B2-capture-time-order.md), [A4](todos/done/1006-A4-search-window.md), [A5a](todos/done/1006-A5a-points-tracker.md), [D2](todos/done/1006-D2-build-downloads.md), [A5b](todos/done/1006-A5b-points-syntax.md) (design: [A5](todos/done/1006-A5-reference-points.md)), [A2](todos/done/1006-A2-tracker-sensitivity.md), [A3](todos/done/1006-A3-track-edge.md) (kept 1024), [B4](todos/done/1006-B4-zoom-from-exif.md), [A6](todos/done/1006-A6-skip-photos.md), [B5](todos/done/1006-B5-exif-followups.md).
 
-Order is in [todos/_priority.md](todos/_priority.md). Running: none. E2 waits for enframe's `phase-2-remote-targets` branch, which rewrites `src-tauri/serve/src/main.rs`.
+Order is in [todos/_priority.md](todos/_priority.md). Running: E5 round 5 (`e5-trail-flow-smooth`). E2 waits for enframe's `phase-2-remote-targets` branch, which rewrites `src-tauri/serve/src/main.rs`.
 
 ## Decisions
 
@@ -61,11 +61,11 @@ Made on 2026-10-06:
 - **A5 points:** `--box` removed; `--points x,y/x,y` and `--at PHOTO=x,y/x,y@zoom`; a mark is exactly the points it lists; the anchor is their mean; area rule 96 keypoints, at least half the point spacing, at most 512 px.
 - **A6 skip:** `--skip PHOTO` for a hidden feature; the photo stays in the clip at its estimated position.
 - **B4 lens:** a mark without `@zoom` follows the EXIF lens ratio; a typed `@zoom` wins.
+- **E5 trail style:** `steps` is the default, `flow` stays as an option — but flow must be rebuilt much smoother than travelling dashes (round 5). Mockup sign-off waits on round 5.
+- **E2 timing:** wait for enframe's `phase-2-remote-targets` to merge before starting E2.
 
 Waiting for the user:
 
-- ⚑ **E5 trail style:** `?trail=steps` (default), `fade` or `flow` on https://mox.xcc.es/pinframe/01-marking.html, and sign-off on the mockup before E3.
-- ⚑ **E2 timing:** wait for enframe's `phase-2-remote-targets` to merge (recommended), or branch from it now.
 - **D1 Linux:** deferred by the user.
 
 ## Out of scope for now
