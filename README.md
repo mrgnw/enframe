@@ -26,6 +26,8 @@ rust/target/release/pinframe "samples/girona clouds"/IMG_479{1,2,3,4,5}.avif --b
 
 Unlike the Python reference implementation below, there's no box-drawing window: `--box x,y,w,h` is required, in first-photo pixels, and gives the feature to hold still.
 
+Input photos may be AVIF, JPEG, or PNG. pinframe identifies them from their contents rather than their file extension; other formats are refused before decoding.
+
 Any photo the tracker reports as `LOST` can be fixed by marking the feature there, and tracking carries on from the mark:
 
 - `--at PHOTO=x,y` puts the anchor at a point.
