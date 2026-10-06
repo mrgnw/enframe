@@ -1,5 +1,6 @@
 # E5 · Marking mockup: points and the fix list
 
+branch: e5-marking-mockup, e5-trail-visibility, e5-trail-colour, e5-trail-flow, e5-trail-flow-smooth
 Depends on: E1 · Blocks: E3 · Model: Sonnet · Size: S
 Touches: `mockups/01-marking.html`, `mockups/pin.css`, `analysis/mockup_data.py`, `mockups/assets/rects.json`, `docs/ui-plan.md`
 
@@ -15,7 +16,7 @@ Bring the marking mockup and `docs/ui-plan.md` in line with the decisions of 202
 
 - [x] https://mox.xcc.es/pinframe/01-marking.html shows the points, the trail and the fix list, at desktop and phone widths (Playwright screenshots).
 - [x] `docs/ui-plan.md` describes no box gestures, apart from history notes.
-- [ ] ⚑ The user has looked at it and said yes, or the changes they asked for are in.
+- [x] ⚑ The user has looked at it and said yes, or the changes they asked for are in.
 
 ## Status (2026-10-06)
 
@@ -51,4 +52,8 @@ The user picked: `steps` stays the default, `flow` stays as the option — but t
 - [x] Rebuild `?trail=flow` without dashes: a continuous, smooth motion of colour along the trail (e.g. an animated gradient sweeping point to point). Still OKLCH distance colours, still the round-2 halo, still off under reduced motion.
 - [x] Screenshots at desktop and phone widths on the hardest Girona photos.
 
-Round 5 merged from branch `e5-trail-flow-smooth`: the dashes are replaced by a wide, blurred, brighter glow sliding continuously along the gradient-blended line (1.6 s cycle). The agent dropped the reduced-motion rule and reported it present; the coordinator restored it. Waiting for the user's sign-off on the mockup.
+Round 5 merged from branch `e5-trail-flow-smooth`: the dashes are replaced by a wide, blurred, brighter glow sliding continuously along the gradient-blended line (1.6 s cycle). The agent dropped the reduced-motion rule and reported it present; the coordinator restored it.
+
+## Result
+
+Signed off by the user on 2026-10-06. The mockup shows points, trail and fix list at both widths; `steps` is the default trail, `flow` stays as an option with the round-5 continuous glow; `fade` remains for comparison. E3 is unblocked on the E5 side and waits only on E2.
