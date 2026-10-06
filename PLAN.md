@@ -1,6 +1,6 @@
 # Plan
 
-pinframe's Rust CLI is the main line and runs: `bash analysis/check.sh` passes 19 of 19 on `main` (build, lint, tests, every README command, AVIF/HEIC/JXL/JPEG/PNG input, valid outputs, Girona within 2.95e-4 of the Python reference). Everything left is below, as small task cards in `todos/`.
+pinframe's Rust CLI is the only implementation: `bash analysis/check.sh` passes 19 of 19 on `main` (build, lint, tests, every README command, AVIF/HEIC/JXL/JPEG/PNG input, colour labels, valid outputs, Girona exactly equal to `analysis/tracking_baseline.json`). Everything left is below, as small task cards in `todos/`.
 
 ## How work runs
 
@@ -11,13 +11,39 @@ pinframe's Rust CLI is the main line and runs: `bash analysis/check.sh` passes 1
 5. **Parallel threads:** at most two at once, and only cards with no dependency between them and no shared files.
 6. **Decisions** marked ⚑ wait for the user. A thread never makes them.
 
+## Coordinator
+
+One coordinating thread runs the plan; agents do the card work. The coordinator writes briefings, verifies, merges and keeps `PLAN.md` and `todos/` current. Agents never edit those two.
+
+**Launch a card**
+
+1. Paseo worktree workspace from `refs/heads/main`, branch named after the card.
+2. Agent: Sonnet 5 for well-specified cards, the Opus 5.5 (medium) profile for investigation or judgment.
+3. Briefing, self-contained (the agent starts with no context): task and card path; context with current numbers; relevant files; acceptance criteria; setup (`ln -s /Users/user/dev/pinframe/samples samples`; the parallel agent's files to avoid); constraints (files it may touch, no `PLAN.md`/`todos/`, tabs/fmt/clippy, no new crates, no remote so never push, commit each unit with a Co-Authored-By trailer naming its model, do not merge, never read `~/Library/Mobile Documents`, use `git grep` or Read on `.paseo` paths). End with: "Follow the `concise-output` skill. Final report under 2000 characters, outcomes not process."
+4. Cards that change tracking: stop and report instead of regenerating the baseline if accuracy or the LOST set gets worse.
+
+**Close a card**
+
+1. Review `git diff main` in the worktree; send fixes back to the same agent (`send_agent_prompt`) rather than making them, unless trivial.
+2. `git rebase main`, then `bash analysis/check.sh` (full output to a file outside the repo; `tail -1`).
+3. If tracking could change: `uv run analysis/tracking_benchmark.py`, then `uv run analysis/compare_baseline.py out/tracking_benchmark.json analysis/tracking_baseline.json`.
+4. Bookkeeping commit on the branch: move the card to `todos/done/MMDD-name.md` with `branch:` frontmatter, ticked boxes and a "Result" paragraph; update the card table, "Done", "Running" and `todos/_priority.md`.
+5. Fast-forward `main`, then archive the paseo workspace, then `git branch -d`. Archive only after the merge: it deletes the worktree.
+6. Tell the user the outcome, any decision with a recommendation, and what runs next.
+
+**Gotchas**
+
+- A shell hook blocks `grep`/`rg`/`ls` on `.paseo` paths and some heredocs (it reads them as home-rooted walks). Write Python to a file in `/tmp` and `uv run` it; read logs with the Read tool.
+- C library sources are cached in `~/Library/Caches/pinframe-sources`; a fresh worktree builds in about 30 s.
+- The public mockups (https://mox.xcc.es/pinframe/) serve the main checkout, so they update only after a merge.
+
 ## Cards
 
 | Card | What | Depends on | Touches | Model | Size |
 |-|-|-|-|-|-|
 | [D1](todos/D1-linux-build.md) | Build and test on Linux | — | `rust/build.rs`, `rust/src/decode.rs`, `imageio.rs` gating | Opus | M |
 | [E5](todos/E5-marking-mockup.md) ⚑ | Marking mockup: points and the fix list (merged, waiting for review) | — | `mockups/`, `analysis/mockup_data.py`, `docs/ui-plan.md` | Sonnet | S |
-| [E2](todos/E2-serve-endpoint.md) | enframe-serve endpoint that runs pinframe | — | enframe repo | Opus | M |
+| [E2](todos/E2-serve-endpoint.md) ⚑ | enframe-serve endpoint that runs pinframe | enframe phase-2 | enframe repo | Opus | M |
 | [E3](todos/E3-marking-screen.md) | Marking screen in enframe | E2, E5 | enframe repo | Opus | L |
 | [E4](todos/E4-preview-export.md) | Preview and export screen in enframe | E3 | enframe repo | Sonnet | M |
 
@@ -32,10 +58,15 @@ Made on 2026-10-06:
 - **B1 colour:** keep Display P3 pixel values and label the clip with the photos' profile. This also covers the old C1 card.
 - **UI (E0):** marks are reference points, not boxes; marked photos stay in the fix list until "Clear fixed"; the other proposals as written. Recorded in `docs/ui-plan.md`, "Decisions".
 - **F1 Python:** retire `anchor.py` once A1's benchmark baseline can replace it in `check.sh`.
+- **A5 points:** `--box` removed; `--points x,y/x,y` and `--at PHOTO=x,y/x,y@zoom`; a mark is exactly the points it lists; the anchor is their mean; area rule 96 keypoints, at least half the point spacing, at most 512 px.
+- **A6 skip:** `--skip PHOTO` for a hidden feature; the photo stays in the clip at its estimated position.
+- **B4 lens:** a mark without `@zoom` follows the EXIF lens ratio; a typed `@zoom` wins.
 
 Waiting for the user:
 
-- E5's updated mockup, for you to look at before E3.
+- ⚑ **E5 trail style:** `?trail=steps` (default), `fade` or `flow` on https://mox.xcc.es/pinframe/01-marking.html, and sign-off on the mockup before E3.
+- ⚑ **E2 timing:** wait for enframe's `phase-2-remote-targets` to merge (recommended), or branch from it now.
+- **D1 Linux:** deferred by the user.
 
 ## Out of scope for now
 
