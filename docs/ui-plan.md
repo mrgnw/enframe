@@ -14,7 +14,7 @@ Everything in the design is judged by the cost of one mark. A mark should cost o
 
 The UI edits one document and shows one result.
 
-The document is the CLI's input: the ordered photo list, the first photo's reference points, and the marks (`photo → points`, optionally with a zoom). The result is the sidecar JSON the CLI writes: per photo `file`, `x,y,w,h` (the crop, normalized, may overhang 0–1 with padding), `scale`, `source` (`tracked`, `mark`, `lost`) and `points` (`[[x, y], …]`, normalized 0–1 to that photo). The UI never computes a crop or a point; it draws what the sidecar says.
+The document is the CLI's input: the ordered photo list, the first photo's reference points, and the marks (`photo → points`, optionally with a zoom). The result is the sidecar JSON the CLI writes: per photo `file`, `x,y,w,h` (the crop, normalized, may overhang 0–1 with padding), `scale`, `source` (`tracked`, `mark`, `lost`, `skipped`) and `points` (`[[x, y], …]`, normalized 0–1 to that photo). The UI never computes a crop or a point; it draws what the sidecar says.
 
 Both are small. The document is a few hundred bytes and is what gets saved beside the folder (`<folder>.pin.json`), so a session can be reopened and the exact CLI call reproduced.
 
@@ -66,8 +66,9 @@ The tracker's own estimate for a lost photo (interpolated from neighbours) is dr
 | `Shift+Tab` | Previous photo in the fix list |
 | `T` | Trail on or off; `−` `+` in the island set how many neighbours |
 | `Enter` | Accept the tracker's estimate for this photo as a mark (zero mouse) |
-| `Backspace`, `Delete` | Clear the mark on this photo, the same as the "Clear mark" button. The photo becomes lost again and joins the fix list. |
-| `⌘Z`, `⌘⇧Z` | Undo or redo the last change (mark, point added or removed, mark cleared, "Clear fixed") and go to that photo. History holds 100 steps. |
+| `S` | Skip this lost photo: the feature is hidden (a building, trees). The same as the "Skip, hidden here" button. |
+| `Backspace`, `Delete` | Clear the mark or the skip on this photo, the same as the "Clear mark" or "Unskip" button. The photo becomes lost again and joins the fix list. |
+| `⌘Z`, `⌘⇧Z` | Undo or redo the last change (mark, skip, point added or removed, mark cleared, "Clear fixed") and go to that photo. History holds 100 steps. |
 | `[` `]` `1` | Zoom down, up, reset |
 | `Space` | Play or pause the clip in Preview; in Fix, flip to the previous linked photo while held |
 
@@ -95,6 +96,8 @@ The filmstrip is the only list. Every photo is a thumbnail, 56 px tall, in one s
 | `mark`, in the fix list | accent (amber), filled | full | Fixed by the user, still visited by `Tab`. |
 | `mark` | accent (amber) ring | full | Placed by the user. Click to revisit. |
 | `lost` | red, filled | dimmed to 55% | Needs a mark. The count in the island is the number of these. |
+| `skipped`, in the fix list | grey, filled | full | The user said the feature is hidden here (card A6). Handled, not counted as to fix. |
+| `skipped` | grey ring | full | The same, after "Clear fixed". |
 | decode failed | grey X | 30% | Not in the clip. |
 
 No labels, no text per thumbnail. Hovering shows the filename and, for tracked photos, the feature count ("38 features"); for lost ones, "lost, 7 features, estimated".
@@ -109,6 +112,9 @@ On the stage, state is the points, with a small tag above them:
 
 - `mark` and `tracked`: solid amber points, outlined dark. Tracked points are smaller and slightly transparent. The tag reads "your mark · 2.55×" or "38 features · 1.00×".
 - `lost`: dashed hollow points at the estimated position, the ghost following the cursor, the reference patch in the island.
+- `skipped`: dashed grey points at the estimated position, tagged "skipped · estimated". Clicks do nothing; the island offers "Unskip".
+
+**Skip** (card E5, round 4). Some photos cannot be marked because the feature is not in them: a tree hides the cloud in IMG_4721. On a lost photo, `S` or "Skip, hidden here" in the island marks it skipped. The photo stays in the clip at the tracker's estimate (card A6), counts as handled like a mark, stays in the fix list until "Clear fixed", and auto-advance moves on after 450 ms, with the same undo toast.
 
 Confidence (the inlier count) is shown on hover only. It is the tracker's honesty, not a decision input; the decision is binary (lost or not) and the dots show it.
 
@@ -127,7 +133,9 @@ Over the current photo, the trail draws the feature's **path** through up to N p
 
 **Readable on any photo** (card E5, round 2). The Girona photos run from white cloud to dark foliage and rooftops, and at 2.5x the trail crosses most of the photo. Three treatments were compared on those photos: a stronger halo, a two-tone casing (dark outside, white rim, colour core, as on route maps), and a drop shadow on the whole overlay. The stronger halo won. The two-tone casing was a little crisper on rooftops but heavier and needed a third stroke. The drop shadow was too faint on white cloud. The fade had done more damage than the thin halo: at 0.35 the far segments vanished, and a halo that did not fade with its line turned them into black lines. So the halo now fades with its line, only to 0.55. The current photo's points have a 2 px dark outline. Estimated points are drawn larger (6 px) on a darker fill, because they are what `Enter` accepts.
 
-**Distance as colour** (card E5, round 3). The round-2 fade, opacity from 1 to 0.55, told near from far only weakly: where the path folds back on itself, as at 2.5x on IMG_4721, the near and far segments looked alike. Each segment now gets one colour on a stepped ramp, at full opacity, so the order of the photos and their distance from the current one read at a glance, and the far end is as visible as the near one. Before and after stay two families (violet to pink, teal to green) rather than one ramp through the current photo, so the side is still readable from colour alone, as the legend says. Hue changes more than lightness, because darker steps would sink into foliage; the far "after" end stops at green so it stays clear of amber. At N = 10 two neighbouring steps differ only slightly, but the ramp's direction still shows. The mockup compares three modes with `?trail=fade|steps|pulse`; `steps` is the default. `pulse` adds a white light that lightens one segment at a time, oldest first, every 420 ms, then rests for three steps; it is off under `prefers-reduced-motion`. It shows the direction of travel, but it draws the eye while marking, so it stays a proposal for the user to judge.
+**Distance as colour** (card E5, round 3). The round-2 fade, opacity from 1 to 0.55, told near from far only weakly: where the path folds back on itself, as at 2.5x on IMG_4721, the near and far segments looked alike. Each segment now gets one colour on a stepped ramp, at full opacity, so the order of the photos and their distance from the current one read at a glance, and the far end is as visible as the near one. Before and after stay two families (violet to pink, teal to green) rather than one ramp through the current photo, so the side is still readable from colour alone, as the legend says. Hue changes more than lightness, because darker steps would sink into foliage; the far "after" end stops at green so it stays clear of amber. At N = 10 two neighbouring steps differ only slightly, but the ramp's direction still shows. The mockup compares three modes with `?trail=fade|steps|flow`; `steps` is the default.
+
+**Flow** (card E5, round 4) replaces round 3's `pulse`, a white light stepping along the segments, because the user wanted the colours themselves to flow from one point to the next. Each segment is a gradient from one photo's step colour to the next one's, drawn 0.2 darker in OKLCH lightness, and dashes of the full-lightness gradient (12 px on, 10 px off) move along it in photo order at about 24 px a second. A dash changes colour as it travels, so each colour visibly carries over from one point into the next segment. The dash pattern starts each segment where the last one ended, so the dashes run on through the dots without a jump. The round-2 halo stays under the line, and the darker gaps keep it solid on white cloud and foliage. The motion is slow and small enough to mark while it runs, and stops under `prefers-reduced-motion`, which leaves the static gradient.
 
 How the source changes the trail:
 
@@ -136,6 +144,7 @@ How the source changes the trail:
 | `tracked` | Filled | Solid | Seen by the tracker |
 | `mark` | Large ring | Solid | Placed by the user. A long segment ending in a ring is a scene change. The line keeps going through it; if those segments read as noise, they become dotted. |
 | `lost` | Small, hollow, dashed | Dashed | Interpolated from neighbours, never seen |
+| `skipped` | None | Joins its neighbours directly | Hidden in the photo. Its position is only the tracker's estimate, so a dot would suggest the feature was seen there. On the current photo, the line still passes through the estimate. |
 
 **Coordinates.** Each neighbour's centre is drawn at its own position in its own photo, normalized 0–1, so photos of different resolutions line up. The trail is then the feature's path through the frame. A neighbour of the other orientation, such as a landscape photo next to a portrait one, is placed by its normalized position, which is still right.
 
