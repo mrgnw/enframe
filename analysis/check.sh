@@ -61,6 +61,15 @@ for fmt in heic jpeg png jxl; do
 	check "input: $fmt" $P "$OUT/$fmt"/*.$fmt --box 840,550,400,350 --at "IMG_4703.$fmt=746,554,400,350" --out "$OUT/input-$fmt.json"
 done
 
+# Colour: the conversions above keep Display P3. An sRGB set stays sRGB; a mixed set becomes Display P3.
+mkdir -p "$OUT/srgb" "$OUT/mixed"
+for f in "${TURBINES[@]}"; do
+	sips -s format jpeg -m "/System/Library/ColorSync/Profiles/sRGB Profile.icc" "$f" --out "$OUT/srgb/$(basename "$f" .avif).jpeg" > /dev/null
+done
+cp "$G"/IMG_{4698,4700,4702,4704}.avif "$OUT"/srgb/IMG_{4699,4701,4703,4705}.jpeg "$OUT/mixed/"
+check 'colour: sRGB set' $P "$OUT/srgb"/*.jpeg --box 840,550,400,350 --at IMG_4703.jpeg=746,554,400,350 --out $OUT/srgb.avif
+check 'colour: mixed set' $P "$OUT/mixed"/* --box 840,550,400,350 --at IMG_4703.jpeg=746,554,400,350 --out $OUT/mixed.avif
+
 cat > "$OUT/verify.py" <<'PY'
 """The outputs are real, and the Girona job still matches the Python reference."""
 
@@ -88,6 +97,19 @@ codec = subprocess.run(
 assert codec == 'h264', codec
 assert len(list((out / 'frames').glob('*.png'))) == 8
 assert json.loads((out / 'track.json').read_text())['clip'] is None
+
+
+def colour(path):
+	probe = ['ffprobe', '-v', 'error', '-show_entries', 'stream=color_primaries,color_transfer', '-of', 'json']
+	stream = json.loads(subprocess.run([*probe, str(path)], capture_output=True, check=True).stdout)['streams'][0]
+	return stream.get('color_primaries'), stream.get('color_transfer')
+
+
+p3, srgb = ('smpte432', 'iec61966-2-1'), ('bt709', 'iec61966-2-1')
+for name, expected in (('turbines.avif', p3), ('turbines.mp4', p3), ('srgb.avif', srgb), ('mixed.avif', p3)):
+	assert colour(out / name) == expected, (name, colour(out / name))
+with Image.open(out / 'frames/0001.png') as im:
+	assert im.info.get('icc_profile'), 'a Display P3 frame carries its ICC profile'
 
 # Tracking: Rust against the Python reference on all 57 Girona photos.
 rust = {p['file']: p for p in json.loads((out / 'all.json').read_text())['photos']}
