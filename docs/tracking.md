@@ -39,17 +39,17 @@ The real Girona job (`analysis/girona_all.sh`: its box, 23 marks and `--pad tran
 
 | variant | how | max move | median | max scale change | max rect change | LOST set |
 |-|-|-:|-:|-:|-:|-|
-| imageio_avif | same AVIF bytes, ftyp brand relabelled so pinframe decodes them through ImageIO | 2.2 px (IMG_4777) | 0.15 px | 0.7% | 1.49e-2 (IMG_4704) | same |
-| imageio_png | `sips -s format png`: 16-bit PNG, which pinframe truncates to 8 bits | 0.9 px (IMG_4705) | 0.10 px | 0.7% | 9.59e-3 | same |
-| heic | `sips -s format heic` | 2.8 px (IMG_4777) | 0.12 px | 0.9% | 7.78e-3 | same |
-| jpeg_q90 | `sips -s format jpeg`, quality 90 | 2.1 px (IMG_4726) | 0.09 px | 0.7% | 1.01e-2 | same |
-| pillow_png | Pillow's libavif decode, as PNG | 0 | 0 | 0 | 0 | same |
-| noise_2 | Pillow's decode plus uniform noise in [−2, 2] levels, fixed seed | 1.9 px (IMG_4777) | 0.14 px | 0.8% | 1.29e-2 | same |
+| imageio_avif | same AVIF bytes, ftyp brand relabelled so pinframe decodes them through ImageIO | 2.2 px (IMG_4777) | 0.15 px | 0.7% | 2.06e-2 (IMG_4689) | same |
+| imageio_png | `sips -s format png`: 16-bit PNG, which pinframe truncates to 8 bits | 0.9 px (IMG_4705) | 0.10 px | 0.7% | 9.80e-3 | same |
+| heic | `sips -s format heic` | 2.8 px (IMG_4777) | 0.12 px | 0.9% | 8.03e-3 | same |
+| jpeg_q90 | `sips -s format jpeg`, quality 90 | 2.1 px (IMG_4726) | 0.09 px | 0.7% | 2.02e-2 (IMG_4705) | same |
+| pillow_png | Pillow's libavif decode, as PNG, with the original's EXIF copied in | 0 | 0 | 0 | 0 | same |
+| noise_2 | Pillow's decode plus uniform noise in [−2, 2] levels, fixed seed, with the original's EXIF copied in | 1.9 px (IMG_4777) | 0.14 px | 0.8% | 1.72e-2 (IMG_4690) | same |
 
 The baseline LOST set is IMG_4675, IMG_4721 and IMG_4725 in every variant.
 
-- **No photo stands out.** The worst move in any variant is 2.8 px and the largest rect change 1.49e-2. IMG_4795, which used to jump 30–45 px between two fits, moves at most 1.8 px; see "RANSAC (A2)". IMG_4689/4690 move under 1 px since points (A5a).
-- `pillow_png` moving nothing confirms that Pillow and pinframe decode AVIF to identical pixels, so `noise_2` adds noise to exactly the pixels pinframe sees.
+- **No photo stands out.** The worst move in any variant is 2.8 px and the largest rect change 2.06e-2. IMG_4795, which used to jump 30–45 px between two fits, moves at most 1.8 px; see "RANSAC (A2)". IMG_4689/4690 move under 1 px since points (A5a).
+- `pillow_png` moving nothing confirms that Pillow and pinframe decode AVIF to identical pixels (and now read the same EXIF), so `noise_2` adds noise to exactly the pixels pinframe sees.
 - The median move stays near 0.1 px everywhere: the sensitivity is a few photos, not the whole run.
 
 ## Search window (A4)

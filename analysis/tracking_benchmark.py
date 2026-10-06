@@ -278,12 +278,14 @@ def imageio_avif(src: Path, dst_dir: Path) -> None:
 
 def pillow_png(noise: bool):
 	def convert(src: Path, dst_dir: Path) -> None:
-		pixels = np.asarray(oriented(src), dtype=np.int16)
+		with Image.open(src) as original:
+			exif = original.info.get('exif')
+			pixels = np.asarray(ImageOps.exif_transpose(original).convert('RGB'), dtype=np.int16)
 		if noise:
 			rng = np.random.default_rng([NOISE_SEED, int(src.stem.removeprefix('IMG_'))])
 			pixels = pixels + rng.integers(-NOISE_LEVELS, NOISE_LEVELS + 1, pixels.shape, dtype=np.int16)
 		Image.fromarray(np.clip(pixels, 0, 255).astype(np.uint8)).save(
-			dst_dir / f'{src.stem}.png', compress_level=1
+			dst_dir / f'{src.stem}.png', compress_level=1, exif=exif
 		)
 
 	return convert

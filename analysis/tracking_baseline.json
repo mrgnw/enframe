@@ -1670,9 +1670,9 @@
 			"pillow_png": {
 				"moved_px_max": 0.0,
 				"moved_px_median": 0.0,
-				"scale_change_pct_max": 150.0,
-				"rect_moved_max": 1.11385,
-				"rect_moved_max_photo": "IMG_4705",
+				"scale_change_pct_max": 0.0,
+				"rect_moved_max": 0.0,
+				"rect_moved_max_photo": "IMG_4667",
 				"top_movers": {
 					"IMG_4667": 0.0,
 					"IMG_4669": 0.0,
@@ -1746,9 +1746,9 @@
 			"noise_2": {
 				"moved_px_max": 1.892,
 				"moved_px_median": 0.136,
-				"scale_change_pct_max": 151.875,
-				"rect_moved_max": 1.11267,
-				"rect_moved_max_photo": "IMG_4705",
+				"scale_change_pct_max": 0.755,
+				"rect_moved_max": 0.01724,
+				"rect_moved_max_photo": "IMG_4690",
 				"top_movers": {
 					"IMG_4777": 1.892,
 					"IMG_4724": 1.593,
@@ -1821,5 +1821,5 @@
 			}
 		}
 	},
-	"seconds": 19.4
+	"seconds": 21.9
 }
