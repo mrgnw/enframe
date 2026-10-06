@@ -114,6 +114,18 @@ SEQUENCES = {
 }
 
 
+def box_points(box: tuple[float, float, float, float]) -> str:
+	"""A box's four quarter centres as a --points/--at point list (A5b), mean unchanged at the box centre."""
+	x, y, w, h = box
+	corners = [
+		(x + w / 4, y + h / 4),
+		(x + 3 * w / 4, y + h / 4),
+		(x + w / 4, y + 3 * h / 4),
+		(x + 3 * w / 4, y + 3 * h / 4),
+	]
+	return '/'.join(f'{px:.3f},{py:.3f}' for px, py in corners)
+
+
 def run_pinframe(photos: list[Path], marks: list[str], work: Path) -> list[dict]:
 	out = work / 'track.json'
 	cmd = [str(BIN), *map(str, photos), *marks, '--cache', str(work / 'cache'), '--out', str(out)]
@@ -194,7 +206,7 @@ def accuracy_sequence(name: str, tmp: Path) -> dict:
 		sizes.append(frame.size)
 	z0 = zooms[0]
 	box = (truths[0][0] - bw * z0 / 2, truths[0][1] - bh * z0 / 2, bw * z0, bh * z0)
-	rows = run_pinframe(paths, ['--box', ','.join(f'{v:.3f}' for v in box)], work)
+	rows = run_pinframe(paths, ['--points', box_points(box)], work)
 	frames = []
 	for row, truth, zoom, (fw, fh) in zip(rows, truths, zooms, sizes, strict=True):
 		found = anchor_px(row, fw, fh)
@@ -231,13 +243,13 @@ def accuracy_summary(sequences: dict) -> dict:
 
 
 def girona_marks(ext: str) -> list[str]:
-	"""--box, --at marks and --pad default from analysis/girona_all.sh, with the photo extension swapped."""
+	"""--points, --at marks and --pad default from analysis/girona_all.sh, with the photo extension swapped."""
 	text = GIRONA_JOB.read_text()
-	box = re.search(r'--box (\S+)', text).group(1)
+	points = re.search(r'--points (\S+)', text).group(1)
 	ats = re.findall(r'^\s*--at (IMG_\d+)\.avif=(\S+)$', text, re.M)
 	assert ats, 'no --at marks found in girona_all.sh'
 	pad = re.search(r'PAD=\$\{PAD-(\w+)\}', text).group(1)
-	marks = ['--box', box, '--pad', pad]
+	marks = ['--points', points, '--pad', pad]
 	for stem, value in ats:
 		marks += ['--at', f'{stem}.{ext}={value}']
 	return marks

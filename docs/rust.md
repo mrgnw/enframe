@@ -29,7 +29,7 @@ Every photo's row also carries `points`: `[[x, y]]`, the anchor's position in th
 Before the Rust version can replace `anchor.py`:
 
 - **Choose the SIFT.** The Rust port in this prototype needs no extra dependencies but is not bit-exact with OpenCV: Girona rects differ by up to 3.0e-4 of the photo size (0.6 px) with the same LOST photos. OpenCV's own SIFT through the `opencv` crate matches `anchor.py` within 8.2e-8, but needs OpenCV 5 built for every platform enframe ships on.
-- **Port what the prototype skips:** drawing the first box (`--box` is required), and inputs other than AVIF (`anchor.py` reads anything Pillow reads, with EXIF orientation).
+- **Port what the prototype skips:** drawing the first box (`--points` is required), and inputs other than AVIF (`anchor.py` reads anything Pillow reads, with EXIF orientation).
 
 ## Search window
 

@@ -27,18 +27,18 @@ check() {
 P=rust/target/release/pinframe
 G="samples/girona clouds"
 TURBINES=("$G"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif)
-MARKS=(--box 840,550,400,350 --at IMG_4703.avif=746,554,400,350)
+MARKS=(--points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.avif=846,641.5/1046,641.5/846,816.5/1046,816.5)
 
 check 'release build' bash -c 'cd rust && cargo build --release'
 check 'cargo fmt --check' bash -c 'cd rust && cargo fmt --check'
 check 'clippy -D warnings' bash -c 'cd rust && cargo clippy --release --all-targets -- -D warnings'
 check 'cargo test' bash -c 'cd rust && cargo test --release'
 
-check 'README: heart.avif' $P "$G"/IMG_479{1,2,3,4,5}.avif --box 520,220,620,500 --out $OUT/heart.avif
+check 'README: heart.avif' $P "$G"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --out $OUT/heart.avif
 check 'README: turbines.avif' $P "${TURBINES[@]}" "${MARKS[@]}" --out $OUT/turbines.avif
-check 'README: padded portrait.avif' $P "$G"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --box 400,940,540,180 --pad transparent --out $OUT/portrait.avif
-check 'README: JSON only' $P "$G"/IMG_479{1,2,3,4,5}.avif --box 520,220,620,500 --out $OUT/track.json
-check 'README: --cache' $P "$G"/IMG_479{1,2,3,4,5}.avif --box 520,220,620,500 --cache $OUT/cache --out $OUT/cached.json
+check 'README: padded portrait.avif' $P "$G"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --points 535,985/805,985/535,1075/805,1075 --pad transparent --out $OUT/portrait.avif
+check 'README: JSON only' $P "$G"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --out $OUT/track.json
+check 'README: --cache' $P "$G"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --cache $OUT/cache --out $OUT/cached.json
 check 'README: .mp4 with --vf' $P "${TURBINES[@]}" "${MARKS[@]}" --vf deflicker,tpad=stop_mode=clone:stop_duration=2 --out $OUT/turbines.mp4
 check 'README: --frames' $P "${TURBINES[@]}" "${MARKS[@]}" --frames $OUT/frames --out $OUT/frames.avif
 check 'Girona, all 57 photos' env BIN="$P --no-cache" bash analysis/girona_all.sh $OUT/all.avif
@@ -56,7 +56,7 @@ for fmt in heic jpeg png jxl; do
 			sips -s format "$fmt" "$f" --out "$OUT/$fmt/$stem.$fmt" > /dev/null
 		fi
 	done
-	check "input: $fmt" $P "$OUT/$fmt"/*.$fmt --box 840,550,400,350 --at "IMG_4703.$fmt=746,554,400,350" --out "$OUT/input-$fmt.json"
+	check "input: $fmt" $P "$OUT/$fmt"/*.$fmt --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at "IMG_4703.$fmt=846,641.5/1046,641.5/846,816.5/1046,816.5" --out "$OUT/input-$fmt.json"
 done
 
 # Colour: the conversions above keep Display P3. An sRGB set stays sRGB; a mixed set becomes Display P3.
@@ -65,8 +65,8 @@ for f in "${TURBINES[@]}"; do
 	sips -s format jpeg -m "/System/Library/ColorSync/Profiles/sRGB Profile.icc" "$f" --out "$OUT/srgb/$(basename "$f" .avif).jpeg" > /dev/null
 done
 cp "$G"/IMG_{4698,4700,4702,4704}.avif "$OUT"/srgb/IMG_{4699,4701,4703,4705}.jpeg "$OUT/mixed/"
-check 'colour: sRGB set' $P "$OUT/srgb"/*.jpeg --box 840,550,400,350 --at IMG_4703.jpeg=746,554,400,350 --out $OUT/srgb.avif
-check 'colour: mixed set' $P "$OUT/mixed"/* --box 840,550,400,350 --at IMG_4703.jpeg=746,554,400,350 --out $OUT/mixed.avif
+check 'colour: sRGB set' $P "$OUT/srgb"/*.jpeg --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.jpeg=846,641.5/1046,641.5/846,816.5/1046,816.5 --out $OUT/srgb.avif
+check 'colour: mixed set' $P "$OUT/mixed"/* --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.jpeg=846,641.5/1046,641.5/846,816.5/1046,816.5 --out $OUT/mixed.avif
 
 cat > "$OUT/verify.py" <<'PY'
 """The outputs are real, and the Girona job still matches the committed tracking baseline."""

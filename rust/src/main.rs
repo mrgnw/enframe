@@ -37,9 +37,13 @@ const AVIF_SPEED: i32 = 10;
 const AVIF_QUALITY: i32 = 75;
 const CLIP_SUFFIXES: [&str; 4] = ["avif", "mp4", "mov", "webm"];
 
-const USAGE: &str = "usage: pinframe PHOTO... --box x,y,w,h [--at PHOTO=x,y[,w,h[,zoom]]]... [--pad COLOUR]
-				[--fps N] [--out CLIP-or-JSON] [--frames DIR] [--vf FILTERS] [--cache DIR|--no-cache]
-				[--order time|name]";
+const USAGE: &str = "usage: pinframe PHOTO... --points x,y[/x,y]... [--at PHOTO=x,y[/x,y]...[@zoom]]...
+				[--pad COLOUR] [--fps N] [--out CLIP-or-JSON] [--frames DIR] [--vf FILTERS]
+				[--cache DIR|--no-cache] [--order time|name]";
+
+/// The message given when `--box` or an old `x,y,w,h` mark is used: the conversion to point form.
+const BOX_REMOVED: &str = "--box is removed; use --points, and turn a box x,y,w,h into its four quarter \
+	centres: x+w/4,y+h/4/x+3w/4,y+h/4/x+w/4,y+3h/4/x+3w/4,y+3h/4";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Order {
@@ -62,7 +66,7 @@ static PARTIALS: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new
 
 struct Args {
 	photos: Vec<PathBuf>,
-	box_: Option<String>,
+	points: Option<String>,
 	at: Vec<String>,
 	pad: Option<String>,
 	fps: f64,
@@ -77,7 +81,7 @@ struct Args {
 fn parse_args() -> Args {
 	let mut args = Args {
 		photos: vec![],
-		box_: None,
+		points: None,
 		at: vec![],
 		pad: None,
 		fps: 4.0,
@@ -92,7 +96,8 @@ fn parse_args() -> Args {
 	while let Some(arg) = it.next() {
 		let mut value = || it.next().unwrap_or_else(|| fail(&format!("{arg} needs a value\n{USAGE}")));
 		match arg.as_str() {
-			"--box" => args.box_ = Some(value()),
+			"--points" => args.points = Some(value()),
+			"--box" => fail(&format!("{BOX_REMOVED}\n{USAGE}")),
 			"--at" => args.at.push(value()),
 			"--pad" => args.pad = Some(value()),
 			"--fps" => args.fps = value().parse().unwrap_or_else(|_| fail("--fps must be a number")),
@@ -119,50 +124,64 @@ fn parse_args() -> Args {
 	args
 }
 
-fn parse_numbers(flag: &str, text: &str) -> Result<Vec<f64>, String> {
-	text.split(',')
-		.map(|v| v.trim().parse().map_err(|_| format!("{flag} {text}: expected comma-separated numbers")))
-		.collect()
+/// 1 to 32 points per mark (A5b's design): enough for any hand-marked feature, bounded so a typo (a
+/// pasted list, a stray `/`) fails fast instead of handing the tracker an unbounded point set.
+const MAX_POINTS: usize = 32;
+
+/// One point `x,y` within a `/`-joined list. A 4-number segment is the old box form; `parse_points`
+/// reports that case separately, with the quarter-centres conversion, before reaching this generic check.
+fn parse_point(flag: &str, text: &str) -> Result<(f64, f64), String> {
+	let parts: Vec<&str> = text.split(',').collect();
+	if parts.len() != 2 {
+		return Err(format!("{flag}: a point is x,y, not {} numbers ({text})", parts.len()));
+	}
+	let x: f64 = parts[0].trim().parse().map_err(|_| format!("{flag}: point {text} is not x,y"))?;
+	let y: f64 = parts[1].trim().parse().map_err(|_| format!("{flag}: point {text} is not x,y"))?;
+	Ok((x, y))
 }
 
-/// A mark is a point x,y or a box x,y,w,h with an optional zoom, inside its photo.
-fn check_mark(name: &str, mark: &[f64], (fw, fh): (u32, u32)) -> Result<(), String> {
-	let (fw, fh) = (fw as f64, fh as f64);
-	if ![2, 4, 5].contains(&mark.len()) {
-		return Err(format!(
-			"{name}: a mark is x,y or x,y,w,h with an optional zoom, not {} numbers",
-			mark.len()
-		));
-	}
-	let (px, py) = if mark.len() == 2 {
-		(mark[0], mark[1])
-	} else {
-		let (bx, by, bw, bh) = (mark[0], mark[1], mark[2], mark[3]);
-		if !(bw > 0.0 && bh > 0.0 && bx >= 0.0 && by >= 0.0 && bx + bw <= fw && by + bh <= fh) {
-			return Err(format!("{name}: box {bx},{by},{bw},{bh} is empty or outside the {fw}x{fh} photo"));
+/// A mark's points and its optional zoom.
+type Points = (Vec<(f64, f64)>, Option<f64>);
+
+/// A mark's points and optional zoom: `x,y[/x,y]...[@zoom]`. The old box form `x,y,w,h` is refused here
+/// (a 4-number point) with the conversion to quarter centres, before `parse_point`'s generic count error.
+fn parse_points(flag: &str, text: &str) -> Result<Points, String> {
+	let (points_text, zoom) = match text.split_once('@') {
+		Some((p, z)) => {
+			let zoom: f64 = z.trim().parse().map_err(|_| format!("{flag}: @{z} is not a number"))?;
+			(p, Some(zoom))
 		}
-		(bx + bw / 2.0, by + bh / 2.0)
+		None => (text, None),
 	};
-	if !(0.0 <= px && px < fw && 0.0 <= py && py < fh) {
-		return Err(format!("{name}: point {px},{py} is outside the {fw}x{fh} photo"));
+	if points_text.is_empty() {
+		return Err(format!("{flag}: needs at least one point"));
 	}
-	if mark.len() == 5 && mark[4].partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
-		return Err(format!("{name}: zoom must be positive"));
+	// A single x,y,w,h segment (no /) is the old box form, not a 4-number point.
+	if !points_text.contains('/') && points_text.split(',').count() == 4 {
+		return Err(format!("{flag}: {points_text} is a box x,y,w,h. {BOX_REMOVED}"));
+	}
+	let points: Vec<(f64, f64)> =
+		points_text.split('/').map(|p| parse_point(flag, p)).collect::<Result<_, _>>()?;
+	if points.len() > MAX_POINTS {
+		return Err(format!("{flag}: {} points, at most {MAX_POINTS}", points.len()));
+	}
+	if let Some(zoom) = zoom
+		&& zoom.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater)
+	{
+		return Err(format!("{flag}: zoom must be positive"));
+	}
+	Ok((points, zoom))
+}
+
+/// Every point of a mark must land inside its photo.
+fn check_points(name: &str, points: &[(f64, f64)], (fw, fh): (u32, u32)) -> Result<(), String> {
+	let (fw, fh) = (fw as f64, fh as f64);
+	for &(px, py) in points {
+		if !(0.0 <= px && px < fw && 0.0 <= py && py < fh) {
+			return Err(format!("{name}: point {px},{py} is outside the {fw}x{fh} photo"));
+		}
 	}
 	Ok(())
-}
-
-/// A checked mark as the tracker's point set: a point stays one point, a box becomes its four quarter
-/// centres, whose mean is the box centre, and a fifth number is the zoom.
-fn to_points(mark: &[f64]) -> Mark {
-	let points = match *mark {
-		[x, y] => vec![(x, y)],
-		[x, y, w, h, ..] => [(1.0, 1.0), (3.0, 1.0), (1.0, 3.0), (3.0, 3.0)]
-			.map(|(a, b)| (x + w * a / 4.0, y + h * b / 4.0))
-			.to_vec(),
-		_ => unreachable!("check_mark allows 2, 4 or 5 numbers"),
-	};
-	Mark { points, zoom: mark.get(4).copied() }
 }
 
 /// Orders photos by EXIF capture time, falling back to filename order when `--order name` was given or
@@ -212,38 +231,40 @@ fn read_profiles(paths: &[PathBuf]) -> Result<Vec<Profile>, String> {
 	paths.iter().map(|p| decode::profile(p).map_err(|e| format!("{}: {e}", p.display()))).collect()
 }
 
-/// --box and every --at, by photo index, checked against the photo sizes.
+/// --points and every --at, by photo index, checked against the photo sizes.
 fn read_marks(
-	box_: Option<&str>,
+	points: Option<&str>,
 	ats: &[String],
 	paths: &[PathBuf],
 	sizes: &[(u32, u32)],
 ) -> Result<Vec<Option<Mark>>, String> {
 	let names: Vec<String> = paths.iter().map(|p| file_name(p)).collect();
-	// ponytail: no box drawing (anchor.py opens an OpenCV window); --box is required here
-	let first = parse_numbers("--box", box_.ok_or("--box x,y,w,h is required")?)?;
-	if first.len() != 4 {
-		return Err("--box is x,y,w,h".into());
+	// ponytail: no point drawing (anchor.py opens an OpenCV window); --points is required here
+	let (first_points, first_zoom) =
+		parse_points("--points", points.ok_or("--points x,y[/x,y]... is required")?)?;
+	if first_zoom.is_some() {
+		return Err("--points takes no zoom; the first photo defines scale 1".into());
 	}
-	let mut marks: Vec<Option<Vec<f64>>> = vec![None; paths.len()];
-	marks[0] = Some(first);
+	let mut marks: Vec<Option<Mark>> = vec![None; paths.len()];
+	marks[0] = Some(Mark { points: first_points, zoom: None });
 	for at in ats {
 		let Some((name, value)) = at.split_once('=').filter(|(n, _)| names.iter().any(|m| m == n)) else {
 			return Err(format!("--at {at}: expected PHOTO=x,y with PHOTO one of the photo file names"));
 		};
 		let i = names.iter().position(|m| m == name).unwrap();
 		if marks[i].is_some() {
-			let why = if i == 0 { "use --box for the first photo" } else { "marked twice" };
+			let why = if i == 0 { "use --points for the first photo" } else { "marked twice" };
 			return Err(format!("--at {name}: {why}"));
 		}
-		marks[i] = Some(parse_numbers(&format!("--at {name}"), value)?);
+		let (points, zoom) = parse_points(&format!("--at {name}"), value)?;
+		marks[i] = Some(Mark { points, zoom });
 	}
 	for (i, mark) in marks.iter().enumerate() {
 		if let Some(m) = mark {
-			check_mark(&names[i], m, sizes[i])?;
+			check_points(&names[i], &m.points, sizes[i])?;
 		}
 	}
-	Ok(marks.iter().map(|m| m.as_deref().map(to_points)).collect())
+	Ok(marks)
 }
 
 fn parse_fill(value: &str) -> Result<Vec<u8>, String> {
@@ -678,7 +699,7 @@ fn main() {
 			}
 			let sizes = read_sizes(&paths).unwrap_or_else(|e| fail(&e));
 			let marks =
-				read_marks(args.box_.as_deref(), &args.at, &paths, &sizes).unwrap_or_else(|e| fail(&e));
+				read_marks(args.points.as_deref(), &args.at, &paths, &sizes).unwrap_or_else(|e| fail(&e));
 			if let Some(dir) = &args.frames {
 				std::fs::create_dir_all(dir)
 					.unwrap_or_else(|e| fail(&format!("--frames {}: {e}", dir.display())));
@@ -904,22 +925,6 @@ mod tests {
 
 	#[test]
 	fn bad_input_is_refused_and_good_input_passes() {
-		let photo = (100, 80);
-		let bad_marks: [&[f64]; 7] = [
-			&[1.0, 2.0, 3.0],
-			&[10.0, 10.0, 0.0, 5.0],
-			&[90.0, 70.0, 20.0, 20.0],
-			&[100.0, 40.0],
-			&[-1.0, 40.0],
-			&[10.0, 10.0, 20.0, 20.0, 0.0],
-			&[f64::NAN, 40.0],
-		];
-		for mark in bad_marks {
-			assert!(check_mark("p.avif", mark, photo).is_err(), "{mark:?}");
-		}
-		assert!(check_mark("p.avif", &[99.0, 79.0], photo).is_ok());
-		assert!(check_mark("p.avif", &[0.0, 0.0, 100.0, 80.0, 2.5], photo).is_ok());
-		assert!(parse_numbers("--box", "1,2,x").is_err());
 		for colour in ["purple", "#12345", "#gggggg", "#1234567"] {
 			assert!(parse_fill(colour).is_err(), "{colour}");
 		}
@@ -931,18 +936,65 @@ mod tests {
 		assert!(read_sizes(&[PathBuf::from("only-one.avif")]).is_err());
 		assert!(read_sizes(&[PathBuf::from("a/x.avif"), PathBuf::from("b/x.avif")]).is_err());
 		assert!(read_sizes(&[PathBuf::from("missing-1.avif"), PathBuf::from("missing-2.avif")]).is_err());
+	}
+
+	#[test]
+	fn points_parse_one_several_and_zoom() {
+		assert_eq!(parse_points("--points", "5,5").unwrap(), (vec![(5.0, 5.0)], None));
+		assert_eq!(
+			parse_points("--points", "1,2/3,4/5,6").unwrap(),
+			(vec![(1.0, 2.0), (3.0, 4.0), (5.0, 6.0)], None)
+		);
+		assert_eq!(parse_points("--at a.avif", "1,2@2.5").unwrap(), (vec![(1.0, 2.0)], Some(2.5)));
+		assert_eq!(
+			parse_points("--at a.avif", "1,2/3,4@0.5").unwrap(),
+			(vec![(1.0, 2.0), (3.0, 4.0)], Some(0.5))
+		);
+	}
+
+	#[test]
+	fn points_reject_bad_input() {
+		assert!(parse_points("--points", "").is_err(), "empty");
+		assert!(parse_points("--points", "1,2,3").is_err(), "3 numbers is not a point");
+		let box_err = parse_points("--points", "1,2,3,4").unwrap_err();
+		assert!(box_err.contains("quarter"), "{box_err}");
+		let many = (0..=MAX_POINTS).map(|i| format!("{i},{i}")).collect::<Vec<_>>().join("/");
+		assert!(parse_points("--points", &many).is_err(), "more than {MAX_POINTS} points");
+		assert!(parse_points("--points", "1,2@0").is_err(), "zoom must be positive");
+		assert!(parse_points("--points", "1,2@-1").is_err(), "zoom must be positive");
+		assert!(parse_points("--points", "1,2@x").is_err(), "@ without a number");
+	}
+
+	#[test]
+	fn points_must_land_inside_the_photo() {
+		let photo = (100, 80);
+		assert!(check_points("p.avif", &[(99.0, 79.0)], photo).is_ok());
+		assert!(check_points("p.avif", &[(0.0, 0.0), (99.0, 79.0)], photo).is_ok());
+		assert!(check_points("p.avif", &[(100.0, 40.0)], photo).is_err());
+		assert!(check_points("p.avif", &[(-1.0, 40.0)], photo).is_err());
+		assert!(check_points("p.avif", &[(f64::NAN, 40.0)], photo).is_err());
+	}
+
+	#[test]
+	fn marks_are_read_by_photo_and_box_forms_are_refused() {
+		let photo = (100, 80);
 		let two = [PathBuf::from("a.avif"), PathBuf::from("b.avif")];
 		let bad_ats: [&[&str]; 5] =
 			[&["b.avif"], &["c.avif=1,1"], &["a.avif=1,1"], &["b.avif=1,1", "b.avif=2,2"], &["b.avif=500,1"]];
 		for ats in bad_ats {
 			let ats: Vec<String> = ats.iter().map(|a| a.to_string()).collect();
-			assert!(read_marks(Some("0,0,10,10"), &ats, &two, &[photo, photo]).is_err(), "{ats:?}");
+			assert!(read_marks(Some("1,1/9,9"), &ats, &two, &[photo, photo]).is_err(), "{ats:?}");
 		}
-		let marks = read_marks(Some("0,0,10,10"), &["b.avif=5,5".into()], &two, &[photo, photo]).unwrap();
+		let marks = read_marks(Some("1,1/9,9"), &["b.avif=5,5".into()], &two, &[photo, photo]).unwrap();
+		assert_eq!(marks[0], Some(Mark { points: vec![(1.0, 1.0), (9.0, 9.0)], zoom: None }));
 		assert_eq!(marks[1], Some(Mark { points: vec![(5.0, 5.0)], zoom: None }));
-		let quarters = vec![(2.5, 2.5), (7.5, 2.5), (2.5, 7.5), (7.5, 7.5)];
-		assert_eq!(marks[0], Some(Mark { points: quarters.clone(), zoom: None }));
-		assert_eq!(to_points(&[0.0, 0.0, 10.0, 10.0, 2.5]), Mark { points: quarters, zoom: Some(2.5) });
+		assert!(read_marks(None, &[], &two, &[photo, photo]).is_err(), "--points is required");
+		assert!(read_marks(Some("1,1@2.0"), &[], &two, &[photo, photo]).is_err(), "--points takes no zoom");
+		let box_err = read_marks(Some("0,0,10,10"), &[], &two, &[photo, photo]).unwrap_err();
+		assert!(box_err.contains("quarter"), "{box_err}");
+		let box_at_err =
+			read_marks(Some("1,1"), &["b.avif=0,0,10,10".into()], &two, &[photo, photo]).unwrap_err();
+		assert!(box_at_err.contains("quarter"), "{box_at_err}");
 	}
 
 	#[test]

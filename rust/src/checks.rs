@@ -362,7 +362,11 @@ fn retrack_bench() {
 		handles.into_iter().flat_map(|h| h.join().unwrap()).collect()
 	});
 	let mut marks = vec![None; paths.len()];
-	marks[0] = Some(crate::to_points(&[1010.0, 410.0, 1030.0, 400.0]));
+	// Box 1010,410,1030,400's four quarter centres (girona_all.sh's --points, A5b).
+	marks[0] = Some(crate::track::Mark {
+		points: vec![(1267.5, 510.0), (1782.5, 510.0), (1267.5, 710.0), (1782.5, 710.0)],
+		zoom: None,
+	});
 	let mut best = std::time::Duration::MAX;
 	for _ in 0..5 {
 		let started = std::time::Instant::now();
