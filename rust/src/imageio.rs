@@ -167,7 +167,7 @@ fn unpack(
 			"ImageIO unsupported pixel layout: {bits}-bit components, {pixel_bits}-bit pixels"
 		));
 	}
-	// ImageIO decodes HEVC Main 10 as `l10r`: little-endian 0b00_BBBBBBBBBB_GGGGGGGGGG_RRRRRRRRRR.
+	// ImageIO decodes HEVC Main 10 as `l10r`: little-endian 0b00_RRRRRRRRRR_GGGGGGGGGG_BBBBBBBBBB.
 	// It has two unused high bits, not an alpha channel.
 	if bits == 10 && pixel_bits == 32 && info & BYTE_ORDER_MASK == BYTE_ORDER_32_LITTLE {
 		let mut out = Vec::with_capacity(width * height * 3);
@@ -175,7 +175,7 @@ fn unpack(
 			for x in 0..width {
 				let offset = y * row + x * 4;
 				let value = u32::from_le_bytes(raw[offset..offset + 4].try_into().unwrap());
-				out.extend([reduce_10(value), reduce_10(value >> 10), reduce_10(value >> 20)]);
+				out.extend([reduce_10(value >> 20), reduce_10(value >> 10), reduce_10(value)]);
 			}
 		}
 		return Ok(out);

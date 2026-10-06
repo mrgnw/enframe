@@ -192,6 +192,26 @@ mod tests {
 	}
 
 	#[test]
+	#[ignore]
+	fn compare_decodes() {
+		let a = decode(Path::new(&std::env::var("COMPARE_A").unwrap())).unwrap();
+		let b = decode(Path::new(&std::env::var("COMPARE_B").unwrap())).unwrap();
+		assert_eq!((a.width, a.height), (b.width, b.height));
+		let mut sum = [0u64; 3];
+		let mut max = 0u8;
+		let mut square = 0u64;
+		for (i, (left, right)) in a.pixels.iter().zip(&b.pixels).enumerate() {
+			let d = left.abs_diff(*right);
+			sum[i % 3] += u64::from(d);
+			max = max.max(d);
+			square += u64::from(d) * u64::from(d);
+		}
+		let n = (a.pixels.len() / 3) as f64;
+		let mse = square as f64 / a.pixels.len() as f64;
+		println!("mean {:?}, max {max}, PSNR {:.2} dB", sum.map(|v| v as f64 / n), 10.0 * (255.0 * 255.0 / mse).log10());
+	}
+
+	#[test]
 	fn jpeg_orientations_match_pillow_exif_transpose() {
 		// A 3x2, quality-100 JPEG and Pillow's `exif_transpose` RGB output, both dumped by
 		// `uv run out/make_image_inputs.py`. Keeping the fixture here makes `cargo test` standalone.
