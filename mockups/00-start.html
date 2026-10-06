@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>pinframe · choose photos and box the feature</title>
+<title>pinframe · choose photos and mark the feature</title>
 <link rel="stylesheet" href="pin.css">
 <style>
 	.drop {
@@ -29,7 +29,7 @@
 	.drop .sample { margin-top: 16px; color: var(--muted); font-size: 13px; }
 	.drop .sample a { color: var(--accent); text-decoration: none; }
 
-	.stage.boxing .photo { cursor: crosshair; }
+	.stage.marking .photo { cursor: crosshair; }
 	.prompt {
 		position: absolute;
 		bottom: 64px;
@@ -40,6 +40,7 @@
 		background: rgba(0, 0, 0, 0.55);
 		color: rgba(255, 255, 255, 0.85);
 		font-size: 13px;
+		white-space: nowrap;
 		pointer-events: none;
 		z-index: 4;
 	}
@@ -64,7 +65,7 @@
 <div class="mock" id="mock">
 	<button data-s="empty" class="on">empty</button>
 	<button data-s="loaded">loaded</button>
-	<button data-s="box">box drawn</button>
+	<button data-s="points">points</button>
 	<button data-s="tracking">tracking</button>
 </div>
 
@@ -77,13 +78,13 @@
 		</div>
 
 		<div class="island steps mid desk" id="steps" hidden>
-			<span class="step active" id="step-box"><span class="n">1</span>Box</span>
+			<span class="step active"><span class="n">1</span>Points</span>
 			<span class="step"><span class="n">2</span>Fix</span>
 			<span class="step"><span class="n">3</span>Export</span>
 		</div>
 
 		<div class="island end" id="action" hidden>
-			<span class="muted" id="box-size">1030 × 400</span>
+			<span class="muted" id="point-count"></span>
 			<span class="sep"></span>
 			<button class="btn primary" id="track">Track <kbd class="desk">⏎</kbd></button>
 			<div class="bar"></div>
@@ -93,23 +94,18 @@
 	<section class="drop" id="drop">
 		<div>
 			<h1>Hold one thing <b>still</b></h1>
-			<p>Drop a folder of photos. Box the cloud, the mountain, the moon, whatever should stay put. Everything else moves around it.</p>
+			<p>Drop a folder of photos. Click points on the cloud, the mountain, the moon, whatever should stay put. Everything else moves around it.</p>
 			<button class="btn primary">Choose folder</button>
 			<div class="sample">or try the <a href="#" id="try-sample">Girona clouds sample</a> · 57 photos from a train</div>
 			<small>Photos play in filename order · AVIF, HEIC, JPEG, PNG</small>
 		</div>
 	</section>
 
-	<div class="prompt" id="prompt" hidden>Drag a box around the feature to hold still</div>
+	<div class="prompt" id="prompt" hidden></div>
 
 	<div class="photo" id="photo" hidden style="aspect-ratio: 2048 / 1536; width: min(100%, calc((100vh - 110px) * 4 / 3))">
 		<img src="assets/IMG_4667.jpg" alt="">
-		<div class="box drawing" id="drawing" hidden></div>
-		<div class="box" id="box" hidden>
-			<span class="cross"></span>
-			<span class="tag">anchor · 1×</span>
-			<i class="handle nw"></i><i class="handle ne"></i><i class="handle sw"></i><i class="handle se"></i>
-		</div>
+		<svg class="trail" id="points"></svg>
 	</div>
 </main>
 
@@ -118,29 +114,34 @@
 <script src="assets/photos.js"></script>
 <script>
 	const $ = id => document.getElementById(id);
-	const BOX = { x: 1010, y: 410, w: 1030, h: 400 };
-	const P = { w: 2048, h: 1536 };
-	let state = 'empty', trackTimer = null;
+	// The first photo's points, as in 01: the real point plus the simulated pattern around it, normalized 0–1.
+	const START = [[0.7446, 0.3971], [0.6714, 0.3776], [0.7983, 0.3580], [0.7641, 0.4557]];
+	const HIT_PX = 12;
+	let state = 'empty', trackTimer = null, pts = [];
 
-	function pct(box) {
-		return { left: `${box.x / P.w * 100}%`, top: `${box.y / P.h * 100}%`, width: `${box.w / P.w * 100}%`, height: `${box.h / P.h * 100}%` };
+	function drawPoints(just = false) {
+		const svg = $('points'), W = svg.clientWidth, H = svg.clientHeight;
+		svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+		svg.innerHTML = pts.map(([x, y], i) =>
+			`<circle class="pt${just && i === pts.length - 1 ? ' just' : ''}" cx="${x * W}" cy="${y * H}" r="5.5"/>`).join('');
+		$('point-count').textContent = `${pts.length} point${pts.length === 1 ? '' : 's'}`;
 	}
 
 	function setState(s) {
 		state = s;
 		clearInterval(trackTimer);
 		for (const b of $('mock').children) b.classList.toggle('on', b.dataset.s === s);
-		const loaded = s !== 'empty';
+		const loaded = s !== 'empty', marking = s === 'loaded' || s === 'points';
+		if (s === 'empty' || s === 'loaded') pts = [];
+		else if (!pts.length) pts = START.map(q => [...q]);
 		$('drop').hidden = loaded;
 		$('photo').hidden = !loaded;
 		$('folder').hidden = $('folder-sep').hidden = !loaded;
 		$('steps').hidden = !loaded;
-		$('prompt').hidden = s !== 'loaded';
-		$('action').hidden = !(s === 'box' || s === 'tracking');
-		$('box').hidden = s === 'loaded';
-		Object.assign($('box').style, pct(BOX));
-		$('box-size').textContent = `${BOX.w} × ${BOX.h}`;
-		$('stage').classList.toggle('boxing', s === 'loaded');
+		$('prompt').hidden = !marking;
+		$('prompt').textContent = s === 'loaded' ? 'Click points on the feature to hold still' : 'Click to add a point · click a point to remove it';
+		$('action').hidden = !(s === 'points' || s === 'tracking');
+		$('stage').classList.toggle('marking', marking);
 		$('stage').classList.toggle('tracking', s === 'tracking');
 		$('filmstrip').classList.toggle('empty', !loaded);
 		$('filmstrip').innerHTML = loaded ? PHOTOS.map((p, i) =>
@@ -148,6 +149,7 @@
 		).join('') : '';
 		$('track').innerHTML = 'Track <kbd class="desk">⏎</kbd>';
 		$('action').querySelector('.bar').className = 'bar';
+		drawPoints();
 		if (s === 'tracking') runTracking();
 	}
 
@@ -177,29 +179,22 @@
 	$('drop').addEventListener('dragover', e => { e.preventDefault(); $('drop').classList.add('over'); });
 	$('drop').addEventListener('dragleave', () => $('drop').classList.remove('over'));
 	$('drop').addEventListener('drop', e => { e.preventDefault(); setState('loaded'); });
-	$('track').addEventListener('click', () => { if (state === 'box') setState('tracking'); });
+	$('track').addEventListener('click', () => { if (state === 'points') setState('tracking'); });
 
-	let drag = null;
-	const photo = $('photo'), drawing = $('drawing');
-	const norm = e => { const r = photo.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }; };
-	photo.addEventListener('pointerdown', e => { if (state === 'loaded' || state === 'box') drag = norm(e); });
-	photo.addEventListener('pointermove', e => {
-		if (!drag) return;
-		const n = norm(e);
-		drawing.hidden = false;
-		$('box').hidden = true;
-		drawing.style.left = `${Math.min(n.x, drag.x) * 100}%`; drawing.style.top = `${Math.min(n.y, drag.y) * 100}%`;
-		drawing.style.width = `${Math.abs(n.x - drag.x) * 100}%`; drawing.style.height = `${Math.abs(n.y - drag.y) * 100}%`;
+	// Before tracking, a click adds a point and a click on a point removes it.
+	const photo = $('photo');
+	photo.addEventListener('click', e => {
+		if (state !== 'loaded' && state !== 'points') return;
+		const r = photo.getBoundingClientRect(), x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+		const hit = pts.findIndex(([px, py]) => Math.hypot((px - x) * r.width, (py - y) * r.height) <= HIT_PX);
+		if (hit >= 0) pts.splice(hit, 1);
+		else pts.push([x, y]);
+		if (!pts.length) return setState('loaded');
+		if (state === 'loaded') setState('points');
+		drawPoints(hit < 0);
 	});
-	photo.addEventListener('pointerup', e => {
-		if (!drag) return;
-		const n = norm(e);
-		const w = Math.abs(n.x - drag.x) * P.w, h = Math.abs(n.y - drag.y) * P.h;
-		drawing.hidden = true;
-		drag = (w > 20 && h > 20) ? Object.assign(BOX, { x: Math.round(Math.min(n.x, drag.x) * P.w), y: Math.round(Math.min(n.y, drag.y) * P.h), w: Math.round(w), h: Math.round(h) }) && null : null;
-		setState('box');
-	});
-	window.addEventListener('keydown', e => { if (e.key === 'Enter' && state === 'box') setState('tracking'); });
+	new ResizeObserver(() => drawPoints()).observe(photo);
+	window.addEventListener('keydown', e => { if (e.key === 'Enter' && state === 'points') setState('tracking'); });
 
 	setState('empty');
 </script>
