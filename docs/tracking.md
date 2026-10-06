@@ -78,7 +78,7 @@ The tracker now matches near the reference first and falls back to the whole pho
 
 ## Points (A5a)
 
-The tracker follows a set of points instead of a box (`todos/A5-reference-points.md`, "Design"). It keeps the features within one radius of any point: the radius that holds 96 keypoints, at least half the smallest point spacing, at most 512 px, set at the first photo and each mark and scaled by each fit's zoom. The fit moves every point; the anchor is their mean. The command line is unchanged: `--box` and box marks become the box's four quarter centres (their mean is the box centre), and a point mark becomes a one-point set that replaces the current set. The baseline was regenerated in that branch. Before → after:
+The tracker follows a set of points instead of a box (`todos/done/1006-A5-reference-points.md`, "Design"). It keeps the features within one radius of any point: the radius that holds 96 keypoints, at least half the smallest point spacing, at most 512 px, set at the first photo and each mark and scaled by each fit's zoom. The fit moves every point; the anchor is their mean. The command line is unchanged: `--box` and box marks become the box's four quarter centres (their mean is the box centre), and a point mark becomes a one-point set that replaces the current set. The baseline was regenerated in that branch. Before → after:
 
 | measure | box | points |
 |-|-|-|

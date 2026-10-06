@@ -1,6 +1,6 @@
 # A6 · Skip photos where the feature is hidden
 
-Depends on: A5b · Model: Sonnet · Size: S
+Depends on: the ⚑ decision below · Model: Sonnet · Size: S
 Touches: `rust/src/track.rs`, `rust/src/main.rs` (CLI, sidecar), README, `analysis/tracking_benchmark.py` if needed
 
 ## Why
