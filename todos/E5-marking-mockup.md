@@ -33,3 +33,7 @@ The user's feedback: "maybe the trail could have some feature that ensures they'
 - [x] `mockups/00-start.html` uses points instead of a box (`--box` is being removed).
 
 Round 2 merged from branch `e5-trail-visibility`: a stronger halo that fades with its line, a gentler fade (1 to 0.55), dark discs under trail dots, outlined points; the start page uses points. Waiting for the user's review.
+
+## Round 3 (2026-10-06)
+
+Merged from branch `e5-trail-colour`. The trail shows distance from the current photo as stepped colour (OKLCH): violet to pink before, teal to green after, full opacity, round-2 halo kept. `?trail=steps` (default), `?trail=fade` (round 2), `?trail=pulse` (a white light steps along the trail every 420 ms, off when the system asks for less motion). Waiting for the user to compare them.
