@@ -194,6 +194,18 @@ mod tests {
 		}
 	}
 
+	#[test]
+	#[ignore]
+	fn zune_jpeg_difference_from_pillow() {
+		for name in ["IMG_4667", "IMG_4669", "IMG_4670"] {
+			let image =
+				decode(Path::new("../out/girona-jpeg").join(format!("{name}.jpeg")).as_path()).unwrap();
+			let pillow = std::fs::read(format!("../out/jpeg-rgb/{name}.raw")).unwrap();
+			let worst = image.pixels.iter().zip(pillow).map(|(a, b)| a.abs_diff(b)).max().unwrap();
+			println!("{name}: zune-jpeg vs Pillow maximum RGB difference {worst}");
+		}
+	}
+
 	fn hex(text: &str) -> Vec<u8> {
 		(0..text.len()).step_by(2).map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap()).collect()
 	}
