@@ -126,7 +126,7 @@ fn check_mark(name: &str, mark: &[f64], (fw, fh): (u32, u32)) -> Result<(), Stri
 	if !(0.0 <= px && px < fw && 0.0 <= py && py < fh) {
 		return Err(format!("{name}: point {px},{py} is outside the {fw}x{fh} photo"));
 	}
-	if mark.len() == 5 && !(mark[4] > 0.0) {
+	if mark.len() == 5 && mark[4].partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
 		return Err(format!("{name}: zoom must be positive"));
 	}
 	Ok(())
@@ -580,7 +580,7 @@ fn main() {
 			if json_only && args.frames.is_some() {
 				fail("--frames needs a clip --out, not .json")
 			}
-			if !(args.fps > 0.0) {
+			if args.fps.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
 				fail("--fps must be positive");
 			}
 			let sizes = read_sizes(&paths).unwrap_or_else(|e| fail(&e));
@@ -641,7 +641,7 @@ fn main() {
 					tx.send(photo).unwrap()
 				});
 			});
-			track::track(rx.into_iter(), &sizes, k, &marks)
+			track::track(rx.into_iter(), sizes, k, &marks)
 		})
 	});
 	let (path, sources, size) = step("plan the crop", || {

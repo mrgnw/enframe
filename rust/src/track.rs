@@ -243,7 +243,7 @@ pub fn similarity(boxed: &Features, next: &Features, tolerance: f64) -> (Option<
 fn plausible(m: &Affine) -> (bool, f64, f64) {
 	let step = m[0][0].hypot(m[1][0]);
 	let turn = m[1][0].atan2(m[0][0]).to_degrees();
-	(1.0 / MAX_STEP_ZOOM <= step && step <= MAX_STEP_ZOOM && turn.abs() <= MAX_STEP_TURN, step, turn)
+	((1.0 / MAX_STEP_ZOOM..=MAX_STEP_ZOOM).contains(&step) && turn.abs() <= MAX_STEP_TURN, step, turn)
 }
 
 /// Per photo: anchor position, its scale relative to the first box, and how it was found. Photos are
