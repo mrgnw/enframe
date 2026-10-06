@@ -175,6 +175,14 @@ cd rust && cargo test --release -- --ignored --nocapture
   - `image` with `avif` encodes still images through ravif only; decoding needs dav1d separately.
   - `ravif` 0.13 (rav1e) encodes single images, not animations.
 
+## HEIC and JPEG XL input
+
+HEIC/HEIF and JPEG XL decode through macOS ImageIO (`CGImageSource`), linked to ImageIO, CoreGraphics and CoreFoundation rather than a new Rust or C codec dependency. It is the practical local choice: macOS uses the M4 media path for HEVC, supports both formats without a build-time codec library, and supplies their orientation metadata. The decoder reads the `CGImage` provider directly, avoiding a bitmap-context colour conversion; it accepts 8-bit RGB(A), 16-bit RGB(A), and Apple's packed HEVC Main 10 `l10r` layout. 10- and 16-bit samples are rounded to the nearest 8-bit sample, and premultiplied alpha is undone before alpha is dropped.
+
+Colour profiles are not transformed. In particular, a Display P3 iPhone HEIC is treated as if its native RGB numbers were sRGB, so saturated colours can look wrong; tracking still sees the native decoded values. This is deliberate until colour-managed input is added.
+
+`jxl-oxide` is a portable pure-Rust alternative for JXL, but it would add a separate decoder and cannot use ImageIO's integration on this target. `djxl` is useful as an external reference, not an embeddable CLI dependency. `libheif` plus `libde265` would add LGPL components and a static-build/distribution obligation; it also gives up the system HEVC path. Linux and Windows builds need a feature-gated decoder (for example jxl-oxide for JXL and dynamically linked libheif, or platform-native APIs) instead of this macOS module. AVIF deliberately stays on libavif/dav1d for its existing bit-exact reference behavior.
+
 ## Crates and licenses
 
 | crate | used for | license |
