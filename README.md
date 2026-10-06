@@ -10,7 +10,7 @@ Turn a series of photos into a short clip where one chosen feature, like a cloud
 Build the Rust CLI, `pinframe`:
 
 ```sh
-brew install libavif
+brew install cmake meson ninja
 ```
 
 ```sh
@@ -18,7 +18,7 @@ cd rust
 cargo build --release
 ```
 
-This needs Rust stable, Homebrew's libavif (pulls in aom and libpng), pkg-config, and libclang for bindgen (Xcode or the Command Line Tools). See [docs/rust.md](docs/rust.md) for the full build notes.
+This needs Rust stable, cmake, meson and ninja, libclang for bindgen (Xcode or the Command Line Tools), and network access on the first build. The build downloads pinned releases of libavif, dav1d and libaom and links them in statically, so the binary runs without Homebrew. The first build takes about 40 s; later builds take a couple of seconds. See [docs/rust.md](docs/rust.md) for the full build notes and the licences that come with distributing it.
 
 ```sh
 rust/target/release/pinframe "samples/girona clouds"/IMG_479{1,2,3,4,5}.avif --box 520,220,620,500 --out out/heart.avif
