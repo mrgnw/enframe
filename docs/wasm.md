@@ -8,6 +8,8 @@ Everything below is either measured here, read from a primary source (linked), o
 
 Keep tracking in Python on a server. Run `anchor.py` behind `enframe-serve`, and let the browser do marking only.
 
+Superseded 2026-10-06 ([F1](../todos/F1-python-reference.md)): `anchor.py` has been deleted; the Rust CLI (`rust/target/release/pinframe`) is the tracker to run server-side instead. The measurements below are historical.
+
 - The tracking step runs in WASM and gives the same answer as CPython (proof of concept below), so a browser port is possible, but it is 12x slower than native and costs a 26 MB download before the first photo is matched.
 - The clip can't be written the way `anchor.py` writes it today. The browser has no ffmpeg; WebCodecs can't encode alpha in Chromium (it throws `NotSupportedError`), so `--pad transparent` would need ffmpeg.wasm (32 MB, GPL, and multithreading needs the cross-origin isolation enframe's static site deliberately turns off).
 - enframe already has a server with the same UI as the desktop app (`enframe-serve`, Rust/axum, also shipped as the Tauri sidecar), and it already confines file access to read/write roots. pinframe plugs in there as one subprocess call with no new runtime.

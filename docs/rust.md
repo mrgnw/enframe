@@ -8,6 +8,8 @@ Machine: Mac mini, Apple M4 Pro (8 performance + 4 efficiency cores), 24 GB, mac
 
 **Port to Rust when pinframe moves into enframe; until then keep `anchor.py` as the CLI and the reference. Skip the PyO3 hybrid.**
 
+Superseded 2026-10-06 ([F1](../todos/F1-python-reference.md)): the Rust CLI is now the only implementation, checked against the committed tracking baseline (`analysis/tracking_baseline.json`) instead of `anchor.py`, which has been deleted. The measurements below are historical.
+
 ## Persistent feature cache and sidecar-only tracking
 
 The Rust CLI caches each photo's SIFT result under `~/Library/Caches/pinframe`. `--cache DIR` selects another root and `--no-cache` disables reads and writes. An entry is content addressed with BLAKE3: photo bytes, the decoder and its version, the global downscale factor and resulting size, `TRACK_EDGE`, the SIFT implementation identifier, and the cache format version are all inputs. The decoder version is libavif's and dav1d's for AVIF, the macOS build (`kern.osversion`) for HEIC and JPEG XL through ImageIO, and the locked zune-jpeg or png crate version for JPEG and PNG; each is read once per run, so an OS update or a decoder bump starts a fresh cache. BLAKE3 is fast enough that hashing AVIF/JPEG/PNG files is normally I/O-bound, while a content key cannot return stale features after a file replacement; path, size, and mtime are intentionally not trusted as cache identity.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The check every task runs before it merges: bash analysis/check.sh
 # Builds from scratch-safe state, lints, tests, runs every README command and each input format, checks the
-# outputs, and compares the Girona job with the Python reference. Exits non-zero if anything fails.
+# outputs, and compares the Girona job against the tracking baseline. Exits non-zero if anything fails.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -33,7 +33,6 @@ check 'release build' bash -c 'cd rust && cargo build --release'
 check 'cargo fmt --check' bash -c 'cd rust && cargo fmt --check'
 check 'clippy -D warnings' bash -c 'cd rust && cargo clippy --release --all-targets -- -D warnings'
 check 'cargo test' bash -c 'cd rust && cargo test --release'
-check 'Python reference self-check' uv run anchor.py
 
 check 'README: heart.avif' $P "$G"/IMG_479{1,2,3,4,5}.avif --box 520,220,620,500 --out $OUT/heart.avif
 check 'README: turbines.avif' $P "${TURBINES[@]}" "${MARKS[@]}" --out $OUT/turbines.avif
@@ -43,7 +42,6 @@ check 'README: --cache' $P "$G"/IMG_479{1,2,3,4,5}.avif --box 520,220,620,500 --
 check 'README: .mp4 with --vf' $P "${TURBINES[@]}" "${MARKS[@]}" --vf deflicker,tpad=stop_mode=clone:stop_duration=2 --out $OUT/turbines.mp4
 check 'README: --frames' $P "${TURBINES[@]}" "${MARKS[@]}" --frames $OUT/frames --out $OUT/frames.avif
 check 'Girona, all 57 photos' env BIN="$P --no-cache" bash analysis/girona_all.sh $OUT/all.avif
-check 'Girona, Python reference' bash analysis/girona_all.sh $OUT/python.avif
 
 # Each input format: the 8 turbine photos converted, with the same marks.
 for fmt in heic jpeg png jxl; do
@@ -71,14 +69,14 @@ check 'colour: sRGB set' $P "$OUT/srgb"/*.jpeg --box 840,550,400,350 --at IMG_47
 check 'colour: mixed set' $P "$OUT/mixed"/* --box 840,550,400,350 --at IMG_4703.jpeg=746,554,400,350 --out $OUT/mixed.avif
 
 cat > "$OUT/verify.py" <<'PY'
-"""The outputs are real, and the Girona job still matches the Python reference."""
+"""The outputs are real, and the Girona job still matches the committed tracking baseline."""
 
 import json
 import subprocess
 import sys
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 out = Path(sys.argv[1])
 for name, frames in (('heart', 5), ('turbines', 8), ('portrait', 12), ('all', 57)):
@@ -111,16 +109,38 @@ for name, expected in (('turbines.avif', p3), ('turbines.mp4', p3), ('srgb.avif'
 with Image.open(out / 'frames/0001.png') as im:
 	assert im.info.get('icc_profile'), 'a Display P3 frame carries its ICC profile'
 
-# Tracking: Rust against the Python reference on all 57 Girona photos.
+# Tracking: Rust against the committed baseline (analysis/tracking_baseline.json) on all 57 Girona photos.
+baseline = json.loads(Path('analysis/tracking_baseline.json').read_text())['stability']['original']
 rust = {p['file']: p for p in json.loads((out / 'all.json').read_text())['photos']}
-python = {p['file']: p for p in json.loads((out / 'python.json').read_text())['photos']}
-worst = max(max(abs(rust[f][k] - python[f][k]) for k in 'xywh') for f in rust)
+samples = Path('samples/girona clouds')
+
+
+def oriented_size(path):
+	with Image.open(path) as im:
+		return ImageOps.exif_transpose(im).size
+
+
+worst_rect = 0.0
+worst_scale = 0.0
+worst_point_px = 0.0
+for file, row in rust.items():
+	base = baseline[Path(file).stem]
+	assert row['source'] == base['source'], f'{file}: source {row["source"]!r} vs baseline {base["source"]!r}'
+	worst_rect = max(worst_rect, max(abs(row[k] - base['rect'][i]) for i, k in enumerate('xywh')))
+	worst_scale = max(worst_scale, abs(row['scale'] - base['scale']))
+	fw, fh = oriented_size(samples / file)
+	px, py = row['points'][0]
+	worst_point_px = max(
+		worst_point_px, abs(px * fw - base['point_px'][0]), abs(py * fh - base['point_px'][1])
+	)
 lost = sorted(f for f in rust if rust[f]['source'] == 'lost')
-assert [rust[f]['source'] for f in rust] == [python[f]['source'] for f in rust], 'sources differ from Python'
-assert worst <= 1e-3, f'rects differ from Python by {worst:.2e} (expected about 2.95e-4)'
-print(f'Girona vs Python: max rect diff {worst:.2e}, lost {lost}')
+assert worst_rect <= 1e-3, f'rects differ from baseline by {worst_rect:.2e} (expected about 2.95e-4)'
+print(
+	f'Girona vs baseline: max rect diff {worst_rect:.2e}, max scale diff {worst_scale:.1e}, '
+	f'max point diff {worst_point_px:.2f}px, lost {lost}'
+)
 PY
-check 'outputs valid, Girona matches Python' uv run "$OUT/verify.py" "$OUT"
+check 'outputs valid, Girona matches baseline' uv run "$OUT/verify.py" "$OUT"
 tail -1 "$LOG"
 
 echo "--- $pass passed, $fail failed"

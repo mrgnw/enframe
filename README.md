@@ -24,7 +24,7 @@ This needs Rust stable, cmake, meson and ninja, libclang for bindgen (Xcode or t
 rust/target/release/pinframe "samples/girona clouds"/IMG_479{1,2,3,4,5}.avif --box 520,220,620,500 --out out/heart.avif
 ```
 
-Unlike the Python reference implementation below, there's no box-drawing window: `--box x,y,w,h` is required, in first-photo pixels, and gives the feature to hold still.
+There's no box-drawing window: `--box x,y,w,h` is required, in first-photo pixels, and gives the feature to hold still.
 
 Input photos may be AVIF, HEIC/HEIF, JPEG XL, JPEG, or PNG. pinframe identifies them from their contents rather than their file extension; other formats are refused before decoding. HEIC and JPEG XL use macOS ImageIO, so those inputs require macOS. pinframe is built and tested on macOS only; the Linux build does not compile yet (see [docs/rust.md](docs/rust.md#platforms) and [todos/D1-linux-build.md](todos/D1-linux-build.md)).
 
@@ -83,24 +83,6 @@ Run the test suite as the self-check:
 cd rust && cargo test --release
 ```
 
-### Python reference implementation
-
-`anchor.py` was the original implementation. It's kept as the one place with the interactive box window, and as the reference the Rust output is checked against (`analysis/compare_rects.py`, `analysis/rect_diff.py`):
-
-```sh
-uv run anchor.py "samples/girona clouds"/IMG_479{1,2,3,4,5}.avif --out out/heart.avif
-```
-
-A window opens on the first photo. Drag a box around the feature to hold still, then press Enter. To skip the window, pass the box as `--box x,y,w,h`, same as the Rust CLI.
-
-Run with no arguments for `anchor.py`'s own self-check:
-
-```sh
-uv run anchor.py
-```
-
-Every other flag and output above is the same between the two.
-
 ## How it works
 
 1. Photos are taken in filename order.
@@ -111,7 +93,7 @@ Every other flag and output above is the same between the two.
 6. Each photo is scaled so the anchor is the same size in all of them. The crop then keeps the anchor at one fixed spot in every photo. Portrait, landscape, 1x, 2x and 3x photos mix freely.
 7. The clip is sized at the median photo's zoom, so a single zoomed-out photo doesn't shrink the rest. ffmpeg assembles the crops at `--fps` (default 4).
 
-The Rust CLI and `anchor.py` implement this the same way; `docs/rust.md` has where their SIFT and AVIF handling differ by a few parts in ten thousand.
+`docs/rust.md` has how the Rust SIFT and AVIF handling differed from the retired Python reference, by a few parts in ten thousand.
 
 ## Results on the Girona samples
 
@@ -156,9 +138,4 @@ The one-click stabilizers (ffmpeg `vidstab`, Warp Stabilizer, Resolve's automati
 
 This project is licensed under [MIT](LICENSE).
 
-The Rust CLI depends on the crates and C libraries listed in [docs/rust.md](docs/rust.md#crates-and-licenses). `anchor.py`, the Python reference implementation, depends on these libraries, under their own licenses:
-
-- [OpenCV](https://github.com/opencv/opencv-python) — Apache-2.0 (keypoint tracking, image resizing)
-- [NumPy](https://numpy.org) — BSD-3-Clause (arrays)
-- [Pillow](https://python-pillow.org) — MIT-CMU (AVIF decoding)
-- [FFmpeg](https://ffmpeg.org) — LGPL/GPL depending on the build (video encoding; run as an external program, not bundled)
+The Rust CLI depends on the crates and C libraries listed in [docs/rust.md](docs/rust.md#crates-and-licenses), plus [FFmpeg](https://ffmpeg.org) (LGPL/GPL depending on the build; video encoding, run as an external program, not bundled).

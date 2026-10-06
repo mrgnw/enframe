@@ -1,7 +1,7 @@
 """Peak memory of a pinframe run against the number of photos.
 
 uv run analysis/memory_scaling.py
-Runs anchor.py on the first N Girona photos (transparent padding, AVIF out) and reads the peak RSS that
+Runs pinframe on the first N Girona photos (transparent padding, AVIF out) and reads the peak RSS that
 /usr/bin/time -l reports for the whole process.
 """
 
@@ -18,7 +18,7 @@ COUNTS = (10, 20, 40, 57)
 def peak_mb(count: int) -> tuple[float, float]:
 	out = ROOT / 'out' / f'memory-{count}.avif'
 	cmd = [
-		'/usr/bin/time', '-l', 'uv', 'run', 'anchor.py', *map(str, PHOTOS[:count]),
+		'/usr/bin/time', '-l', 'rust/target/release/pinframe', *map(str, PHOTOS[:count]),
 		'--box', '1010,410,1030,400', '--pad', 'transparent', '--out', str(out),
 	]  # fmt: skip
 	start = time.perf_counter()

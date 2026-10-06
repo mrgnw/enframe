@@ -2,10 +2,10 @@
 
 uv run analysis/bench_rust.py ROUNDS NAME=COMMAND [NAME=COMMAND ...]
 
-COMMAND runs the job from analysis/girona_all.sh, e.g. python='uv run anchor.py' or
-rust=rust/target/release/pinframe. Each round runs every command once, in a rotating order, so load on
-the shared machine falls on all of them alike. Prints the fastest and median wall, CPU (user + sys) and
-peak memory per command. Rust runs also write per-step profiles to out/bench-NAME.jsonl.
+COMMAND runs the job from analysis/girona_all.sh, e.g. rust=rust/target/release/pinframe. Each round runs
+every command once, in a rotating order, so load on the shared machine falls on all of them alike. Prints
+the fastest and median wall, CPU (user + sys) and peak memory per command. Rust runs also write per-step
+profiles to out/bench-NAME.jsonl.
 """
 
 import json
