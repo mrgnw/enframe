@@ -55,7 +55,7 @@ rust/target/release/pinframe "samples/girona clouds"/IMG_479{1,2,3,4,5}.avif --b
 rust/target/release/pinframe "samples/girona clouds"/IMG_479{1,2,3,4,5}.avif --box 520,220,620,500 --cache /tmp/pinframe-cache --out out/track.json
 ```
 
-Writes the clip and a `.json` beside it: `{"run": ..., "clip": ..., "photos": [...]}`. Each entry in `photos` has the photo's crop rect, normalized to 0–1 like enframe's coordinates. With padding, rects can extend past 0 and 1. Each entry also has the photo's `scale` relative to the first photo and its `source`: `tracked`, `mark` (placed by `--box` or `--at`), or `lost` (position estimated from neighbours, the photos to mark next).
+Writes the clip and a `.json` beside it: `{"run": ..., "clip": ..., "photos": [...]}`. Each entry in `photos` has the photo's crop rect, normalized to 0–1 like enframe's coordinates. With padding, rects can extend past 0 and 1. Each entry also has the photo's `scale` relative to the first photo and its `source`: `tracked`, `mark` (placed by `--box` or `--at`), or `lost` (position estimated from neighbours, the photos to mark next). `points` is where the anchor sits in that photo, as `[[x, y]]` normalized the same way as the crop rect; today there is always exactly one.
 
 Both files are written under names unique to the run, then renamed into place together while holding a lock on the output folder. A failed run leaves the previous clip and `.json` untouched, and runs that share an output never mix their files. `run` is a random ID that is also stored in the clip's metadata (XMP for `.avif`, `comment` for ffmpeg outputs), so a reader can confirm a clip and its `.json` belong together. A reader can also take a shared lock on the folder while reading the pair.
 

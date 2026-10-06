@@ -489,6 +489,7 @@ struct Row {
 	h: f64,
 	scale: f64,
 	source: &'static str,
+	points: Vec<[f64; 2]>,
 }
 
 #[derive(serde::Serialize)]
@@ -512,14 +513,19 @@ fn write_rects(
 		.zip(sizes)
 		.zip(sources)
 		.zip(path)
-		.map(|(((p, &(fw, fh)), &(x, y, w, h)), hit)| Row {
-			file: file_name(p),
-			x: x / fw as f64,
-			y: y / fh as f64,
-			w: w / fw as f64,
-			h: h / fh as f64,
-			scale: format!("{:.4}", hit.scale).parse().unwrap(),
-			source: hit.source.name(),
+		.map(|(((p, &(fw, fh)), &(x, y, w, h)), hit)| {
+			let (px, py) = (hit.x / fw as f64, hit.y / fh as f64);
+			assert!(px.is_finite() && py.is_finite(), "non-finite point for {}", file_name(p));
+			Row {
+				file: file_name(p),
+				x: x / fw as f64,
+				y: y / fh as f64,
+				w: w / fw as f64,
+				h: h / fh as f64,
+				scale: format!("{:.4}", hit.scale).parse().unwrap(),
+				source: hit.source.name(),
+				points: vec![[px, py]],
+			}
 		})
 		.collect();
 	let sidecar = Sidecar { run: run.to_string(), clip: clip.map(str::to_string), photos };
