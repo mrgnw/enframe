@@ -46,7 +46,14 @@ By default the crop shrinks until every photo fills it. `--pad` lets it overhang
 rust/target/release/pinframe "samples/girona clouds"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --box 400,940,540,180 --pad transparent --out out/portrait.avif
 ```
 
-The extension of `--out` picks the format. The default, `.avif`, is an animated AVIF that keeps transparency and plays in browsers as an image. On the 57-photo Girona clip it encodes as fast as ProRes, and the file is 9 MB instead of 109 MB. Through ffmpeg, `.mp4` writes H.264, `.mov` writes ProRes 4444 when transparent (for video editors), and `.webm` writes VP9.
+The extension of `--out` picks the format. The default, `.avif`, is an animated AVIF that keeps transparency and plays in browsers as an image. On the 57-photo Girona clip it encodes as fast as ProRes, and the file is 9 MB instead of 109 MB. Through ffmpeg, `.mp4` writes H.264, `.mov` writes ProRes 4444 when transparent (for video editors), and `.webm` writes VP9. With `--out result.json`, pinframe writes the sidecar only: it tracks and plans rects but does not render, decode for rendering, or encode. Its `clip` field is `null`.
+
+SIFT features are cached under `~/Library/Caches/pinframe` by default, so a mark-and-retrack loop does not repeat SIFT. Use `--cache DIR` for a project-specific cache or `--no-cache` to bypass it:
+
+```sh
+rust/target/release/pinframe "samples/girona clouds"/IMG_479{1,2,3,4,5}.avif --box 520,220,620,500 --out out/track.json
+rust/target/release/pinframe "samples/girona clouds"/IMG_479{1,2,3,4,5}.avif --box 520,220,620,500 --cache /tmp/pinframe-cache --out out/track.json
+```
 
 Writes the clip and a `.json` beside it: `{"run": ..., "clip": ..., "photos": [...]}`. Each entry in `photos` has the photo's crop rect, normalized to 0–1 like enframe's coordinates. With padding, rects can extend past 0 and 1. Each entry also has the photo's `scale` relative to the first photo and its `source`: `tracked`, `mark` (placed by `--box` or `--at`), or `lost` (position estimated from neighbours, the photos to mark next).
 

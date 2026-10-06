@@ -8,6 +8,16 @@ Machine: Mac mini, Apple M4 Pro (8 performance + 4 efficiency cores), 24 GB, mac
 
 **Port to Rust when pinframe moves into enframe; until then keep `anchor.py` as the CLI and the reference. Skip the PyO3 hybrid.**
 
+## Persistent feature cache and sidecar-only tracking
+
+The Rust CLI caches each photo's SIFT result under `~/Library/Caches/pinframe`. `--cache DIR` selects another root and `--no-cache` disables reads and writes. An entry is content addressed with BLAKE3: photo bytes, the global downscale factor and resulting size, `TRACK_EDGE`, the SIFT implementation identifier, and the cache format version are all inputs. BLAKE3 is fast enough that hashing AVIF/JPEG/PNG files is normally I/O-bound, while a content key cannot return stale features after a file replacement; path, size, and mtime are intentionally not trusted as cache identity.
+
+Entries hold the downscaled dimensions, packed 24-byte keypoints, and the existing lossless 128-byte SIFT descriptors. The descriptor values are already integer 0--255 in this port, so this is byte-for-byte equivalent to the live representation and warm tracking produces identical rects. Each entry has a BLAKE3 checksum and exact-length validation. A malformed or truncated file is treated as a miss and atomically replaced. Writers use a unique temporary file, `fsync`, and rename; concurrent producers may race but write identical bytes, leaving one valid entry.
+
+The cache uses file mtime as an LRU clock. Its capacity is 5% of free space on the cache filesystem, bounded to 512 MiB--8 GiB, and is enforced after writes by deleting oldest entries. Cached data replaces, rather than adds to, the per-photo features already held by the tracker; the resource planner's working-set estimate is unchanged.
+
+An `--out path.json` run is sidecar-only: it reads headers, loads (or creates) features, tracks and writes the JSON, but never renders or encodes. On a warm cache it never decodes pixels. The JSON is still published through a run-unique temporary name while holding the output-folder lock; `run` remains a fresh ID and `clip` is `null`, explicitly denoting that no clip was produced. Clip extensions retain the existing paired clip-plus-sidecar publication.
+
 - **For the CLI alone, Rust is a modest win.** The Girona job takes 2.33 s against 2.69 s (median), starts in 4 ms against 135 ms, and peaks at 1.47 GB against 1.86 GB. On eight 48 MP photos it takes 3.4–3.6 s against 5.5–6.3 s. The gap is small because Python already spends its time in native code (OpenCV, dav1d, libaom), and the Rust version calls the same dav1d and libaom.
 - **For enframe, Rust is the better core.** enframe is a Tauri (Rust) app that already ships a Rust server (`enframe-serve`) as its sidecar. A Rust pinframe links into it as a library: no Python runtime or 159 MB venv to bundle (OpenCV alone is 119 MB installed), and no process per click. It can keep every photo's features in memory between marks: a re-track of all 57 Girona photos then takes 145 ms instead of a 2.3 s run.
 - **The hybrid buys little.** A PyO3 extension cannot remove Python's start-up, and OpenCV's SIFT and the codecs are already native. The one Rust-side gain that would carry over is feeding libavif ready YUV frames (render 1.04 s to about 0.77 s), and it would cost a second toolchain and maturin wheels.

@@ -215,6 +215,14 @@ mod tests {
 		path
 	}
 
+	fn run_writer(exe: PathBuf, root: PathBuf) -> std::process::ExitStatus {
+		std::process::Command::new(exe)
+			.args(["--exact", "cache::tests::process_writer"])
+			.env("PINFRAME_CACHE_WRITER", root)
+			.status()
+			.unwrap()
+	}
+
 	#[test]
 	fn hit_miss_and_corrupt_entry_recomputes() {
 		let root = temp("hit");
@@ -262,6 +270,43 @@ mod tests {
 		};
 		a.join().unwrap();
 		b.join().unwrap();
+		assert!(cache.load("same").is_some());
+		assert_eq!(
+			std::fs::read_dir(&root)
+				.unwrap()
+				.flatten()
+				.filter(|e| e.path().extension().is_some_and(|x| x == "pfc"))
+				.count(),
+			1
+		);
+		let _ = std::fs::remove_dir_all(root);
+	}
+
+	#[test]
+	fn process_writer() {
+		let Some(root) = std::env::var_os("PINFRAME_CACHE_WRITER") else { return };
+		let cache = FeatureCache { root: PathBuf::from(root), cap: u64::MAX };
+		let sample = sample();
+		cache.store("same", sample.small, &sample.features);
+	}
+
+	#[test]
+	fn concurrent_processes_leave_one_valid_entry() {
+		let root = temp("process-race");
+		let exe = std::env::current_exe().unwrap();
+		let first = std::thread::spawn({
+			let exe = exe.clone();
+			let root = root.clone();
+			move || run_writer(exe, root)
+		});
+		let second = std::thread::spawn({
+			let exe = exe.clone();
+			let root = root.clone();
+			move || run_writer(exe, root)
+		});
+		assert!(first.join().unwrap().success());
+		assert!(second.join().unwrap().success());
+		let cache = FeatureCache { root: root.clone(), cap: u64::MAX };
 		assert!(cache.load("same").is_some());
 		assert_eq!(
 			std::fs::read_dir(&root)
