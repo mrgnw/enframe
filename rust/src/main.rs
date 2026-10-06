@@ -5,6 +5,7 @@ mod avif;
 mod avif_sys;
 #[cfg(test)]
 mod checks;
+mod decode;
 mod pixels;
 mod profile;
 mod render;
@@ -139,7 +140,7 @@ fn read_sizes(paths: &[PathBuf]) -> Result<Vec<(u32, u32)>, String> {
 	if names.windows(2).any(|w| w[0] == w[1]) {
 		return Err("two photos share a file name, so --at and the .json could not tell them apart".into());
 	}
-	paths.iter().map(|p| avif::oriented_size(p).map_err(|e| format!("{}: {e}", p.display()))).collect()
+	paths.iter().map(|p| decode::oriented_size(p).map_err(|e| format!("{}: {e}", p.display()))).collect()
 }
 
 /// --box and every --at, by photo index, checked against the photo sizes.
@@ -287,7 +288,7 @@ fn find_features(small: &pixels::Image) -> sift::Features {
 }
 
 fn prepare(path: &Path, size: (u32, u32), k: f64, keep: &Keep, i: usize) -> Photo {
-	let rgb = work(Work::Decode, || avif::decode(path, 1))
+	let rgb = work(Work::Decode, || decode::decode(path))
 		.unwrap_or_else(|e| fail(&format!("{}: {e}", path.display())));
 	assert_eq!(
 		(rgb.width as u32, rgb.height as u32),
@@ -393,7 +394,7 @@ fn render(job: &RenderJob, sink: &mut Sink) {
 	let place_one = |i: usize| {
 		let photo = job.keep.take(i).unwrap_or_else(|| {
 			let path = &job.paths[i];
-			work(Work::Decode, || avif::decode(path, 1))
+			work(Work::Decode, || decode::decode(path))
 				.unwrap_or_else(|e| fail(&format!("{}: {e}", path.display())))
 		});
 		let frame = work(Work::Place, || place(&photo, job.sources[i], job.size, job.fill));
