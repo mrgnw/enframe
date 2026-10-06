@@ -194,11 +194,13 @@ M4 Pro, ten 2048×1536 Girona photos, five round-robin rounds. Values are second
 | AVIF | libavif/dav1d | 0.0488 / 0.0492 | 0.0486 / 0.0491 |
 | AVIF | ImageIO | 0.0225 / 0.0234 | 0.0123 / 0.0127 |
 | HEIC Main 8 | ImageIO | 0.0250 / 0.0258 | 0.0123 / 0.0127 |
-| HEIC Main 10 | ImageIO | 0.0433 / 0.0442 | 0.0407 / 0.0416 |
+| HEIC Main 10 | ImageIO | 0.0384 / 0.0395 | 0.0360 / 0.0370 |
 | JXL lossless | ImageIO | 0.0985 / 0.1001 | 0.3518 / 0.3535 |
 | JXL lossy d1 | ImageIO | 0.0329 / 0.0335 | 0.0739 / 0.0751 |
 | JXL lossless | jxl-oxide CLI | 0.3768 / 0.3795 | 0.7597 / 0.7631 |
 | JXL lossless | djxl CLI | 0.1725 / 0.1738 | 0.6742 / 0.6860 |
+
+The Main 10 row was 0.0407 / 0.0416 s CPU before `unpack_l10r`; interleaved runs on the shared machine vary by about 3 ms. Its fixtures are 16-bit PNGs of the AVIF originals converted with `sips -s format heic`, which writes a 4×3 grid of 512×512 tiles with an ICC profile, as an iPhone does. The `imageio::tests::heic10_split` test (`HEIC10_DIR=<dir>`) splits the CPU per photo: ImageIO's decode and pixel copy take 34–42 ms, pinframe's `l10r` unpacking took 3.0 ms and now 1.9 ms. Most of ImageIO's time is system time: `sample` shows CMPhoto decoding each tile through VideoToolbox, then a VideoToolbox pixel transfer on the GPU through Metal, and the GPU command submissions run in the kernel. Tiled Main 8 (8-bit PNG through `sips`) costs 12 ms in total, and the same photos written untiled by `heif-enc -b 10` cost 8 ms in ImageIO, so the cost comes from tiles and 10 bits together. `sips` run directly on the AVIF originals, as `analysis/check.sh` does, also writes untiled Main 10. Asking ImageIO for SDR (`kCGImageSourceDecodeRequest` = `kCGImageSourceDecodeToSDR`) still returns 10-bit `l10r`, with identical pixels and no CPU change; no ImageIO option tried returns 8-bit pixels from these files.
 
 ImageIO makes AVIF roughly twice as fast here and consumes about one quarter of the CPU, plausibly using the media engine. It is not worth switching: libavif/dav1d is bit-exact with the Python reference while ImageIO's colour and conversion behavior is not that reference, and AVIF decoding is not the pipeline bottleneck.
 
