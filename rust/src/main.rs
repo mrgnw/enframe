@@ -187,26 +187,30 @@ fn check_points(name: &str, points: &[(f64, f64)], (fw, fh): (u32, u32)) -> Resu
 /// Orders photos by EXIF capture time, falling back to filename order when `--order name` was given or
 /// any photo lacks a capture time (a mix of cameras, or an export that stripped EXIF). Marks are matched
 /// to photos by file name (`read_marks`), so reordering here never loses track of which mark goes where.
-fn order_photos(mut paths: Vec<PathBuf>, order: Order) -> (Vec<PathBuf>, String) {
-	if order == Order::Name {
-		paths.sort();
-		return (paths, "name: --order name".to_string());
-	}
-	let times: Vec<Option<String>> = paths
+/// Each photo's 35 mm focal length comes back in the same order.
+fn order_photos(paths: Vec<PathBuf>, order: Order) -> (Vec<PathBuf>, Vec<Option<f64>>, String) {
+	let exifs: Vec<decode::Exif> = paths
 		.iter()
-		.map(|p| decode::capture_time(p).unwrap_or_else(|e| fail(&format!("{}: {e}", p.display()))))
+		.map(|p| decode::exif(p).unwrap_or_else(|e| fail(&format!("{}: {e}", p.display()))))
 		.collect();
-	let missing = times.iter().filter(|t| t.is_none()).count();
-	if missing > 0 {
-		paths.sort();
+	let missing = exifs.iter().filter(|e| e.capture_time.is_none()).count();
+	let mut sorted: Vec<usize> = (0..paths.len()).collect();
+	let reason = if order == Order::Name {
+		sorted.sort_by(|&a, &b| paths[a].cmp(&paths[b]));
+		"name: --order name".to_string()
+	} else if missing > 0 {
+		sorted.sort_by(|&a, &b| paths[a].cmp(&paths[b]));
 		let s = if missing == 1 { "" } else { "s" };
 		let has = if missing == 1 { "has" } else { "have" };
-		return (paths, format!("name: {missing} photo{s} {has} no capture time"));
-	}
-	let mut order: Vec<usize> = (0..paths.len()).collect();
-	order.sort_by(|&a, &b| times[a].cmp(&times[b]).then_with(|| paths[a].cmp(&paths[b])));
-	let paths = order.into_iter().map(|i| paths[i].clone()).collect();
-	(paths, "time: every photo has a capture time".to_string())
+		format!("name: {missing} photo{s} {has} no capture time")
+	} else {
+		sorted.sort_by(|&a, &b| {
+			exifs[a].capture_time.cmp(&exifs[b].capture_time).then_with(|| paths[a].cmp(&paths[b]))
+		});
+		"time: every photo has a capture time".to_string()
+	};
+	let focals = sorted.iter().map(|&i| exifs[i].focal_35mm).collect();
+	(sorted.into_iter().map(|i| paths[i].clone()).collect(), focals, reason)
 }
 
 fn file_name(path: &Path) -> String {
@@ -680,9 +684,9 @@ fn publish(pairs: &[(&Path, &Path)], folder: &Path) {
 fn main() {
 	profile::start();
 	let args = parse_args();
-	let (paths, sizes, marks, fill, k, resources, cache, json_only, profiles) =
+	let (paths, sizes, marks, focals, fill, k, resources, cache, json_only, profiles) =
 		step("check input and plan resources", || {
-			let (paths, order) = order_photos(args.photos.clone(), args.order);
+			let (paths, focals, order) = order_photos(args.photos.clone(), args.order);
 			println!("order: {order}");
 			let fill = args.pad.as_deref().map(parse_fill).transpose().unwrap_or_else(|e| fail(&e));
 			check_output(&args.out, fill.as_ref().is_some_and(|f| f.len() == 4), args.vf.as_deref())
@@ -743,7 +747,7 @@ fn main() {
 			};
 			let profiles =
 				if json_only { vec![] } else { read_profiles(&paths).unwrap_or_else(|e| fail(&e)) };
-			(paths, sizes, marks, fill, k, resources, cache, json_only, profiles)
+			(paths, sizes, marks, focals, fill, k, resources, cache, json_only, profiles)
 		});
 	let keep = (!json_only).then(|| Keep::new(resources.keep_bytes));
 	let path = step("decode, find features, track", || {
@@ -757,7 +761,7 @@ fn main() {
 					tx.send(photo).unwrap()
 				});
 			});
-			track::track(rx.into_iter(), sizes, k, &marks)
+			track::track(rx.into_iter(), sizes, k, &marks, &focals)
 		})
 	});
 	let (path, sources, size) = step("plan the crop", || {
@@ -902,7 +906,7 @@ mod tests {
 				path
 			})
 			.collect();
-		let (ordered, reason) = order_photos(paths, Order::Time);
+		let (ordered, _, reason) = order_photos(paths, Order::Time);
 		let names: Vec<String> = ordered.iter().map(|p| file_name(p)).collect();
 		assert_eq!(names, ["a.png", "b.png", "c.png"], "capture time, not the names, decides order");
 		assert!(reason.starts_with("time:"), "{reason}");
@@ -917,7 +921,7 @@ mod tests {
 		write_test_png(&with_time, Some("2024:01:01 00:00:01"));
 		let without_time = dir.join("a.png");
 		write_test_png(&without_time, None);
-		let (ordered, reason) = order_photos(vec![with_time.clone(), without_time.clone()], Order::Time);
+		let (ordered, _, reason) = order_photos(vec![with_time.clone(), without_time.clone()], Order::Time);
 		assert_eq!(ordered, vec![without_time, with_time], "falls back to filename order");
 		assert_eq!(reason, "name: 1 photo has no capture time");
 		std::fs::remove_dir_all(&dir).unwrap();

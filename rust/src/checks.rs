@@ -260,7 +260,7 @@ fn box_step_4699() {
 			println!("box_step_4699: ours only {k:?}");
 		}
 	}
-	let (m, agreed) = crate::track::similarity(&boxed, &b, 6.0);
+	let (m, agreed) = crate::track::similarity(&boxed, &b, 6.0, None);
 	println!("box_step_4699: {agreed} inliers, M {m:?}");
 }
 /// For each box keypoint whose descriptor differs from OpenCV's: how its fields and descriptor differ.
@@ -377,7 +377,10 @@ fn retrack_bench() {
 				descriptors: f.descriptors.clone(),
 			},
 		});
-		let path = crate::track::fill_lost(crate::track::track(photos, &sizes, k, &marks), &sizes);
+		let path = crate::track::fill_lost(
+			crate::track::track(photos, &sizes, k, &marks, &vec![None; sizes.len()]),
+			&sizes,
+		);
 		std::hint::black_box(crate::track::plan(&path, &sizes, true));
 		best = best.min(started.elapsed());
 	}

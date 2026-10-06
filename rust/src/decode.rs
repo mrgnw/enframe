@@ -126,31 +126,46 @@ fn ascii_field(exif: &exif::Exif, tag: exif::Tag) -> Option<String> {
 	}
 }
 
-/// `DateTimeOriginal` read directly from the file via kamadak-exif, which parses AVIF, HEIC, JPEG and PNG
-/// containers itself. Only JXL is not among its supported containers, so that format reads through
-/// ImageIO instead (see `capture_time` below).
-fn exif_capture_time(path: &Path) -> Result<Option<String>, String> {
+/// What pinframe reads from a photo's EXIF: its capture time as a sort key (`capture_time_key`), and its
+/// focal length in 35 mm film terms, which names the lens and any digital crop.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Exif {
+	pub capture_time: Option<String>,
+	pub focal_35mm: Option<f64>,
+}
+
+/// `FocalLengthIn35mmFilm` as a positive length; 0 means unknown in the EXIF spec.
+fn focal_35mm(exif: &exif::Exif) -> Option<f64> {
+	let value = exif.get_field(exif::Tag::FocalLengthIn35mmFilm, exif::In::PRIMARY)?.value.get_uint(0)?;
+	(value > 0).then_some(f64::from(value))
+}
+
+/// Both fields in one read via kamadak-exif, which parses AVIF, HEIC, JPEG and PNG containers itself.
+fn read_exif(path: &Path) -> Result<Exif, String> {
 	let file = File::open(path).map_err(|e| e.to_string())?;
 	let exif = match exif::Reader::new().read_from_container(&mut BufReader::new(file)) {
 		Ok(exif) => exif,
 		Err(exif::Error::Io(e)) => return Err(e.to_string()),
-		Err(_) => return Ok(None),
+		Err(_) => return Ok(Exif::default()),
 	};
-	let Some(date) = ascii_field(&exif, exif::Tag::DateTimeOriginal) else { return Ok(None) };
-	let subsec = ascii_field(&exif, exif::Tag::SubSecTimeOriginal).unwrap_or_default();
-	Ok(capture_time_key(&date, &subsec))
+	let capture_time = ascii_field(&exif, exif::Tag::DateTimeOriginal).and_then(|date| {
+		let subsec = ascii_field(&exif, exif::Tag::SubSecTimeOriginal).unwrap_or_default();
+		capture_time_key(&date, &subsec)
+	});
+	Ok(Exif { capture_time, focal_35mm: focal_35mm(&exif) })
 }
 
-/// `None` when the photo carries no `DateTimeOriginal`, so callers can fall back to filename order.
-pub fn capture_time(path: &Path) -> Result<Option<String>, String> {
+/// A field is `None` when the photo does not carry it, so callers fall back to filename order and to
+/// tracking without a lens prior. JXL is not among kamadak-exif's containers: its capture time reads
+/// through ImageIO, and its focal length is not read.
+pub fn exif(path: &Path) -> Result<Exif, String> {
 	match format(path)? {
 		Format::Jxl => {
-			let Some((date, subsec)) = crate::imageio::exif_date_time_original(path)? else {
-				return Ok(None);
-			};
-			Ok(capture_time_key(&date, &subsec))
+			let capture_time = crate::imageio::exif_date_time_original(path)?
+				.and_then(|(date, subsec)| capture_time_key(&date, &subsec));
+			Ok(Exif { capture_time, focal_35mm: None })
 		}
-		Format::Avif | Format::Heic | Format::Jpeg | Format::Png => exif_capture_time(path),
+		Format::Avif | Format::Heic | Format::Jpeg | Format::Png => read_exif(path),
 	}
 }
 
@@ -250,6 +265,44 @@ mod tests {
 		assert!(b < c);
 		assert_eq!(capture_time_key("", ""), None, "an empty date is not 19 characters");
 		assert_eq!(capture_time_key("not a valid 19-char date!!", ""), None, "still not 19 characters");
+	}
+
+	/// A 1x1 PNG whose `eXIf` chunk holds one field, `FocalLengthIn35mmFilm` = `focal`.
+	fn png_with_focal(path: &Path, focal: u16) {
+		let mut tiff = Vec::new();
+		tiff.extend(b"II");
+		tiff.extend(42u16.to_le_bytes());
+		tiff.extend(8u32.to_le_bytes()); // IFD0 at offset 8
+		tiff.extend(1u16.to_le_bytes()); // IFD0: one entry
+		tiff.extend(0x8769u16.to_le_bytes()); // ExifIFDPointer
+		tiff.extend(4u16.to_le_bytes()); // LONG
+		tiff.extend(1u32.to_le_bytes());
+		tiff.extend(26u32.to_le_bytes()); // Exif IFD at offset 26
+		tiff.extend(0u32.to_le_bytes()); // no next IFD
+		tiff.extend(1u16.to_le_bytes()); // Exif IFD: one entry
+		tiff.extend(0xa405u16.to_le_bytes()); // FocalLengthIn35mmFilm
+		tiff.extend(3u16.to_le_bytes()); // SHORT
+		tiff.extend(1u32.to_le_bytes());
+		tiff.extend(focal.to_le_bytes());
+		tiff.extend([0, 0]); // the value field's padding
+		tiff.extend(0u32.to_le_bytes()); // no next IFD
+		let mut info = png::Info::with_size(1, 1);
+		info.color_type = png::ColorType::Rgb;
+		let file = std::io::BufWriter::new(File::create(path).unwrap());
+		let mut writer = png::Encoder::with_info(file, info).unwrap().write_header().unwrap();
+		writer.write_chunk(png::chunk::ChunkType(*b"eXIf"), &tiff).unwrap();
+		writer.write_image_data(&[0, 0, 0]).unwrap();
+	}
+
+	#[test]
+	fn focal_length_reads_from_exif_and_zero_means_unknown() {
+		let path = std::env::temp_dir().join(format!("pinframe-focal-{}.png", std::process::id()));
+		png_with_focal(&path, 120);
+		assert_eq!(exif(&path), Ok(Exif { capture_time: None, focal_35mm: Some(120.0) }));
+		png_with_focal(&path, 0);
+		assert_eq!(exif(&path), Ok(Exif::default()));
+		std::fs::remove_file(path).unwrap();
+		assert_eq!(exif(Path::new("testdata/orientation-6.png")).map(|e| e.focal_35mm), Ok(None));
 	}
 
 	#[test]

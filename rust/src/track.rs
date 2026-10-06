@@ -34,9 +34,19 @@ const AREA_KEYPOINTS: usize = 12 * MIN_INLIERS;
 /// The area's radius never passes half the tracked size, so one point on plain sky cannot take in the
 /// whole photo. Girona's largest radius is 313 px, so the cap does not bind there.
 const MAX_RADIUS: f64 = TRACK_EDGE / 2.0;
+/// At a lens switch the fit's zoom may differ from the EXIF focal-length ratio by up to this factor. The
+/// ratio is exact for a distant sky up to the 35 mm equivalents' whole-millimetre rounding and lens
+/// distortion, a few percent: Girona's one tracked switch (IMG_4719 to IMG_4720) zooms 2.55x where EXIF
+/// says 2.5x. A fit further off follows the wrong features.
+const LENS_SLACK: f64 = 1.25;
+/// The spread of the zoom RANSAC expects at a lens switch, as a factor on the EXIF ratio: a sample
+/// scores its inliers less (ln(zoom / ratio) / ln 1.1)^2 / 2, so a fit 2% off (as at IMG_4720) costs
+/// nothing and one at `LENS_SLACK`'s edge costs 2.6 inliers, like `TURN_SPREAD` does for turns.
+const ZOOM_SPREAD: f64 = 1.1;
 
 /// A user mark: the points that replace the set on its photo, in photo pixels, and an optional zoom
-/// relative to the first photo.
+/// relative to the first photo. Without one, the zoom carries over from the last found photo, times
+/// the lens change when both photos have a focal length.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mark {
 	pub points: Vec<(f64, f64)>,
@@ -291,17 +301,24 @@ fn refine(from: &[(f32, f32)], to: &[(f32, f32)], mask: &[bool]) -> Affine {
 	[[a, -b, mu - a * mx + b * my], [b, a, mv - b * mx - a * my]]
 }
 
-/// A RANSAC sample's score: its inliers, less a Gaussian penalty on its turn, so of two fits with about
-/// the same support the one that turns less wins.
-fn score(model: &Affine, inliers: usize) -> f64 {
-	inliers as f64 - (turn_degrees(model) / TURN_SPREAD).powi(2) / 2.0
+/// A RANSAC sample's score: its inliers, less a Gaussian penalty on its turn and, at a lens switch, on how
+/// far its zoom is from the lens ratio, so of two fits with about the same support the one that turns
+/// less and zooms as the lenses say wins.
+fn score(model: &Affine, inliers: usize, lens_step: Option<f64>) -> f64 {
+	let zoom = lens_step.map_or(0.0, |ratio| (zoom_of(model) / ratio).ln() / ZOOM_SPREAD.ln());
+	inliers as f64 - (turn_degrees(model) / TURN_SPREAD).powi(2) / 2.0 - zoom.powi(2) / 2.0
 }
 
 /// RANSAC as `cv2.estimateAffinePartial2D(src, dst, method=RANSAC, ransacReprojThreshold=threshold)`, with
 /// three changes for stability: it always draws `RANSAC_DRAWS` samples, scores them with `score`, and
 /// refits until the inliers settle. Returns the model and its inlier count. The sampling replays OpenCV's
 /// generator, so the same pairs give the same samples.
-fn estimate_similarity(from: &[(f32, f32)], to: &[(f32, f32)], threshold: f64) -> Option<(Affine, usize)> {
+fn estimate_similarity(
+	from: &[(f32, f32)],
+	to: &[(f32, f32)],
+	threshold: f64,
+	lens_step: Option<f64>,
+) -> Option<(Affine, usize)> {
 	let count = from.len();
 	assert!(count > 2 && count == to.len());
 	let mut rng = Rng(u64::MAX);
@@ -315,9 +332,9 @@ fn estimate_similarity(from: &[(f32, f32)], to: &[(f32, f32)], threshold: f64) -
 		}
 		let model = similarity_from_two([from[a], from[b]], [to[a], to[b]]);
 		let good = inliers(&model, from, to, threshold, &mut mask);
-		if good >= 2 && score(&model, good) > best_score {
+		if good >= 2 && score(&model, good, lens_step) > best_score {
 			std::mem::swap(&mut mask, &mut best_mask);
-			best_score = score(&model, good);
+			best_score = score(&model, good, lens_step);
 		}
 	}
 	if best_score == f64::NEG_INFINITY {
@@ -338,15 +355,26 @@ fn estimate_similarity(from: &[(f32, f32)], to: &[(f32, f32)], threshold: f64) -
 }
 
 /// Scale + rotation + shift taking the box's features onto the next photo, and how many agree.
-pub fn similarity(boxed: &Features, next: &Features, tolerance: f64) -> (Option<Affine>, usize) {
+pub fn similarity(
+	boxed: &Features,
+	next: &Features,
+	tolerance: f64,
+	lens_step: Option<f64>,
+) -> (Option<Affine>, usize) {
 	let mut found = vec![Nearest::NONE; boxed.keypoints.len()];
 	let everything: Vec<usize> = (0..next.keypoints.len()).collect();
 	nearest_two(boxed, next, &everything, &mut found);
-	fit(boxed, next, &found, tolerance)
+	fit(boxed, next, &found, tolerance, lens_step)
 }
 
 /// The similarity through the ratio-test pairs in `found`, and how many agree.
-fn fit(boxed: &Features, next: &Features, found: &[Nearest], tolerance: f64) -> (Option<Affine>, usize) {
+fn fit(
+	boxed: &Features,
+	next: &Features,
+	found: &[Nearest],
+	tolerance: f64,
+	lens_step: Option<f64>,
+) -> (Option<Affine>, usize) {
 	if boxed.keypoints.is_empty() || next.keypoints.len() < 2 {
 		return (None, 0);
 	}
@@ -357,7 +385,7 @@ fn fit(boxed: &Features, next: &Features, found: &[Nearest], tolerance: f64) -> 
 	let point = |kp: &KeyPoint| (kp.x, kp.y);
 	let from: Vec<_> = pairs.iter().map(|&(q, _)| point(&boxed.keypoints[q])).collect();
 	let to: Vec<_> = pairs.iter().map(|&(_, t)| point(&next.keypoints[t])).collect();
-	match estimate_similarity(&from, &to, tolerance) {
+	match estimate_similarity(&from, &to, tolerance, lens_step) {
 		Some((m, agreed)) => (Some(m), agreed),
 		None => (None, 0),
 	}
@@ -399,30 +427,36 @@ fn motion(m: &Affine, reference: &Features) -> f64 {
 /// when the window gives no plausible fit, or a fit that moves the reference past the window's edge and
 /// so may have missed part of it; lens switches and big jumps still link. The fallback only adds the
 /// features outside the window, and finds exactly what a whole-photo search finds. The bool says
-/// whether it ran.
+/// whether it ran. At a lens switch (`lens_step`, the expected zoom) the window cannot follow a zoom about
+/// an unknown centre, so the whole photo is searched with that zoom as the fit's prior.
 fn find(
 	reference: &Features,
 	next: &Features,
 	tolerance: f64,
 	reach: Option<f64>,
+	lens_step: Option<f64>,
 ) -> (Option<Affine>, usize, bool) {
+	if lens_step.is_some() {
+		let (m, agreed) = similarity(reference, next, tolerance, lens_step);
+		return (m, agreed, true);
+	}
 	let Some(reach) = reach else {
-		let (m, agreed) = similarity(reference, next, tolerance);
+		let (m, agreed) = similarity(reference, next, tolerance, None);
 		return (m, agreed, false);
 	};
 	let mut found = vec![Nearest::NONE; reference.keypoints.len()];
 	let margin = MOTION_MARGIN * reach;
 	let (near, far) = window(reference, next, margin);
 	nearest_two(reference, next, &near, &mut found);
-	if let (Some(m), agreed) = fit(reference, next, &found, tolerance)
+	if let (Some(m), agreed) = fit(reference, next, &found, tolerance, None)
 		&& agreed >= MIN_INLIERS
-		&& plausible(&m).0
+		&& plausible(&m, None).0
 		&& motion(&m, reference) <= margin
 	{
 		return (Some(m), agreed, false);
 	}
 	nearest_two(reference, next, &far, &mut found);
-	let (m, agreed) = fit(reference, next, &found, tolerance);
+	let (m, agreed) = fit(reference, next, &found, tolerance, None);
 	(m, agreed, true)
 }
 
@@ -430,22 +464,42 @@ fn turn_degrees(m: &Affine) -> f64 {
 	m[1][0].atan2(m[0][0]).to_degrees()
 }
 
-/// Photo to photo, the anchor stays near the same zoom or jumps lens; it never spins.
-fn plausible(m: &Affine) -> (bool, f64, f64) {
-	let step = m[0][0].hypot(m[1][0]);
+fn zoom_of(m: &Affine) -> f64 {
+	m[0][0].hypot(m[1][0])
+}
+
+/// Photo to photo, the anchor stays near the same zoom or jumps lens; it never spins. At a known lens
+/// switch the zoom must match the lenses' ratio within `LENS_SLACK`.
+fn plausible(m: &Affine, lens_step: Option<f64>) -> (bool, f64, f64) {
+	let step = zoom_of(m);
 	let turn = turn_degrees(m);
-	((1.0 / MAX_STEP_ZOOM..=MAX_STEP_ZOOM).contains(&step) && turn.abs() <= MAX_STEP_TURN, step, turn)
+	let zooms = match lens_step {
+		None => 1.0 / MAX_STEP_ZOOM..=MAX_STEP_ZOOM,
+		Some(ratio) => ratio / LENS_SLACK..=ratio * LENS_SLACK,
+	};
+	(zooms.contains(&step) && turn.abs() <= MAX_STEP_TURN, step, turn)
+}
+
+/// How large the sky looks in a photo, up to a constant: the 35 mm focal length sets the angle the
+/// frame's diagonal spans, and the diagonal in pixels how finely that angle is sampled.
+fn lens_scale(focal_35mm: Option<f64>, (w, h): (u32, u32)) -> Option<f64> {
+	let focal = focal_35mm?;
+	assert!(focal.is_finite() && focal > 0.0, "a focal length is positive");
+	Some(focal * f64::from(w).hypot(f64::from(h)))
 }
 
 /// Per photo: anchor position, its scale relative to the first photo, and how it was found. Photos are
 /// consumed one at a time, in order; `marks[i]` is the user's mark on photo i, and photo 0 needs one.
+/// `focals[i]` is photo i's 35 mm focal length, when its EXIF has one.
 pub fn track(
 	photos: impl Iterator<Item = Photo>,
 	sizes: &[(u32, u32)],
 	k: f64,
 	marks: &[Option<Mark>],
+	focals: &[Option<f64>],
 ) -> Vec<Hit> {
 	assert!(marks[0].is_some(), "the first photo needs a mark");
+	assert!(marks.len() == sizes.len() && focals.len() == sizes.len());
 	let mut path = Vec::with_capacity(sizes.len());
 	// The point set and the radius around each point, on the downscaled photo.
 	let mut points: Vec<(f64, f64)> = Vec::new();
@@ -455,23 +509,31 @@ pub fn track(
 	// How far the reference moved in the last tracked step. It describes how the series was shot, so it
 	// carries across marks and lost photos; until the first step it is unknown and the search is whole.
 	let mut reach = None;
+	// The lens scale of the photo the points and scale belong to: the last one found or marked.
+	let mut last_lens = None;
 	let mut count = 0;
 	for (i, photo) in photos.enumerate() {
 		count += 1;
 		let source;
 		let note;
+		let lens = lens_scale(focals[i], sizes[i]);
+		let lens_change = last_lens.zip(lens).map(|(last, now)| now / last);
 		if let Some(mark) = &marks[i] {
 			assert!(!mark.points.is_empty(), "a mark needs a point");
 			points = mark.points.iter().map(|&(x, y)| (x * k, y * k)).collect();
 			radius = area_radius(&points, &photo.features.keypoints);
-			if let Some(zoom) = mark.zoom {
-				scale = zoom;
-			}
+			scale = match (mark.zoom, lens_change) {
+				(Some(zoom), _) => zoom,
+				(None, Some(change)) => scale * change,
+				(None, None) => scale,
+			};
 			(source, note) = (Source::Mark, "your mark".to_string());
 		} else {
 			let tolerance = RANSAC_TOLERANCE * area_width(&points, radius);
+			// Only a change of lens or photo size is a switch; the same lens and size give exactly 1.
+			let lens_step = lens_change.filter(|&change| change != 1.0);
 			let (m, agreed, fallback) = crate::profile::work(crate::profile::Work::Match, || {
-				find(&reference, &photo.features, tolerance, reach)
+				find(&reference, &photo.features, tolerance, reach, lens_step)
 			});
 			let whole = if fallback { ", whole photo" } else { "" };
 			let lost = |note: String| Hit { source: Source::Lost, note, ..hit(&points, scale, k) };
@@ -479,7 +541,7 @@ pub fn track(
 				path.push(lost(format!("LOST ({agreed} features{whole}), estimated")));
 				continue;
 			};
-			let (ok, step, turn) = plausible(&m);
+			let (ok, step, turn) = plausible(&m, lens_step);
 			if !ok {
 				path.push(lost(format!(
 					"LOST (fit zooms {step:.2}x, turns {turn:+.0} deg{whole}), estimated"
@@ -492,6 +554,7 @@ pub fn track(
 			points = points.iter().map(|&p| apply(&m, p)).collect();
 			(source, note) = (Source::Tracked, format!("{agreed} features{whole}"));
 		}
+		last_lens = lens;
 		path.push(Hit { source, note, ..hit(&points, scale, k) });
 		// Clouds deform, so features come from the latest find, never from a lost photo.
 		let fresh = features_near(&photo.features, &points, radius);
@@ -643,7 +706,7 @@ mod tests {
 			})
 			.collect();
 		to[3] = (500.0, 500.0);
-		let (m, agreed) = estimate_similarity(&from, &to, 1.0).unwrap();
+		let (m, agreed) = estimate_similarity(&from, &to, 1.0, None).unwrap();
 		assert_eq!(agreed, 29);
 		for r in 0..2 {
 			for c in 0..3 {
@@ -678,11 +741,11 @@ mod tests {
 	#[test]
 	fn near_tied_fits_go_to_the_one_that_turns_less() {
 		let (from, to) = two_fits(10, 11);
-		let (m, agreed) = estimate_similarity(&from, &to, 1.0).unwrap();
+		let (m, agreed) = estimate_similarity(&from, &to, 1.0, None).unwrap();
 		assert_eq!(agreed, 10);
 		assert!(turn_degrees(&m).abs() < 0.1, "{m:?}");
 		let (from, to) = two_fits(10, 20);
-		let (m, agreed) = estimate_similarity(&from, &to, 1.0).unwrap();
+		let (m, agreed) = estimate_similarity(&from, &to, 1.0, None).unwrap();
 		assert_eq!(agreed, 20);
 		assert!((turn_degrees(&m) - 9.0).abs() < 0.1, "{m:?}");
 	}
@@ -719,21 +782,66 @@ mod tests {
 	#[test]
 	fn the_window_links_small_moves_and_falls_back_for_big_ones() {
 		let reference = scattered(40, 0.0, 0.0);
-		let (m, agreed, fallback) = find(&reference, &scattered(40, 6.0, 2.0), 6.0, Some(3.0));
+		let (m, agreed, fallback) = find(&reference, &scattered(40, 6.0, 2.0), 6.0, Some(3.0), None);
 		assert!(!fallback && agreed >= MIN_INLIERS);
 		assert!((m.unwrap()[0][2] - 6.0).abs() < 1e-3);
 		let far = scattered(40, 400.0, 250.0);
-		let (m, agreed, fallback) = find(&reference, &far, 6.0, Some(3.0));
+		let (m, agreed, fallback) = find(&reference, &far, 6.0, Some(3.0), None);
 		assert!(fallback && agreed >= MIN_INLIERS);
-		assert_eq!((m, agreed), similarity(&reference, &far, 6.0));
+		assert_eq!((m, agreed), similarity(&reference, &far, 6.0, None));
 		assert!((m.unwrap()[1][2] - 250.0).abs() < 1e-3);
 	}
 
 	#[test]
 	fn plausible_rejects_spins_and_big_zooms() {
-		assert!(!plausible(&[[10.0, 0.0, 0.0], [0.0, 10.0, 0.0]]).0);
-		assert!(!plausible(&[[0.7, -0.7, 0.0], [0.7, 0.7, 0.0]]).0);
-		assert!(plausible(&[[2.5, 0.05, 0.0], [-0.05, 2.5, 0.0]]).0);
+		assert!(!plausible(&[[10.0, 0.0, 0.0], [0.0, 10.0, 0.0]], None).0);
+		assert!(!plausible(&[[0.7, -0.7, 0.0], [0.7, 0.7, 0.0]], None).0);
+		assert!(plausible(&[[2.5, 0.05, 0.0], [-0.05, 2.5, 0.0]], None).0);
+		// A known lens switch: the zoom must match the ratio, which may pass `MAX_STEP_ZOOM` (14 to 120 mm).
+		assert!(plausible(&[[2.55, 0.0, 0.0], [0.0, 2.55, 0.0]], Some(2.5)).0);
+		assert!(!plausible(&[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], Some(2.5)).0);
+		assert!(plausible(&[[8.6, 0.0, 0.0], [0.0, 8.6, 0.0]], Some(120.0 / 14.0)).0);
+	}
+
+	/// `scattered` features zoomed by `zoom` about (400, 375), the middle of where they lie.
+	fn zoomed(zoom: f32) -> Features {
+		let mut features = scattered(40, 0.0, 0.0);
+		for kp in &mut features.keypoints {
+			(kp.x, kp.y) = (400.0 + (kp.x - 400.0) * zoom, 375.0 + (kp.y - 375.0) * zoom);
+		}
+		features
+	}
+
+	fn run(features: Vec<Features>, marks: &[Option<Mark>], focals: &[Option<f64>]) -> Vec<Hit> {
+		let sizes = vec![(1024, 768); features.len()];
+		let photos = features.into_iter().map(|features| Photo { small: (1024, 768), features });
+		track(photos, &sizes, 1.0, marks, focals)
+	}
+
+	#[test]
+	fn a_mark_without_zoom_takes_the_lens_change_and_an_explicit_zoom_wins() {
+		let mark = |zoom| Some(Mark { points: vec![(400.0, 375.0)], zoom });
+		let photos = || (0..4).map(|_| scattered(40, 0.0, 0.0)).collect();
+		let marks = [mark(None), mark(None), mark(Some(1.5)), mark(None)];
+		let scales = |focals: &[Option<f64>]| -> Vec<f64> {
+			run(photos(), &marks, focals).iter().map(|hit| hit.scale).collect()
+		};
+		assert_eq!(scales(&[Some(48.0), Some(120.0), Some(24.0), Some(48.0)]), [1.0, 2.5, 1.5, 3.0]);
+		assert_eq!(scales(&[Some(48.0), Some(120.0), Some(24.0), None]), [1.0, 2.5, 1.5, 1.5]);
+		assert_eq!(scales(&[None; 4]), [1.0, 1.0, 1.5, 1.5], "without focal lengths, as before");
+	}
+
+	#[test]
+	fn a_lens_switch_fit_must_zoom_as_the_lenses_say() {
+		let marks = [Some(Mark { points: vec![(400.0, 375.0)], zoom: None }), None];
+		let step = |focals: [Option<f64>; 2]| {
+			let path = run(vec![zoomed(1.0), zoomed(2.5)], &marks, &focals);
+			(path[1].source, (path[1].scale * 1e3).round() / 1e3)
+		};
+		assert_eq!(step([Some(48.0), Some(120.0)]), (Source::Tracked, 2.5));
+		assert_eq!(step([None, None]), (Source::Tracked, 2.5), "without focal lengths, as before");
+		assert_eq!(step([Some(48.0), Some(48.0)]).0, Source::Tracked, "the same lens is no switch");
+		assert_eq!(step([Some(48.0), Some(24.0)]).0, Source::Lost, "EXIF says 0.5x, the fit 2.5x");
 	}
 
 	#[test]
