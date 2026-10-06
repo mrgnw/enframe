@@ -529,10 +529,19 @@ fn solve3(a: [[f32; 3]; 3], b: [f32; 3]) -> [f32; 3] {
 /// is exact, so the product is the same as OpenCV's for any weight above 1e-37.
 fn exp32f(values: &mut [f32], index: &mut Vec<u8>) {
 	const A0: f64 = 0.9670371139572337719125840413672004409288e-2;
+	#[allow(clippy::excessive_precision, reason = "matches OpenCV's constant bit for bit")]
 	const A1: f32 = (0.5550339366753125211915322047004666939128e-1 / A0) as f32;
+	#[allow(clippy::excessive_precision, reason = "matches OpenCV's constant bit for bit")]
 	const A2: f32 = (0.2402265109513301490103372422686535526573 / A0) as f32;
+	#[allow(clippy::excessive_precision, reason = "matches OpenCV's constant bit for bit")]
 	const A3: f32 = (0.6931471805521448196800669615864773144641 / A0) as f32;
+	#[allow(clippy::excessive_precision, reason = "matches OpenCV's constant bit for bit")]
 	const A4: f32 = (1.000000000000002438532970795181890933776 / A0) as f32;
+	#[allow(
+		clippy::approx_constant,
+		clippy::excessive_precision,
+		reason = "matches OpenCV's constant bit for bit"
+	)]
 	const PRESCALE: f64 = 1.4426950408889634073599246810019 * 64.0;
 	const MAX_VAL: f64 = 3000.0 * 64.0;
 	static TABLE: std::sync::LazyLock<[f32; 64]> =
@@ -559,9 +568,13 @@ fn exp32f(values: &mut [f32], index: &mut Vec<u8>) {
 #[inline(always)]
 fn fast_atan2(y: f32, x: f32) -> f32 {
 	const DEG: f32 = (180.0 / std::f64::consts::PI) as f32;
+	#[allow(clippy::excessive_precision, reason = "matches OpenCV's constant bit for bit")]
 	const P1: f32 = 0.9997878412794807 * DEG;
+	#[allow(clippy::excessive_precision, reason = "matches OpenCV's constant bit for bit")]
 	const P3: f32 = -0.3258083974640975 * DEG;
+	#[allow(clippy::excessive_precision, reason = "matches OpenCV's constant bit for bit")]
 	const P5: f32 = 0.1555786518463281 * DEG;
+	#[allow(clippy::excessive_precision, reason = "matches OpenCV's constant bit for bit")]
 	const P7: f32 = -0.04432655554792128 * DEG;
 	let (ax, ay) = (x.abs(), y.abs());
 	let c = ax.min(ay) / (ax.max(ay) + f64::EPSILON as f32);
