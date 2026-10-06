@@ -11,5 +11,5 @@ Original iPhone files record the focal length (35 mm equivalent), which gives ea
 
 - [ ] On a sequence with focal lengths, fewer manual zoom marks are needed, measured.
 - [ ] A1 accuracy is the same or better. Photos without focal lengths behave exactly as before.
-- [ ] Needs real iPhone originals: ask the user for a sample folder before starting.
+- [ ] Uses the Girona photos: they carry `FocalLengthIn35mmFormat` (IMG_4697 48 mm, IMG_4698 120 mm, ratio 2.5, which matches the `@2.5` mark).
 - [ ] `bash analysis/check.sh` passes.
