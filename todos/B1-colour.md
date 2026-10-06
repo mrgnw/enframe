@@ -1,6 +1,6 @@
 # B1 · Keep Display P3 and label the clip
 
-Depends on: B3 (both touch `imageio.rs`) · Model: Opus · Size: M
+Depends on: — · Model: Opus · Size: M
 Touches: `rust/src/decode.rs`, `rust/src/imageio.rs`, `rust/src/avif.rs`, `rust/src/main.rs` (ffmpeg arguments, PNG frames), README, `docs/rust.md`
 
 ## Why
