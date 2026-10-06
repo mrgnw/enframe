@@ -1,6 +1,6 @@
 # A5b · Points syntax on the command line
 
-Depends on: A5a · Blocks: E3 · Model: Sonnet · Size: S
+Depends on: — · Blocks: E3 · Model: Sonnet · Size: S
 Touches: `rust/src/main.rs` (CLI), `analysis/girona_all.sh`, `analysis/tracking_benchmark.py`, README, `docs/rust.md`
 
 ## Goal

@@ -17,19 +17,19 @@ pinframe's Rust CLI is the main line and runs: `bash analysis/check.sh` passes 1
 |-|-|-|-|-|-|
 | [A2](todos/A2-tracker-sensitivity.md) | Tracker sensitivity to tiny pixel differences | — | `rust/src/track.rs`, `check.sh` expectations | Opus | M |
 | [A3](todos/A3-track-edge.md) | Smaller tracking size for speed, if accuracy holds | — | `rust/src/track.rs` (constant), docs | Terra | S |
-| [A5a](todos/A5a-points-tracker.md) | Track a set of points instead of a box (design in [A5](todos/A5-reference-points.md)) | — | `track.rs`, `main.rs` (marks), baseline | Opus | M |
-| [A5b](todos/A5b-points-syntax.md) | Points syntax on the command line | A5a | `main.rs` (CLI), `girona_all.sh`, README | Sonnet | S |
+| [A5b](todos/A5b-points-syntax.md) | Points syntax on the command line | — | `main.rs` (CLI), `girona_all.sh`, README | Sonnet | S |
 | [A6](todos/A6-skip-photos.md) ⚑ | Skip photos where the feature is hidden | A5b | `track.rs`, `main.rs`, README | Sonnet | S |
 | [B4](todos/B4-zoom-from-exif.md) | Seed lens-switch zoom from EXIF focal length | — | `rust/src/track.rs`, `decode.rs` | Opus | M |
+| [D2](todos/D2-build-downloads.md) | Fetch the C library sources once, reliably | — | `rust/build.rs` | Sonnet | S |
 | [D1](todos/D1-linux-build.md) | Build and test on Linux | — | `rust/build.rs`, `rust/src/decode.rs`, `imageio.rs` gating | Opus | M |
 | [E5](todos/E5-marking-mockup.md) ⚑ | Marking mockup: points and the fix list (merged, waiting for review) | — | `mockups/`, `analysis/mockup_data.py`, `docs/ui-plan.md` | Sonnet | S |
 | [E2](todos/E2-serve-endpoint.md) | enframe-serve endpoint that runs pinframe | — | enframe repo | Opus | M |
 | [E3](todos/E3-marking-screen.md) | Marking screen in enframe | E2, E5, A5b | enframe repo | Opus | L |
 | [E4](todos/E4-preview-export.md) | Preview and export screen in enframe | E3 | enframe repo | Sonnet | M |
 
-Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md), [A1](todos/done/1006-A1-tracking-benchmark.md), [B1](todos/done/1006-B1-colour.md), [F1](todos/done/1006-F1-python-reference.md), [B2](todos/done/1006-B2-capture-time-order.md), [A4](todos/done/1006-A4-search-window.md).
+Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md), [A1](todos/done/1006-A1-tracking-benchmark.md), [B1](todos/done/1006-B1-colour.md), [F1](todos/done/1006-F1-python-reference.md), [B2](todos/done/1006-B2-capture-time-order.md), [A4](todos/done/1006-A4-search-window.md), [A5a](todos/done/1006-A5a-points-tracker.md).
 
-Order is in [todos/_priority.md](todos/_priority.md). Running: A5a.
+Order is in [todos/_priority.md](todos/_priority.md). Running: A5b, D2.
 
 ## Decisions
 
