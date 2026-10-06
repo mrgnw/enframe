@@ -28,7 +28,7 @@ pinframe's Rust CLI is the main line and runs: `bash analysis/check.sh` passes 1
 | [E2](todos/E2-serve-endpoint.md) | enframe-serve endpoint that runs pinframe | E1, E0 | enframe repo | Opus | M |
 | [E3](todos/E3-marking-screen.md) | Marking screen in enframe | E2 | enframe repo | Opus | L |
 | [E4](todos/E4-preview-export.md) | Preview and export screen in enframe | E3 | enframe repo | Sonnet | M |
-| [F1](todos/F1-python-reference.md) ⚑ | Keep or retire the Python reference | decision | `anchor.py`, `check.sh` | — | S |
+| [F1](todos/F1-python-reference.md) | Retire the Python reference | A1 | `anchor.py`, `check.sh`, README | Sonnet | S |
 
 Order is in [todos/_priority.md](todos/_priority.md). Safe pairs to run together today: **E1 + B3**, then **A1 + B2**.
 
@@ -37,11 +37,11 @@ Order is in [todos/_priority.md](todos/_priority.md). Safe pairs to run together
 Made on 2026-10-06:
 
 - **B1 colour:** keep Display P3 pixel values and label the clip with the photos' profile. This also covers the old C1 card.
+- **F1 Python:** retire `anchor.py` once A1's benchmark baseline can replace it in `check.sh`.
 
 Waiting for the user:
 
 - ⚑ **E0:** the seven open questions in `docs/ui-plan.md`, starting with whether a box mark means its centre and whether dragging a box sets zoom.
-- ⚑ **F1:** keep `anchor.py` as the reference that `check.sh` compares against, or retire it once the Rust tests carry their own fixtures.
 
 ## Out of scope for now
 

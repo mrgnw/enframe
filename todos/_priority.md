@@ -12,4 +12,4 @@ Work top to bottom. Run at most two at once, and only a pair the plan marks safe
 8. [B4](B4-zoom-from-exif.md): seed lens-switch zoom from EXIF focal length. Needs real iPhone originals.
 9. UI: [E0](E0-ui-decisions.md) ⚑ decisions, then [E2](E2-serve-endpoint.md), [E3](E3-marking-screen.md), [E4](E4-preview-export.md), in that order.
 10. [B1](B1-colour.md): keep Display P3 and label the clip. After B3.
-11. [F1](F1-python-reference.md) ⚑: keep or retire the Python reference. Decide before A2 merges a tracking change.
+11. [F1](F1-python-reference.md): retire the Python reference. Right after A1, before any card that changes tracking.
