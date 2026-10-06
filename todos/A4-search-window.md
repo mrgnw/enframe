@@ -1,6 +1,6 @@
 # A4 · Look for the feature near where it should be
 
-Depends on: F1 · Blocks: A5 · Model: Opus · Size: M
+Depends on: — · Blocks: A5 · Model: Opus · Size: M
 Touches: `rust/src/track.rs`, `analysis/check.sh` expectations, `docs/rust.md`
 
 ## Why

@@ -1,6 +1,6 @@
 # A2 · Make tracking less sensitive to tiny pixel differences
 
-Depends on: F1 · Model: Opus · Size: M
+Depends on: — · Model: Opus · Size: M
 Touches: `rust/src/track.rs`, `analysis/check.sh` expectations, docs
 
 Decoding the same AVIF photos through macOS ImageIO instead of libavif changes pixels by at most 2–3 levels (PSNR about 50 dB). Yet on the Girona job the rects at IMG_4689/4690 moved by up to 1.60e-1 and the anchor's scale by 1.7e-1. Lossy re-encodes show the same effect at lens switches: JPEG 1.7e-2, HEIC 4.5e-2. Real photos arrive in many formats, so this matters for the core feature. Details: `docs/rust.md`, "Decode speed".

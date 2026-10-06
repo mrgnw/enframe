@@ -15,22 +15,21 @@ pinframe's Rust CLI is the main line and runs: `bash analysis/check.sh` passes 1
 
 | Card | What | Depends on | Touches | Model | Size |
 |-|-|-|-|-|-|
-| [A2](todos/A2-tracker-sensitivity.md) | Tracker sensitivity to tiny pixel differences | F1 | `rust/src/track.rs`, `check.sh` expectations | Opus | M |
-| [A3](todos/A3-track-edge.md) | Smaller tracking size for speed, if accuracy holds | F1 | `rust/src/track.rs` (constant), docs | Terra | S |
-| [A4](todos/A4-search-window.md) | Look for the feature near where it should be | F1 | `rust/src/track.rs`, docs | Opus | M |
+| [A2](todos/A2-tracker-sensitivity.md) | Tracker sensitivity to tiny pixel differences | — | `rust/src/track.rs`, `check.sh` expectations | Opus | M |
+| [A3](todos/A3-track-edge.md) | Smaller tracking size for speed, if accuracy holds | — | `rust/src/track.rs` (constant), docs | Terra | S |
+| [A4](todos/A4-search-window.md) | Look for the feature near where it should be | — | `rust/src/track.rs`, docs | Opus | M |
 | [A5](todos/A5-reference-points.md) ⚑ | Several reference points instead of a box | A4 | `track.rs`, `main.rs` (CLI, sidecar), README | Opus | L |
 | [B2](todos/B2-capture-time-order.md) | Order photos by capture time | — | `rust/src/main.rs` (path order), `decode.rs` (EXIF read) | Terra | S |
-| [B4](todos/B4-zoom-from-exif.md) | Seed lens-switch zoom from EXIF focal length | F1, B2 | `rust/src/track.rs`, `decode.rs` | Opus | M |
+| [B4](todos/B4-zoom-from-exif.md) | Seed lens-switch zoom from EXIF focal length | B2 | `rust/src/track.rs`, `decode.rs` | Opus | M |
 | [D1](todos/D1-linux-build.md) | Build and test on Linux | — | `rust/build.rs`, `rust/src/decode.rs`, `imageio.rs` gating | Opus | M |
 | [E5](todos/E5-marking-mockup.md) ⚑ | Marking mockup: points and the fix list (merged, waiting for review) | — | `mockups/`, `analysis/mockup_data.py`, `docs/ui-plan.md` | Sonnet | S |
 | [E2](todos/E2-serve-endpoint.md) | enframe-serve endpoint that runs pinframe | — | enframe repo | Opus | M |
 | [E3](todos/E3-marking-screen.md) | Marking screen in enframe | E2, E5, A5 | enframe repo | Opus | L |
 | [E4](todos/E4-preview-export.md) | Preview and export screen in enframe | E3 | enframe repo | Sonnet | M |
-| [F1](todos/F1-python-reference.md) | Retire the Python reference | — | `anchor.py`, `check.sh`, README | Sonnet | S |
 
-Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md), [A1](todos/done/1006-A1-tracking-benchmark.md), [B1](todos/done/1006-B1-colour.md).
+Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md), [A1](todos/done/1006-A1-tracking-benchmark.md), [B1](todos/done/1006-B1-colour.md), [F1](todos/done/1006-F1-python-reference.md).
 
-Order is in [todos/_priority.md](todos/_priority.md). Safe pairs, in order: **F1 + E5**, then **B2 + A4**.
+Order is in [todos/_priority.md](todos/_priority.md). Safe pairs, in order: **B2 + A4**.
 
 ## Decisions
 

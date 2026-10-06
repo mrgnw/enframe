@@ -8,7 +8,7 @@ Machine: Mac mini, Apple M4 Pro (8 performance + 4 efficiency cores), 24 GB, mac
 
 **Port to Rust when pinframe moves into enframe; until then keep `anchor.py` as the CLI and the reference. Skip the PyO3 hybrid.**
 
-Superseded 2026-10-06 ([F1](../todos/F1-python-reference.md)): the Rust CLI is now the only implementation, checked against the committed tracking baseline (`analysis/tracking_baseline.json`) instead of `anchor.py`, which has been deleted. The measurements below are historical.
+Superseded 2026-10-06 ([F1](../todos/done/1006-F1-python-reference.md)): the Rust CLI is now the only implementation, checked against the committed tracking baseline (`analysis/tracking_baseline.json`) instead of `anchor.py`, which has been deleted. The measurements below are historical.
 
 ## Persistent feature cache and sidecar-only tracking
 

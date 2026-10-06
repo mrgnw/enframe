@@ -1,3 +1,7 @@
+---
+branch: f1-retire-python
+---
+
 # F1 · Retire the Python reference
 
 Depends on: — · Blocks: A2, A3, A4, A5 (they change tracking on purpose) · Model: Sonnet · Size: S
@@ -17,5 +21,9 @@ What goes with it: the mouse window for drawing a box. Until the marking screen 
 
 ## Done when
 
-- [ ] `check.sh` runs no Python tracker and still fails when Girona tracking moves (try a deliberate change to `RANSAC_TOLERANCE`, then revert it).
-- [ ] `bash analysis/check.sh` passes.
+- [x] `check.sh` runs no Python tracker and still fails when Girona tracking moves (try a deliberate change to `RANSAC_TOLERANCE`, then revert it).
+- [x] `bash analysis/check.sh` passes.
+
+## Result
+
+`anchor.py` and 12 scripts that only ran or compared it are gone. `check.sh` compares the Girona run against `analysis/tracking_baseline.json` exactly (rect 1e-9, scale 5e-5, point 6e-4 px, each set by storage precision); a `RANSAC_TOLERANCE` change fails it. Comments in `rust/src` that cite `anchor.py` as the origin of a behaviour remain.
