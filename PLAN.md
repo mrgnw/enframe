@@ -41,9 +41,9 @@ One coordinating thread runs the plan; agents do the card work. The coordinator 
 
 | Card | What | Depends on | Touches | Model | Size |
 |-|-|-|-|-|-|
-| [M1](todos/M1-serve.md) | Standalone serve: track endpoint + static UI | — | `serve/` (new), `analysis/check.sh` | Sonnet | M |
-| [M2](todos/M2-marking-live.md) | Marking screen, live | M1 | `serve/static/` | Opus | L |
-| [M3](todos/M3-preview-export.md) | Preview and export screen, live | M2 | `serve/static/` | Sonnet | M |
+| [M1](todos/M1-serve.md) | SvelteKit app: track and export endpoints | — | `web/` (new), `analysis/check.sh` | Sonnet | M |
+| [M2](todos/M2-marking-live.md) | Marking screen, live | M1 | `web/src/` | Opus | L |
+| [M3](todos/M3-preview-export.md) | Preview and export screen, live | M2 | `web/src/` | Sonnet | M |
 | [D1](todos/D1-linux-build.md) | Build and test on Linux | — | `rust/build.rs`, `rust/src/decode.rs`, `imageio.rs` gating | Opus | M |
 | [E2](todos/E2-serve-endpoint.md) | enframe-serve endpoint that runs pinframe | enframe phase-2 | enframe repo | Opus | M |
 | [E3](todos/E3-marking-screen.md) | Marking screen in enframe | E2 | enframe repo | Opus | L |
@@ -65,7 +65,7 @@ Made on 2026-10-06:
 - **B4 lens:** a mark without `@zoom` follows the EXIF lens ratio; a typed `@zoom` wins.
 - **E5 trail style:** `steps` is the default, `flow` stays as an option, rebuilt in round 5 as a continuous glow. Mockup signed off 2026-10-06.
 - **E2 timing:** wait for enframe's `phase-2-remote-targets` to merge before starting E2.
-- **MVP (M1–M3):** ship the MVP as a standalone plain-HTML app in this repo (`serve/`, Python stdlib server, port 7341), built from the signed-off mockups. The enframe chain (E2–E4) becomes the later integration, still gated on phase-2.
+- **MVP (M1–M3):** ship the MVP as a SvelteKit app in this repo (`web/`, Svelte 5, adapter-node, port 7341), built from the signed-off mockups; server routes wrap the pinframe binary. Chosen over a Python or axum server because the marking UI is the expensive artifact and Svelte components port into enframe at E3; the thin backend gets rewritten as an axum route at E2 (enframe-serve is axum 0.8). E2–E4 stay as the later integration, still gated on phase-2.
 
 Waiting for the user:
 
