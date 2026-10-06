@@ -10,7 +10,9 @@ const PNG_SIGNATURE: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Format {
 	Avif,
+	Heic,
 	Jpeg,
+	Jxl,
 	Png,
 }
 
@@ -18,18 +20,26 @@ enum Format {
 pub fn memory_cost(path: &Path) -> Result<(usize, usize), String> {
 	Ok(match format(path)? {
 		Format::Png => (8, 13),
-		Format::Avif | Format::Jpeg => (6, 11),
+		Format::Avif | Format::Jpeg | Format::Heic | Format::Jxl => (6, 11),
 	})
 }
 
 fn format_from_magic(bytes: &[u8]) -> Option<Format> {
-	if bytes.len() >= 12
-		&& &bytes[4..8] == b"ftyp"
-		&& bytes[8..].chunks_exact(4).any(|brand| matches!(brand, b"avif" | b"avis"))
-	{
-		Some(Format::Avif)
+	if bytes.len() >= 12 && &bytes[4..8] == b"ftyp" {
+		let mut brands = bytes[8..].chunks_exact(4);
+		if brands.clone().any(|brand| matches!(brand, b"avif" | b"avis")) {
+			Some(Format::Avif)
+		} else if brands
+			.any(|brand| matches!(brand, b"heic" | b"heix" | b"hevc" | b"heim" | b"heis" | b"mif1" | b"msf1"))
+		{
+			Some(Format::Heic)
+		} else {
+			None
+		}
 	} else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
 		Some(Format::Jpeg)
+	} else if bytes.starts_with(&[0xff, 0x0a]) || bytes.starts_with(b"\0\0\0\x0cJXL \r\n\x87\n") {
+		Some(Format::Jxl)
 	} else if bytes.starts_with(&PNG_SIGNATURE) {
 		Some(Format::Png)
 	} else {
@@ -40,13 +50,15 @@ fn format_from_magic(bytes: &[u8]) -> Option<Format> {
 fn format(path: &Path) -> Result<Format, String> {
 	let mut bytes = [0; 32];
 	let count = File::open(path).map_err(|e| e.to_string())?.read(&mut bytes).map_err(|e| e.to_string())?;
-	format_from_magic(&bytes[..count]).ok_or_else(|| "unsupported format (supported: AVIF, JPEG, PNG)".into())
+	format_from_magic(&bytes[..count])
+		.ok_or_else(|| "unsupported format (supported: AVIF, HEIC, JPEG XL, JPEG, PNG)".into())
 }
 
 /// The first image as 8-bit RGB, oriented for display.
 pub fn decode(path: &Path) -> Result<Image, String> {
 	match format(path)? {
 		Format::Avif => crate::avif::decode(path, 1),
+		Format::Heic | Format::Jxl => crate::imageio::decode(path),
 		Format::Jpeg => decode_jpeg(path),
 		Format::Png => decode_png(path),
 	}
@@ -56,6 +68,7 @@ pub fn decode(path: &Path) -> Result<Image, String> {
 pub fn oriented_size(path: &Path) -> Result<(u32, u32), String> {
 	match format(path)? {
 		Format::Avif => crate::avif::oriented_size(path),
+		Format::Heic | Format::Jxl => crate::imageio::oriented_size(path),
 		Format::Jpeg => jpeg_size(path),
 		Format::Png => png_size(path),
 	}
@@ -135,6 +148,10 @@ mod tests {
 	fn detects_supported_signatures() {
 		assert_eq!(format_from_magic(b"\0\0\0\x18ftypavif"), Some(Format::Avif));
 		assert_eq!(format_from_magic(b"\0\0\0\x18ftypmif1\0\0\0\0avif"), Some(Format::Avif));
+		assert_eq!(format_from_magic(b"\0\0\0\x18ftypheic"), Some(Format::Heic));
+		assert_eq!(format_from_magic(b"\0\0\0\x18ftypmif1"), Some(Format::Heic));
+		assert_eq!(format_from_magic(&[0xff, 0x0a]), Some(Format::Jxl));
+		assert_eq!(format_from_magic(b"\0\0\0\x0cJXL \r\n\x87\n"), Some(Format::Jxl));
 		assert_eq!(format_from_magic(&[0xff, 0xd8, 0xff, 0xe0]), Some(Format::Jpeg));
 		assert_eq!(format_from_magic(&PNG_SIGNATURE), Some(Format::Png));
 		assert_eq!(format_from_magic(b"RIFF....WEBP"), None);
@@ -144,7 +161,10 @@ mod tests {
 	fn unsupported_format_error() {
 		let path = std::env::temp_dir().join(format!("pinframe-unsupported-{}.bin", std::process::id()));
 		std::fs::write(&path, b"not a photo").unwrap();
-		assert_eq!(oriented_size(&path), Err("unsupported format (supported: AVIF, JPEG, PNG)".into()));
+		assert_eq!(
+			oriented_size(&path),
+			Err("unsupported format (supported: AVIF, HEIC, JPEG XL, JPEG, PNG)".into())
+		);
 		std::fs::remove_file(path).unwrap();
 	}
 

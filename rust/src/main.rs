@@ -7,6 +7,7 @@ mod cache;
 #[cfg(test)]
 mod checks;
 mod decode;
+mod imageio;
 mod pixels;
 mod profile;
 mod render;

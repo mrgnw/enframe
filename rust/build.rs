@@ -27,6 +27,9 @@ struct Source {
 fn main() {
 	println!("cargo:rerun-if-changed=build.rs");
 	println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
+	println!("cargo:rustc-link-lib=framework=ImageIO");
+	println!("cargo:rustc-link-lib=framework=CoreGraphics");
+	println!("cargo:rustc-link-lib=framework=CoreFoundation");
 	if std::env::var_os("MACOSX_DEPLOYMENT_TARGET").is_none() {
 		// rustc's default for aarch64-apple-darwin. Without it, cc and meson target the running macOS.
 		// SAFETY: the build script is single-threaded here.
