@@ -18,3 +18,7 @@ The server route the marking screen calls, as recommended in `docs/wasm.md` and 
 - [ ] A re-run after a mark returns in about 0.15 s on Girona with a warm cache, measured through the endpoint.
 - [ ] Rapid repeated marks never return an older result.
 - [ ] enframe's own checks pass.
+
+## Note from B2
+
+Capture-time ordering reads every photo's EXIF on each run, about 15 ms of a 0.19 s warm Girona re-run. If that matters for the marking loop, the server can fix the order after the first run instead of re-reading it.

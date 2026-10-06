@@ -1,6 +1,6 @@
 # B4 · Seed lens-switch zoom from EXIF focal length
 
-Depends on: B2 · Model: Opus · Size: M
+Depends on: — · Model: Opus · Size: M
 Touches: `rust/src/track.rs`, `rust/src/decode.rs` (EXIF read), docs
 
 ## Goal
