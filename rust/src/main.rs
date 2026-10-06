@@ -6,6 +6,7 @@ mod avif_sys;
 mod cache;
 #[cfg(test)]
 mod checks;
+mod colour;
 mod decode;
 mod imageio;
 mod pixels;
@@ -14,6 +15,7 @@ mod render;
 mod sift;
 mod track;
 
+use colour::Profile;
 use profile::{Work, step, work};
 use render::{Keep, ordered, place};
 use std::io::Write;
@@ -148,6 +150,11 @@ fn read_sizes(paths: &[PathBuf]) -> Result<Vec<(u32, u32)>, String> {
 		return Err("two photos share a file name, so --at and the .json could not tell them apart".into());
 	}
 	paths.iter().map(|p| decode::oriented_size(p).map_err(|e| format!("{}: {e}", p.display()))).collect()
+}
+
+/// Every photo's colour profile from its header; a profile pinframe cannot label stops the run.
+fn read_profiles(paths: &[PathBuf]) -> Result<Vec<Profile>, String> {
+	paths.iter().map(|p| decode::profile(p).map_err(|e| format!("{}: {e}", p.display()))).collect()
 }
 
 /// --box and every --at, by photo index, checked against the photo sizes.
@@ -356,28 +363,38 @@ enum Sink {
 	Ffmpeg(std::process::Child),
 }
 
-fn open_sink(out: &Path, size: (u32, u32), alpha: bool, fps: f64, filters: Option<&str>, run: &str) -> Sink {
+struct SinkOptions<'a> {
+	size: (u32, u32),
+	alpha: bool,
+	fps: f64,
+	filters: Option<&'a str>,
+	run: &'a str,
+	profile: Profile,
+}
+
+fn open_sink(out: &Path, o: &SinkOptions) -> Sink {
 	if suffix(out) == "avif" {
 		let threads = std::thread::available_parallelism().map_or(1, |n| n.get()) as i32;
-		let frame_ms = (1000.0 / fps).round_ties_even() as u64;
-		return Sink::Avif(avif::Encoder::new(AVIF_SPEED, AVIF_QUALITY, frame_ms, threads, run_xmp(run)));
+		let frame_ms = (1000.0 / o.fps).round_ties_even() as u64;
+		let xmp = run_xmp(o.run);
+		return Sink::Avif(avif::Encoder::new(AVIF_SPEED, AVIF_QUALITY, frame_ms, threads, xmp, o.profile));
 	}
-	let encoder: Vec<&str> = match (suffix(out).as_str(), alpha) {
-		("webm", _) => {
-			vec![
-				"-c:v",
-				"libvpx-vp9",
-				"-pix_fmt",
-				if alpha { "yuva420p" } else { "yuv420p" },
-				"-crf",
-				"30",
-				"-b:v",
-				"0",
-			]
-		}
-		("mov", true) => vec!["-c:v", "prores_ks", "-profile:v", "4444", "-pix_fmt", "yuva444p10le"],
-		_ => vec!["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18"],
+	let (encoder, pix_fmt): (Vec<&str>, &str) = match (suffix(out).as_str(), o.alpha) {
+		("webm", alpha) => (
+			vec!["-c:v", "libvpx-vp9", "-crf", "30", "-b:v", "0"],
+			if alpha { "yuva420p" } else { "yuv420p" },
+		),
+		("mov", true) => (vec!["-c:v", "prores_ks", "-profile:v", "4444"], "yuva444p10le"),
+		_ => (vec!["-c:v", "libx264", "-crf", "18"], "yuv420p"),
 	};
+	// RGB to YUV with the matrix and range the labels name; the values stay in the photos' profile.
+	// The labels go on the frames (setparams): ffmpeg 9 takes them from there, not from -color_primaries.
+	let to_yuv = format!(
+		"scale=out_color_matrix=bt709:out_range=tv,format={pix_fmt},\
+		setparams=color_primaries={}:color_trc=iec61966-2-1:colorspace=bt709:range=tv",
+		o.profile.ffmpeg_primaries()
+	);
+	let vf = o.filters.map_or(to_yuv.clone(), |f| format!("{f},{to_yuv}"));
 	let mut cmd = std::process::Command::new("ffmpeg");
 	cmd.args([
 		"-y",
@@ -386,13 +403,11 @@ fn open_sink(out: &Path, size: (u32, u32), alpha: bool, fps: f64, filters: Optio
 		"-f",
 		"rawvideo",
 		"-pix_fmt",
-		if alpha { "rgba" } else { "rgb24" },
+		if o.alpha { "rgba" } else { "rgb24" },
 	]);
-	cmd.args(["-s", &format!("{}x{}", size.0, size.1), "-r", &fps.to_string(), "-i", "-"]);
-	if let Some(f) = filters {
-		cmd.args(["-vf", f]);
-	}
-	cmd.args(&encoder).args(["-metadata", &format!("comment=pinframe-run={run}")]).arg(out);
+	cmd.args(["-s", &format!("{}x{}", o.size.0, o.size.1), "-r", &o.fps.to_string(), "-i", "-"]);
+	cmd.args(["-vf", &vf]).args(&encoder).args(["-pix_fmt", pix_fmt]);
+	cmd.args(["-metadata", &format!("comment=pinframe-run={}", o.run)]).arg(out);
 	let child =
 		cmd.stdin(std::process::Stdio::piped()).spawn().unwrap_or_else(|e| fail(&format!("ffmpeg: {e}")));
 	Sink::Ffmpeg(child)
@@ -408,10 +423,19 @@ fn run_xmp(run: &str) -> Vec<u8> {
 	.into_bytes()
 }
 
-fn save_png(path: &Path, frame: &pixels::Image) -> Result<(), String> {
+/// A --frames PNG, labelled with the sRGB chunk or Display P3's ICC profile.
+fn save_png(path: &Path, frame: &pixels::Image, profile: Profile) -> Result<(), String> {
+	static P3_ICC: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
 	let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
+	let mut info = png::Info::with_size(frame.width as u32, frame.height as u32);
+	match profile {
+		Profile::Srgb => info.srgb = Some(png::SrgbRenderingIntent::Perceptual),
+		Profile::DisplayP3 => {
+			info.icc_profile = Some(P3_ICC.get_or_init(imageio::display_p3_icc).as_slice().into())
+		}
+	}
 	let mut encoder =
-		png::Encoder::new(std::io::BufWriter::new(file), frame.width as u32, frame.height as u32);
+		png::Encoder::with_info(std::io::BufWriter::new(file), info).map_err(|e| e.to_string())?;
 	encoder.set_color(if frame.channels == 4 { png::ColorType::Rgba } else { png::ColorType::Rgb });
 	let mut writer = encoder.write_header().map_err(|e| e.to_string())?;
 	writer.write_image_data(&frame.pixels).map_err(|e| e.to_string())
@@ -426,6 +450,9 @@ struct RenderJob<'a> {
 	threads: usize,
 	frames: Option<&'a Path>,
 	avif: bool,
+	profile: Profile,
+	/// Photos to convert from sRGB to the clip's Display P3 before placing.
+	convert: &'a [bool],
 }
 
 /// A placed frame as the sink takes it: YUV for libavif, RGB(A) bytes for ffmpeg.
@@ -437,16 +464,20 @@ enum Frame {
 /// Places each photo, kept or decoded again, on worker threads and hands the frames to the sink in order.
 fn render(job: &RenderJob, sink: &mut Sink) {
 	let place_one = |i: usize| {
-		let photo = job.keep.take(i).unwrap_or_else(|| {
+		let mut photo = job.keep.take(i).unwrap_or_else(|| {
 			let path = &job.paths[i];
 			work(Work::Decode, || decode::decode(path))
 				.unwrap_or_else(|e| fail(&format!("{}: {e}", path.display())))
 		});
+		if job.convert[i] {
+			work(Work::Place, || colour::srgb_to_p3(&mut photo));
+		}
 		let frame = work(Work::Place, || place(&photo, job.sources[i], job.size, job.fill));
 		drop(photo);
 		if let Some(dir) = job.frames {
 			let path = dir.join(format!("{:04}.png", i + 1));
-			save_png(&path, &frame).unwrap_or_else(|e| fail(&format!("{}: {e}", path.display())));
+			save_png(&path, &frame, job.profile)
+				.unwrap_or_else(|e| fail(&format!("{}: {e}", path.display())));
 		}
 		if job.avif { Frame::Yuv(work(Work::Place, || avif::to_yuv420(&frame))) } else { Frame::Rgb(frame) }
 	};
@@ -572,7 +603,7 @@ fn publish(pairs: &[(&Path, &Path)], folder: &Path) {
 fn main() {
 	profile::start();
 	let args = parse_args();
-	let (paths, sizes, marks, fill, k, resources, cache, json_only) =
+	let (paths, sizes, marks, fill, k, resources, cache, json_only, profiles) =
 		step("check input and plan resources", || {
 			let mut paths = args.photos.clone();
 			// ponytail: filename order; the exported AVIFs carry no capture time to sort by
@@ -634,7 +665,9 @@ fn main() {
 				let root = args.cache.clone().unwrap_or_else(default_cache_dir);
 				Some(cache::FeatureCache::new(root).unwrap_or_else(|e| fail(&e)))
 			};
-			(paths, sizes, marks, fill, k, resources, cache, json_only)
+			let profiles =
+				if json_only { vec![] } else { read_profiles(&paths).unwrap_or_else(|e| fail(&e)) };
+			(paths, sizes, marks, fill, k, resources, cache, json_only, profiles)
 		});
 	let keep = (!json_only).then(|| Keep::new(resources.keep_bytes));
 	let path = step("decode, find features, track", || {
@@ -676,8 +709,16 @@ fn main() {
 	let clip_partial = (!json_only).then(|| partial(&args.out, &run));
 	let alpha = fill.as_ref().is_some_and(|f| f.len() == 4);
 	if let Some(clip_partial) = clip_partial.as_ref() {
+		let profile = colour::clip_profile(&profiles);
+		let convert: Vec<bool> = profiles.iter().map(|&p| p != profile).collect();
+		let converted = convert.iter().filter(|&&c| c).count();
+		if converted > 0 {
+			println!("converting {converted} sRGB photos to Display P3, the other photos' profile");
+		}
 		step("render: place and encode", || {
-			let mut sink = open_sink(clip_partial, size, alpha, args.fps, args.vf.as_deref(), &run);
+			let filters = args.vf.as_deref();
+			let options = SinkOptions { size, alpha, fps: args.fps, filters, run: &run, profile };
+			let mut sink = open_sink(clip_partial, &options);
 			let job = RenderJob {
 				paths: &paths,
 				sources: &sources,
@@ -687,6 +728,8 @@ fn main() {
 				threads: resources.render_threads,
 				frames: args.frames.as_deref(),
 				avif: suffix(&args.out) == "avif",
+				profile,
+				convert: &convert,
 			};
 			render(&job, &mut sink);
 			finish_sink(sink, clip_partial);

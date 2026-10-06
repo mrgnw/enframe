@@ -1,5 +1,6 @@
 //! Photo input decoding. Dispatches by file signatures so renamed photos still work.
 
+use crate::colour::{self, Profile};
 use crate::pixels::{Image, orient};
 use std::fs::File;
 use std::io::{BufReader, Read};
@@ -82,6 +83,16 @@ pub fn decode(path: &Path) -> Result<Image, String> {
 	}
 }
 
+/// The photo's colour profile from its header. A photo with no label is sRGB, as browsers show it.
+pub fn profile(path: &Path) -> Result<Profile, String> {
+	match format(path)? {
+		Format::Avif => crate::avif::profile(path),
+		Format::Heic | Format::Jxl => crate::imageio::profile(path),
+		Format::Jpeg => jpeg_profile(path),
+		Format::Png => png_profile(path),
+	}
+}
+
 /// Width and height after orientation, without decoding pixels.
 pub fn oriented_size(path: &Path) -> Result<(u32, u32), String> {
 	match format(path)? {
@@ -116,6 +127,13 @@ fn jpeg_size(path: &Path) -> Result<(u32, u32), String> {
 	Ok(if matches!(jpeg_orientation(path), 5..=8) { (height, width) } else { (width, height) })
 }
 
+fn jpeg_profile(path: &Path) -> Result<Profile, String> {
+	let file = File::open(path).map_err(|e| e.to_string())?;
+	let mut decoder = zune_jpeg::JpegDecoder::new(BufReader::new(file));
+	decoder.decode_headers().map_err(|e| format!("read header: {e}"))?;
+	decoder.icc_profile().map_or(Ok(Profile::Srgb), |icc| colour::from_icc(&icc))
+}
+
 fn decode_jpeg(path: &Path) -> Result<Image, String> {
 	let file = File::open(path).map_err(|e| e.to_string())?;
 	let mut decoder = zune_jpeg::JpegDecoder::new(BufReader::new(file));
@@ -138,6 +156,16 @@ fn png_reader(path: &Path) -> Result<png::Reader<BufReader<File>>, String> {
 fn png_size(path: &Path) -> Result<(u32, u32), String> {
 	let reader = png_reader(path)?;
 	Ok(reader.info().size())
+}
+
+/// cICP outranks iCCP, which outranks sRGB (PNG third edition); gAMA and cHRM alone are ignored.
+fn png_profile(path: &Path) -> Result<Profile, String> {
+	let reader = png_reader(path)?;
+	let info = reader.info();
+	if let Some(cicp) = info.coding_independent_code_points {
+		return colour::from_cicp(cicp.color_primaries.into(), cicp.transfer_function.into());
+	}
+	info.icc_profile.as_deref().map_or(Ok(Profile::Srgb), colour::from_icc)
 }
 
 fn decode_png(path: &Path) -> Result<Image, String> {
@@ -206,6 +234,38 @@ mod tests {
 			let worst = image.pixels.iter().zip(expected.pixels).map(|(a, b)| a.abs_diff(b)).max().unwrap();
 			assert!(worst <= 16, "{name}: reference arrangement differs by {worst}");
 		}
+	}
+
+	#[test]
+	fn profiles_from_fixtures_and_png_labels() {
+		for name in ["orientation-6.heic", "orientation-6.jxl", "orientation-6.png"] {
+			assert_eq!(profile(&Path::new("testdata").join(name)), Ok(Profile::Srgb), "{name}");
+		}
+		let path = std::env::temp_dir().join(format!("pinframe-profile-{}.png", std::process::id()));
+		let p3_icc = crate::imageio::display_p3_icc();
+		let adobe_icc = std::fs::read("/System/Library/ColorSync/Profiles/AdobeRGB1998.icc").unwrap();
+		let write = |icc: Option<&[u8]>, cicp: Option<[u8; 4]>| {
+			let mut info = png::Info::with_size(1, 1);
+			info.color_type = png::ColorType::Rgb;
+			info.icc_profile = icc.map(|icc| icc.to_vec().into());
+			let file = std::io::BufWriter::new(File::create(&path).unwrap());
+			let mut writer = png::Encoder::with_info(file, info).unwrap().write_header().unwrap();
+			if let Some(cicp) = cicp {
+				writer.write_chunk(png::chunk::ChunkType(*b"cICP"), &cicp).unwrap();
+			}
+			writer.write_image_data(&[0, 0, 0]).unwrap();
+		};
+		write(None, None);
+		assert_eq!(profile(&path), Ok(Profile::Srgb), "unlabelled");
+		write(Some(&p3_icc), None);
+		assert_eq!(profile(&path), Ok(Profile::DisplayP3), "iCCP");
+		write(None, Some([12, 13, 0, 1]));
+		assert_eq!(profile(&path), Ok(Profile::DisplayP3), "cICP");
+		write(Some(&adobe_icc), Some([1, 13, 0, 1]));
+		assert_eq!(profile(&path), Ok(Profile::Srgb), "cICP outranks iCCP");
+		write(Some(&adobe_icc), None);
+		assert!(profile(&path).is_err(), "Adobe RGB");
+		std::fs::remove_file(path).unwrap();
 	}
 
 	#[test]

@@ -1,5 +1,6 @@
 //! HEIC and JPEG XL through macOS ImageIO, preserving the decoder's native pixels.
 
+use crate::colour::{self, Profile};
 use crate::pixels::{Image, orient};
 use std::ffi::c_void;
 use std::fs;
@@ -50,6 +51,10 @@ unsafe extern "C" {
 	fn CGImageGetBitmapInfo(image: CGImageRef) -> u32;
 	fn CGImageGetDataProvider(image: CGImageRef) -> CFTypeRef;
 	fn CGDataProviderCopyData(provider: CFTypeRef) -> CFDataRef;
+	static kCGColorSpaceDisplayP3: CFTypeRef;
+	fn CGImageGetColorSpace(image: CGImageRef) -> CFTypeRef;
+	fn CGColorSpaceCreateWithName(name: CFTypeRef) -> CFTypeRef;
+	fn CGColorSpaceCopyICCData(space: CFTypeRef) -> CFDataRef;
 }
 
 #[link(name = "CoreFoundation", kind = "framework")]
@@ -141,8 +146,40 @@ pub fn oriented_size(path: &Path) -> Result<(u32, u32), String> {
 	Ok(if matches!(orientation(source.source.0), 5..=8) { (height, width) } else { (width, height) })
 }
 
+/// The colour profile ImageIO reports, identified from the ICC data it gives for that colour space.
+pub fn profile(path: &Path) -> Result<Profile, String> {
+	let source = source(path)?;
+	let image = Release(unsafe { CGImageSourceCreateImageAtIndex(source.source.0, 0, ptr::null()) });
+	if image.0.is_null() {
+		return Err("ImageIO could not decode image header".into());
+	}
+	let space = unsafe { CGImageGetColorSpace(image.0) };
+	if space.is_null() {
+		return Err("ImageIO reports no colour space".into());
+	}
+	let icc = Release(unsafe { CGColorSpaceCopyICCData(space) });
+	if icc.0.is_null() {
+		return Err("ImageIO reports a colour space without an ICC profile".into());
+	}
+	colour::from_icc(bytes(&icc))
+}
+
+/// Apple's Display P3 ICC profile, for labelling the --frames PNGs.
+pub fn display_p3_icc() -> Vec<u8> {
+	let space = Release(unsafe { CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3) });
+	assert!(!space.0.is_null(), "CoreGraphics has no Display P3 colour space");
+	let icc = Release(unsafe { CGColorSpaceCopyICCData(space.0) });
+	assert!(!icc.0.is_null(), "CoreGraphics has no Display P3 ICC profile");
+	bytes(&icc).to_vec()
+}
+
+fn bytes(data: &Release) -> &[u8] {
+	let length = usize::try_from(unsafe { CFDataGetLength(data.0) }).expect("CFData length is not negative");
+	unsafe { std::slice::from_raw_parts(CFDataGetBytePtr(data.0), length) }
+}
+
 /// Decodes the first image. 10- and 16-bit samples are rounded to the nearest 8-bit value;
-/// premultiplied alpha is undone before alpha is discarded. Colour profiles are deliberately ignored.
+/// premultiplied alpha is undone before alpha is discarded. Pixels stay in the photo's colour space.
 pub fn decode(path: &Path) -> Result<Image, String> {
 	let source = source(path)?;
 	let image = Release(unsafe { CGImageSourceCreateImageAtIndex(source.source.0, 0, ptr::null()) });

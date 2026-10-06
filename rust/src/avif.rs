@@ -1,6 +1,7 @@
 //! AVIF through libavif: photo headers and decode (dav1d), and the animated clip encode (libaom).
 
 use crate::avif_sys::*;
+use crate::colour::{self, Profile};
 use crate::pixels::{Image, orient};
 use std::ffi::{CStr, CString};
 use std::path::Path;
@@ -82,6 +83,17 @@ pub fn oriented_size(path: &Path) -> Result<(u32, u32), String> {
 	let image = decoder.image();
 	let turned = matches!(decoder.orientation(), 5..=8);
 	Ok(if turned { (image.height, image.width) } else { (image.width, image.height) })
+}
+
+/// The photo's colour profile: its ICC profile if it has one, else its nclx code points.
+pub fn profile(path: &Path) -> Result<Profile, String> {
+	let decoder = Decoder::open(path, 1)?;
+	let image = decoder.image();
+	if image.icc.size > 0 {
+		let icc = unsafe { std::slice::from_raw_parts(image.icc.data, image.icc.size) };
+		return colour::from_icc(icc);
+	}
+	colour::from_cicp(image.colorPrimaries, image.transferCharacteristics)
 }
 
 /// The first frame as 8-bit RGB, oriented for display.
@@ -207,6 +219,7 @@ pub struct Encoder {
 	encoder: *mut avifEncoder,
 	frame_ms: u64,
 	xmp: Vec<u8>,
+	profile: Profile,
 	frames: usize,
 }
 
@@ -217,7 +230,14 @@ impl Drop for Encoder {
 }
 
 impl Encoder {
-	pub fn new(speed: i32, quality: i32, frame_ms: u64, threads: i32, xmp: Vec<u8>) -> Encoder {
+	pub fn new(
+		speed: i32,
+		quality: i32,
+		frame_ms: u64,
+		threads: i32,
+		xmp: Vec<u8>,
+		profile: Profile,
+	) -> Encoder {
 		let encoder = unsafe { avifEncoderCreate() };
 		assert!(!encoder.is_null(), "libavif could not allocate an encoder");
 		unsafe {
@@ -227,7 +247,7 @@ impl Encoder {
 			(*encoder).timescale = 1000;
 			(*encoder).autoTiling = AVIF_TRUE as avifBool;
 		}
-		Encoder { encoder, frame_ms, xmp, frames: 0 }
+		Encoder { encoder, frame_ms, xmp, profile, frames: 0 }
 	}
 
 	/// Encodes one frame. libavif reads the planes in place; it neither copies nor frees them.
@@ -236,8 +256,8 @@ impl Encoder {
 			let image = avifImageCreate(frame.width as u32, frame.height as u32, 8, AVIF_PIXEL_FORMAT_YUV420);
 			assert!(!image.is_null(), "libavif could not allocate a frame");
 			(*image).yuvRange = AVIF_RANGE_FULL;
-			(*image).colorPrimaries = AVIF_COLOR_PRIMARIES_BT709 as _;
-			(*image).transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_SRGB as _;
+			(*image).colorPrimaries = self.profile.primaries();
+			(*image).transferCharacteristics = colour::SRGB_TRANSFER;
 			(*image).matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT601 as _;
 			for (i, plane) in frame.planes.iter().enumerate() {
 				(*image).yuvPlanes[i] = plane.as_ptr() as *mut u8;
