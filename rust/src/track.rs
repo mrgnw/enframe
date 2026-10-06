@@ -10,6 +10,10 @@ const RATIO_TEST: f64 = 0.8;
 const RANSAC_TOLERANCE: f64 = 0.03;
 const MAX_STEP_ZOOM: f64 = 6.0;
 const MAX_STEP_TURN: f64 = 15.0;
+/// The next photo may move the reference up to this many times as far as the last tracked step did.
+/// Photos are hand-held, so steps vary a lot; below 5 the window changes results on the synthetic
+/// rotate sequence, above 5 it only costs time.
+const MOTION_MARGIN: f64 = 5.0;
 
 /// A user mark: a point x,y or a box x,y,w,h, with an optional zoom relative to the first photo.
 #[derive(Clone, Debug, PartialEq)]
@@ -84,23 +88,42 @@ pub fn distance(a: &[u8; DESCRIPTOR_LEN], b: &[u8; DESCRIPTOR_LEN]) -> f32 {
 	(sum as f32).sqrt()
 }
 
-/// BFMatcher(NORM_L2).knnMatch(k=2) with the ratio test: (query, train) index pairs, in query order.
-fn ratio_matches(query: &Features, train: &Features) -> Vec<(usize, usize)> {
-	let mut pairs = Vec::new();
-	for (q, a) in query.descriptors.iter().enumerate() {
-		let (mut best, mut second, mut best_index) = (f32::MAX, f32::MAX, 0);
-		for (t, b) in train.descriptors.iter().enumerate() {
-			let d = distance(a, b);
-			if d < second {
-				if d < best {
-					(second, best, best_index) = (best, d, t);
-				} else {
-					second = d;
-				}
+/// One query feature's nearest and second-nearest distance among the train features seen so far, and the
+/// nearest one's index.
+#[derive(Clone, Copy)]
+struct Nearest {
+	best: f32,
+	second: f32,
+	index: usize,
+}
+
+impl Nearest {
+	const NONE: Nearest = Nearest { best: f32::MAX, second: f32::MAX, index: usize::MAX };
+}
+
+/// BFMatcher(NORM_L2).knnMatch(k=2) over the `candidates` of `train`, folded into what `found` already
+/// holds. Ties go to the lower index, as in one pass over all of `train`, so searching a window and then
+/// the rest gives the same result as searching everything at once.
+fn nearest_two(query: &Features, train: &Features, candidates: &[usize], found: &mut [Nearest]) {
+	assert_eq!(query.descriptors.len(), found.len());
+	for (a, near) in query.descriptors.iter().zip(found.iter_mut()) {
+		for &t in candidates {
+			let d = distance(a, &train.descriptors[t]);
+			if d < near.best || (d == near.best && t < near.index) {
+				*near = Nearest { best: d, second: near.best, index: t };
+			} else if d < near.second {
+				near.second = d;
 			}
 		}
-		if (best as f64) < RATIO_TEST * second as f64 {
-			pairs.push((q, best_index));
+	}
+}
+
+/// The ratio test: (query, train) index pairs, in query order.
+fn ratio_pairs(found: &[Nearest]) -> Vec<(usize, usize)> {
+	let mut pairs = Vec::new();
+	for (q, near) in found.iter().enumerate() {
+		if near.index != usize::MAX && (near.best as f64) < RATIO_TEST * near.second as f64 {
+			pairs.push((q, near.index));
 		}
 	}
 	pairs
@@ -223,10 +246,18 @@ fn estimate_similarity(from: &[(f32, f32)], to: &[(f32, f32)], threshold: f64) -
 
 /// Scale + rotation + shift taking the box's features onto the next photo, and how many agree.
 pub fn similarity(boxed: &Features, next: &Features, tolerance: f64) -> (Option<Affine>, usize) {
+	let mut found = vec![Nearest::NONE; boxed.keypoints.len()];
+	let everything: Vec<usize> = (0..next.keypoints.len()).collect();
+	nearest_two(boxed, next, &everything, &mut found);
+	fit(boxed, next, &found, tolerance)
+}
+
+/// The similarity through the ratio-test pairs in `found`, and how many agree.
+fn fit(boxed: &Features, next: &Features, found: &[Nearest], tolerance: f64) -> (Option<Affine>, usize) {
 	if boxed.keypoints.is_empty() || next.keypoints.len() < 2 {
 		return (None, 0);
 	}
-	let pairs = ratio_matches(boxed, next);
+	let pairs = ratio_pairs(found);
 	if pairs.len() < MIN_INLIERS {
 		return (None, pairs.len());
 	}
@@ -237,6 +268,69 @@ pub fn similarity(boxed: &Features, next: &Features, tolerance: f64) -> (Option<
 		Some((m, agreed)) => (Some(m), agreed),
 		None => (None, 0),
 	}
+}
+
+/// The indexes of the next photo's features within `margin` of the reference features' bounds, and of
+/// the rest.
+fn window(reference: &Features, next: &Features, margin: f64) -> (Vec<usize>, Vec<usize>) {
+	assert!(!reference.keypoints.is_empty() && margin >= 0.0);
+	let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+	for kp in &reference.keypoints {
+		(x0, y0, x1, y1) = (x0.min(kp.x), y0.min(kp.y), x1.max(kp.x), y1.max(kp.y));
+	}
+	let margin = margin as f32;
+	let (x0, y0, x1, y1) = (x0 - margin, y0 - margin, x1 + margin, y1 + margin);
+	let (mut near, mut far) = (Vec::new(), Vec::new());
+	for (t, kp) in next.keypoints.iter().enumerate() {
+		if (x0..=x1).contains(&kp.x) && (y0..=y1).contains(&kp.y) {
+			near.push(t);
+		} else {
+			far.push(t);
+		}
+	}
+	(near, far)
+}
+
+/// How far the fit moves the farthest-moving reference feature.
+fn motion(m: &Affine, reference: &Features) -> f64 {
+	let mut reach: f64 = 0.0;
+	for kp in &reference.keypoints {
+		let (x, y) = (kp.x as f64, kp.y as f64);
+		let (u, v) = (m[0][0] * x + m[0][1] * y + m[0][2], m[1][0] * x + m[1][1] * y + m[1][2]);
+		reach = reach.max((u - x).hypot(v - y));
+	}
+	reach
+}
+
+/// Match near the reference first when the last step's motion is known. Fall back to the whole photo
+/// when the window gives no plausible fit, or a fit that moves the reference past the window's edge and
+/// so may have missed part of it; lens switches and big jumps still link. The fallback only adds the
+/// features outside the window, and finds exactly what a whole-photo search finds. The bool says
+/// whether it ran.
+fn find(
+	reference: &Features,
+	next: &Features,
+	tolerance: f64,
+	reach: Option<f64>,
+) -> (Option<Affine>, usize, bool) {
+	let Some(reach) = reach else {
+		let (m, agreed) = similarity(reference, next, tolerance);
+		return (m, agreed, false);
+	};
+	let mut found = vec![Nearest::NONE; reference.keypoints.len()];
+	let margin = MOTION_MARGIN * reach;
+	let (near, far) = window(reference, next, margin);
+	nearest_two(reference, next, &near, &mut found);
+	if let (Some(m), agreed) = fit(reference, next, &found, tolerance)
+		&& agreed >= MIN_INLIERS
+		&& plausible(&m).0
+		&& motion(&m, reference) <= margin
+	{
+		return (Some(m), agreed, false);
+	}
+	nearest_two(reference, next, &far, &mut found);
+	let (m, agreed) = fit(reference, next, &found, tolerance);
+	(m, agreed, true)
 }
 
 /// Photo to photo, the anchor stays near the same zoom or jumps lens; it never spins.
@@ -261,6 +355,9 @@ pub fn track(
 	let (mut rw, mut rh) = (first.0[2] * k, first.0[3] * k);
 	let mut scale = 1.0;
 	let mut boxed = Features::default();
+	// How far the reference moved in the last tracked step. It describes how the series was shot, so it
+	// carries across marks and lost photos; until the first step it is unknown and the search is whole.
+	let mut reach = None;
 	let mut count = 0;
 	for (i, photo) in photos.enumerate() {
 		count += 1;
@@ -280,24 +377,26 @@ pub fn track(
 			(cx, cy) = (px * k, py * k);
 			(source, note) = (Source::Mark, "your mark".to_string());
 		} else {
-			let (m, agreed) = crate::profile::work(crate::profile::Work::Match, || {
-				similarity(&boxed, &photo.features, RANSAC_TOLERANCE * rw)
+			let (m, agreed, fallback) = crate::profile::work(crate::profile::Work::Match, || {
+				find(&boxed, &photo.features, RANSAC_TOLERANCE * rw, reach)
 			});
+			let whole = if fallback { ", whole photo" } else { "" };
 			let Some(m) = m.filter(|_| agreed >= MIN_INLIERS) else {
-				let note = format!("LOST ({agreed} features), estimated");
+				let note = format!("LOST ({agreed} features{whole}), estimated");
 				path.push(Hit { x: cx / k, y: cy / k, scale, source: Source::Lost, note });
 				continue;
 			};
 			let (ok, step, turn) = plausible(&m);
 			if !ok {
-				let note = format!("LOST (fit zooms {step:.2}x, turns {turn:+.0} deg), estimated");
+				let note = format!("LOST (fit zooms {step:.2}x, turns {turn:+.0} deg{whole}), estimated");
 				path.push(Hit { x: cx / k, y: cy / k, scale, source: Source::Lost, note });
 				continue;
 			}
+			reach = Some(motion(&m, &boxed));
 			scale *= step;
 			(rw, rh) = (rw * step, rh * step);
 			(cx, cy) = (m[0][0] * cx + m[0][1] * cy + m[0][2], m[1][0] * cx + m[1][1] * cy + m[1][2]);
-			(source, note) = (Source::Tracked, format!("{agreed} features"));
+			(source, note) = (Source::Tracked, format!("{agreed} features{whole}"));
 		}
 		path.push(Hit { x: cx / k, y: cy / k, scale, source, note });
 		// Clouds deform, so features come from the latest find, never from a lost photo.
@@ -439,6 +538,48 @@ mod tests {
 				assert!((m[r][c] - truth[r][c]).abs() < 1e-4, "{m:?}");
 			}
 		}
+	}
+
+	/// Features at distinct spots with distinct descriptors, shifted by (dx, dy). Every fourth descriptor
+	/// repeats the one before it, so nearest-neighbour ties occur.
+	fn scattered(count: usize, dx: f32, dy: f32) -> Features {
+		let mut features = Features::default();
+		for i in 0..count {
+			let x = (i * 37 % 200) as f32 + 300.0 + dx;
+			let y = (i * 53 % 150) as f32 + 300.0 + dy;
+			features.keypoints.push(KeyPoint { x, y, size: 2.0, angle: 0.0, response: 1.0, octave: 0 });
+			let seed = if i % 4 == 3 { i - 1 } else { i };
+			features.descriptors.push(std::array::from_fn(|j| ((seed * 97 + j * 31) % 251) as u8));
+		}
+		features
+	}
+
+	#[test]
+	fn window_then_rest_finds_what_the_whole_photo_finds() {
+		let (query, train) = (scattered(30, 0.0, 0.0), scattered(60, 60.0, 40.0));
+		let mut whole = vec![Nearest::NONE; 30];
+		nearest_two(&query, &train, &(0..60).collect::<Vec<_>>(), &mut whole);
+		let (near, far) = window(&query, &train, 0.0);
+		assert!(!near.is_empty() && !far.is_empty());
+		let mut split = vec![Nearest::NONE; 30];
+		nearest_two(&query, &train, &near, &mut split);
+		nearest_two(&query, &train, &far, &mut split);
+		for (a, b) in whole.iter().zip(&split) {
+			assert_eq!((a.best, a.second, a.index), (b.best, b.second, b.index));
+		}
+	}
+
+	#[test]
+	fn the_window_links_small_moves_and_falls_back_for_big_ones() {
+		let reference = scattered(40, 0.0, 0.0);
+		let (m, agreed, fallback) = find(&reference, &scattered(40, 6.0, 2.0), 6.0, Some(3.0));
+		assert!(!fallback && agreed >= MIN_INLIERS);
+		assert!((m.unwrap()[0][2] - 6.0).abs() < 1e-3);
+		let far = scattered(40, 400.0, 250.0);
+		let (m, agreed, fallback) = find(&reference, &far, 6.0, Some(3.0));
+		assert!(fallback && agreed >= MIN_INLIERS);
+		assert_eq!((m, agreed), similarity(&reference, &far, 6.0));
+		assert!((m.unwrap()[1][2] - 250.0).abs() < 1e-3);
 	}
 
 	#[test]
