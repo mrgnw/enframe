@@ -28,6 +28,8 @@ There's no box-drawing window: `--box x,y,w,h` is required, in first-photo pixel
 
 Input photos may be AVIF, HEIC/HEIF, JPEG XL, JPEG, or PNG. pinframe identifies them from their contents rather than their file extension; other formats are refused before decoding. HEIC and JPEG XL use macOS ImageIO, so those inputs require macOS. pinframe is built and tested on macOS only; the Linux build does not compile yet (see [docs/rust.md](docs/rust.md#platforms) and [todos/D1-linux-build.md](todos/D1-linux-build.md)).
 
+Photos are ordered by EXIF capture time (`DateTimeOriginal`, with `SubSecTimeOriginal` breaking ties), falling back to filename order if any photo lacks one, such as a mix of cameras or an export that stripped EXIF. `--order name` always orders by filename. Either way, the run prints which order it used and why.
+
 Any photo the tracker reports as `LOST` can be fixed by marking the feature there, and tracking carries on from the mark:
 
 - `--at PHOTO=x,y` puts the anchor at a point.
@@ -85,7 +87,7 @@ cd rust && cargo test --release
 
 ## How it works
 
-1. Photos are taken in filename order.
+1. Photos are taken in capture-time order (or filename order, see above).
 2. SIFT keypoints inside the box are matched into the next photo, and a scale + rotation + shift is fitted to them with RANSAC. That follows the anchor across lens switches and resolution changes, and the number of agreeing keypoints is an honest confidence: an occluded cloud gets 0–2, not a wrong answer.
 3. A fit that zooms more than 6x or turns more than 15° between two photos is a false match, not a camera move, and is rejected.
 4. Each photo is matched against the last photo where the anchor was found, so the tracker follows a cloud as it slowly changes shape.

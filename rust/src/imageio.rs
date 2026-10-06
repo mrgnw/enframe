@@ -28,6 +28,9 @@ const ALPHA_NONE_SKIP_FIRST: u32 = 6;
 #[link(name = "ImageIO", kind = "framework")]
 unsafe extern "C" {
 	static kCGImagePropertyOrientation: CFTypeRef;
+	static kCGImagePropertyExifDictionary: CFTypeRef;
+	static kCGImagePropertyExifDateTimeOriginal: CFTypeRef;
+	static kCGImagePropertyExifSubsecTimeOriginal: CFTypeRef;
 	fn CGImageSourceCreateWithData(data: CFDataRef, options: CFTypeRef) -> CGImageSourceRef;
 	fn CGImageSourceCreateImageAtIndex(
 		source: CGImageSourceRef,
@@ -66,7 +69,12 @@ unsafe extern "C" {
 	fn CFDictionaryGetValue(dict: CFTypeRef, key: CFTypeRef) -> CFTypeRef;
 	fn CFNumberGetValue(number: CFTypeRef, number_type: i32, value: *mut c_void) -> bool;
 	fn CFRelease(value: CFTypeRef);
+	fn CFStringGetCStringPtr(string: CFTypeRef, encoding: u32) -> *const i8;
+	fn CFStringGetLength(string: CFTypeRef) -> isize;
+	fn CFStringGetCString(string: CFTypeRef, buffer: *mut i8, buffer_size: isize, encoding: u32) -> bool;
 }
+
+const K_CF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
 
 struct Release(CFTypeRef);
 
@@ -144,6 +152,44 @@ pub fn oriented_size(path: &Path) -> Result<(u32, u32), String> {
 	let height =
 		u32::try_from(unsafe { CGImageGetHeight(image.0) }).map_err(|_| "ImageIO image is too tall")?;
 	Ok(if matches!(orientation(source.source.0), 5..=8) { (height, width) } else { (width, height) })
+}
+
+fn cfstring(value: CFTypeRef) -> Option<String> {
+	if value.is_null() {
+		return None;
+	}
+	let ptr = unsafe { CFStringGetCStringPtr(value, K_CF_STRING_ENCODING_UTF8) };
+	if !ptr.is_null() {
+		return Some(unsafe { std::ffi::CStr::from_ptr(ptr) }.to_string_lossy().into_owned());
+	}
+	// No direct pointer into the string's own buffer; copy it instead (up to 4 UTF-8 bytes per character).
+	let length = unsafe { CFStringGetLength(value) };
+	let mut buffer = vec![0i8; (length as usize) * 4 + 1];
+	if !unsafe {
+		CFStringGetCString(value, buffer.as_mut_ptr(), buffer.len() as isize, K_CF_STRING_ENCODING_UTF8)
+	} {
+		return None;
+	}
+	Some(unsafe { std::ffi::CStr::from_ptr(buffer.as_ptr()) }.to_string_lossy().into_owned())
+}
+
+/// `DateTimeOriginal` and `SubSecTimeOriginal`, raw, from ImageIO's EXIF dictionary. JXL is not among the
+/// containers kamadak-exif reads directly (`decode::exif_capture_time`), so it reads through here instead.
+pub fn exif_date_time_original(path: &Path) -> Result<Option<(String, String)>, String> {
+	let source = source(path)?;
+	let properties = Release(unsafe { CGImageSourceCopyPropertiesAtIndex(source.source.0, 0, ptr::null()) });
+	if properties.0.is_null() {
+		return Ok(None);
+	}
+	let exif = unsafe { CFDictionaryGetValue(properties.0, kCGImagePropertyExifDictionary) };
+	if exif.is_null() {
+		return Ok(None);
+	}
+	let date = unsafe { CFDictionaryGetValue(exif, kCGImagePropertyExifDateTimeOriginal) };
+	let Some(date) = cfstring(date) else { return Ok(None) };
+	let subsec = unsafe { CFDictionaryGetValue(exif, kCGImagePropertyExifSubsecTimeOriginal) };
+	let subsec = cfstring(subsec).unwrap_or_default();
+	Ok(Some((date, subsec)))
 }
 
 /// The colour profile ImageIO reports, identified from the ICC data it gives for that colour space.

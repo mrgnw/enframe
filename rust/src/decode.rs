@@ -103,6 +103,57 @@ pub fn oriented_size(path: &Path) -> Result<(u32, u32), String> {
 	}
 }
 
+/// A sort key with the exact ordering of EXIF `DateTimeOriginal`/`SubSecTimeOriginal`: the date string's
+/// fixed-width fields already sort chronologically, and the subsecond digits are padded to a common
+/// width on the right so a 3-digit and a 6-digit reading of the same instant still compare equal-ish
+/// (finer only breaks genuine ties).
+fn capture_time_key(date: &str, subsec: &str) -> Option<String> {
+	if date.len() != 19 || !date.is_ascii() {
+		return None;
+	}
+	let subsec: String = subsec.chars().filter(char::is_ascii_digit).collect();
+	Some(format!("{date}.{subsec:0<9}"))
+}
+
+/// The ASCII value of an EXIF field, trimmed of the trailing NUL the TIFF spec pads strings with.
+fn ascii_field(exif: &exif::Exif, tag: exif::Tag) -> Option<String> {
+	match &exif.get_field(tag, exif::In::PRIMARY)?.value {
+		exif::Value::Ascii(values) => {
+			let text = String::from_utf8_lossy(values.first()?).trim_end_matches('\0').trim().to_string();
+			(!text.is_empty()).then_some(text)
+		}
+		_ => None,
+	}
+}
+
+/// `DateTimeOriginal` read directly from the file via kamadak-exif, which parses AVIF, HEIC, JPEG and PNG
+/// containers itself. Only JXL is not among its supported containers, so that format reads through
+/// ImageIO instead (see `capture_time` below).
+fn exif_capture_time(path: &Path) -> Result<Option<String>, String> {
+	let file = File::open(path).map_err(|e| e.to_string())?;
+	let exif = match exif::Reader::new().read_from_container(&mut BufReader::new(file)) {
+		Ok(exif) => exif,
+		Err(exif::Error::Io(e)) => return Err(e.to_string()),
+		Err(_) => return Ok(None),
+	};
+	let Some(date) = ascii_field(&exif, exif::Tag::DateTimeOriginal) else { return Ok(None) };
+	let subsec = ascii_field(&exif, exif::Tag::SubSecTimeOriginal).unwrap_or_default();
+	Ok(capture_time_key(&date, &subsec))
+}
+
+/// `None` when the photo carries no `DateTimeOriginal`, so callers can fall back to filename order.
+pub fn capture_time(path: &Path) -> Result<Option<String>, String> {
+	match format(path)? {
+		Format::Jxl => {
+			let Some((date, subsec)) = crate::imageio::exif_date_time_original(path)? else {
+				return Ok(None);
+			};
+			Ok(capture_time_key(&date, &subsec))
+		}
+		Format::Avif | Format::Heic | Format::Jpeg | Format::Png => exif_capture_time(path),
+	}
+}
+
 fn jpeg_orientation(path: &Path) -> u8 {
 	let Ok(file) = File::open(path) else { return 1 };
 	let mut reader = BufReader::new(file);
@@ -189,6 +240,17 @@ fn decode_png(path: &Path) -> Result<Image, String> {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn capture_time_key_sorts_chronologically_and_rejects_malformed_dates() {
+		let a = capture_time_key("2024:01:01 00:00:01", "010").unwrap();
+		let b = capture_time_key("2024:01:01 00:00:01", "5").unwrap();
+		let c = capture_time_key("2024:01:01 00:00:02", "").unwrap();
+		assert!(a < b, "010 then 5 (0.010s before 0.5s), despite '5' < '010' byte-wise");
+		assert!(b < c);
+		assert_eq!(capture_time_key("", ""), None, "an empty date is not 19 characters");
+		assert_eq!(capture_time_key("not a valid 19-char date!!", ""), None, "still not 19 characters");
+	}
 
 	#[test]
 	fn detects_supported_signatures() {

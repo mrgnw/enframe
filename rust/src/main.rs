@@ -38,7 +38,15 @@ const AVIF_QUALITY: i32 = 75;
 const CLIP_SUFFIXES: [&str; 4] = ["avif", "mp4", "mov", "webm"];
 
 const USAGE: &str = "usage: pinframe PHOTO... --box x,y,w,h [--at PHOTO=x,y[,w,h[,zoom]]]... [--pad COLOUR]
-				[--fps N] [--out CLIP-or-JSON] [--frames DIR] [--vf FILTERS] [--cache DIR|--no-cache]";
+				[--fps N] [--out CLIP-or-JSON] [--frames DIR] [--vf FILTERS] [--cache DIR|--no-cache]
+				[--order time|name]";
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Order {
+	/// EXIF capture time, falling back to filename order if any photo lacks one.
+	Time,
+	Name,
+}
 
 /// Stops on input or photos pinframe cannot use: a message and exit code 1. Asserts stay for invariants.
 pub fn fail(message: &str) -> ! {
@@ -63,6 +71,7 @@ struct Args {
 	vf: Option<String>,
 	cache: Option<PathBuf>,
 	no_cache: bool,
+	order: Order,
 }
 
 fn parse_args() -> Args {
@@ -77,6 +86,7 @@ fn parse_args() -> Args {
 		vf: None,
 		cache: None,
 		no_cache: false,
+		order: Order::Time,
 	};
 	let mut it = std::env::args().skip(1);
 	while let Some(arg) = it.next() {
@@ -91,6 +101,13 @@ fn parse_args() -> Args {
 			"--vf" => args.vf = Some(value()),
 			"--cache" => args.cache = Some(PathBuf::from(value())),
 			"--no-cache" => args.no_cache = true,
+			"--order" => {
+				args.order = match value().as_str() {
+					"time" => Order::Time,
+					"name" => Order::Name,
+					other => fail(&format!("--order {other}: use time or name")),
+				}
+			}
 			"-h" | "--help" => {
 				println!("{USAGE}");
 				std::process::exit(0);
@@ -133,6 +150,31 @@ fn check_mark(name: &str, mark: &[f64], (fw, fh): (u32, u32)) -> Result<(), Stri
 		return Err(format!("{name}: zoom must be positive"));
 	}
 	Ok(())
+}
+
+/// Orders photos by EXIF capture time, falling back to filename order when `--order name` was given or
+/// any photo lacks a capture time (a mix of cameras, or an export that stripped EXIF). Marks are matched
+/// to photos by file name (`read_marks`), so reordering here never loses track of which mark goes where.
+fn order_photos(mut paths: Vec<PathBuf>, order: Order) -> (Vec<PathBuf>, String) {
+	if order == Order::Name {
+		paths.sort();
+		return (paths, "name: --order name".to_string());
+	}
+	let times: Vec<Option<String>> = paths
+		.iter()
+		.map(|p| decode::capture_time(p).unwrap_or_else(|e| fail(&format!("{}: {e}", p.display()))))
+		.collect();
+	let missing = times.iter().filter(|t| t.is_none()).count();
+	if missing > 0 {
+		paths.sort();
+		let s = if missing == 1 { "" } else { "s" };
+		let has = if missing == 1 { "has" } else { "have" };
+		return (paths, format!("name: {missing} photo{s} {has} no capture time"));
+	}
+	let mut order: Vec<usize> = (0..paths.len()).collect();
+	order.sort_by(|&a, &b| times[a].cmp(&times[b]).then_with(|| paths[a].cmp(&paths[b])));
+	let paths = order.into_iter().map(|i| paths[i].clone()).collect();
+	(paths, "time: every photo has a capture time".to_string())
 }
 
 fn file_name(path: &Path) -> String {
@@ -605,9 +647,8 @@ fn main() {
 	let args = parse_args();
 	let (paths, sizes, marks, fill, k, resources, cache, json_only, profiles) =
 		step("check input and plan resources", || {
-			let mut paths = args.photos.clone();
-			// ponytail: filename order; the exported AVIFs carry no capture time to sort by
-			paths.sort();
+			let (paths, order) = order_photos(args.photos.clone(), args.order);
+			println!("order: {order}");
 			let fill = args.pad.as_deref().map(parse_fill).transpose().unwrap_or_else(|e| fail(&e));
 			check_output(&args.out, fill.as_ref().is_some_and(|f| f.len() == 4), args.vf.as_deref())
 				.unwrap_or_else(|e| fail(&e));
@@ -769,6 +810,83 @@ fn default_cache_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	/// A minimal Exif/TIFF blob (CIPA DC-008 "eXIf" chunk payload) with one field: `DateTimeOriginal`.
+	fn exif_date_time_original(date: &str) -> Vec<u8> {
+		assert_eq!(date.len(), 19, "EXIF dates are YYYY:MM:DD HH:MM:SS");
+		let mut buf = Vec::new();
+		buf.extend(b"II");
+		buf.extend(42u16.to_le_bytes());
+		buf.extend(8u32.to_le_bytes()); // IFD0 at offset 8
+		buf.extend(1u16.to_le_bytes()); // IFD0: one entry
+		buf.extend(0x8769u16.to_le_bytes()); // ExifIFDPointer
+		buf.extend(4u16.to_le_bytes()); // LONG
+		buf.extend(1u32.to_le_bytes());
+		buf.extend(26u32.to_le_bytes()); // Exif IFD at offset 26
+		buf.extend(0u32.to_le_bytes()); // no next IFD
+		assert_eq!(buf.len(), 26);
+		buf.extend(1u16.to_le_bytes()); // Exif IFD: one entry
+		buf.extend(0x9003u16.to_le_bytes()); // DateTimeOriginal
+		buf.extend(2u16.to_le_bytes()); // ASCII
+		buf.extend(20u32.to_le_bytes()); // 19 chars + NUL
+		buf.extend(44u32.to_le_bytes()); // string at offset 44
+		buf.extend(0u32.to_le_bytes()); // no next IFD
+		assert_eq!(buf.len(), 44);
+		buf.extend(date.as_bytes());
+		buf.push(0);
+		buf
+	}
+
+	/// A 1x1 PNG, with an `eXIf` chunk carrying `DateTimeOriginal` when `date` is given.
+	fn write_test_png(path: &Path, date: Option<&str>) {
+		let file = std::fs::File::create(path).unwrap();
+		let mut info = png::Info::with_size(1, 1);
+		info.color_type = png::ColorType::Rgb;
+		let mut writer =
+			png::Encoder::with_info(std::io::BufWriter::new(file), info).unwrap().write_header().unwrap();
+		if let Some(date) = date {
+			writer.write_chunk(png::chunk::ChunkType(*b"eXIf"), &exif_date_time_original(date)).unwrap();
+		}
+		writer.write_image_data(&[0, 0, 0]).unwrap();
+	}
+
+	#[test]
+	fn capture_time_orders_photos_whose_names_disagree_with_their_times() {
+		let dir = std::env::temp_dir().join(format!("pinframe-order-{}", std::process::id()));
+		std::fs::create_dir_all(&dir).unwrap();
+		let files = [
+			("c.png", "2024:01:01 00:00:03"),
+			("a.png", "2024:01:01 00:00:01"),
+			("b.png", "2024:01:01 00:00:02"),
+		];
+		let paths: Vec<PathBuf> = files
+			.iter()
+			.map(|(name, date)| {
+				let path = dir.join(name);
+				write_test_png(&path, Some(date));
+				path
+			})
+			.collect();
+		let (ordered, reason) = order_photos(paths, Order::Time);
+		let names: Vec<String> = ordered.iter().map(|p| file_name(p)).collect();
+		assert_eq!(names, ["a.png", "b.png", "c.png"], "capture time, not the names, decides order");
+		assert!(reason.starts_with("time:"), "{reason}");
+		std::fs::remove_dir_all(&dir).unwrap();
+	}
+
+	#[test]
+	fn a_photo_with_no_capture_time_falls_back_to_name_order() {
+		let dir = std::env::temp_dir().join(format!("pinframe-order-missing-{}", std::process::id()));
+		std::fs::create_dir_all(&dir).unwrap();
+		let with_time = dir.join("b.png");
+		write_test_png(&with_time, Some("2024:01:01 00:00:01"));
+		let without_time = dir.join("a.png");
+		write_test_png(&without_time, None);
+		let (ordered, reason) = order_photos(vec![with_time.clone(), without_time.clone()], Order::Time);
+		assert_eq!(ordered, vec![without_time, with_time], "falls back to filename order");
+		assert_eq!(reason, "name: 1 photo has no capture time");
+		std::fs::remove_dir_all(&dir).unwrap();
+	}
 
 	#[test]
 	fn bad_input_is_refused_and_good_input_passes() {
