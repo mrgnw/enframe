@@ -46,7 +46,7 @@ impl FeatureCache {
 		let Ok(mut file) = std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp) else {
 			return;
 		};
-		if file.write_all(&bytes).is_ok() && file.sync_all().is_ok() {
+		if file.write_all(&bytes).is_ok() {
 			let _ = std::fs::rename(&tmp, &path);
 		}
 		let _ = std::fs::remove_file(tmp);
