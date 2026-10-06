@@ -13,6 +13,7 @@ type CGImageSourceRef = *const c_void;
 type CGImageRef = *const c_void;
 
 const K_CF_NUMBER_SINT32_TYPE: i32 = 3;
+const K_CF_NUMBER_FLOAT64_TYPE: i32 = 13;
 const BYTE_ORDER_16_LITTLE: u32 = 0x1000;
 const BYTE_ORDER_32_LITTLE: u32 = 0x2000;
 const BYTE_ORDER_MASK: u32 = 0x7000;
@@ -31,6 +32,7 @@ unsafe extern "C" {
 	static kCGImagePropertyExifDictionary: CFTypeRef;
 	static kCGImagePropertyExifDateTimeOriginal: CFTypeRef;
 	static kCGImagePropertyExifSubsecTimeOriginal: CFTypeRef;
+	static kCGImagePropertyExifFocalLenIn35mmFilm: CFTypeRef;
 	fn CGImageSourceCreateWithData(data: CFDataRef, options: CFTypeRef) -> CGImageSourceRef;
 	fn CGImageSourceCreateImageAtIndex(
 		source: CGImageSourceRef,
@@ -173,23 +175,40 @@ fn cfstring(value: CFTypeRef) -> Option<String> {
 	Some(unsafe { std::ffi::CStr::from_ptr(buffer.as_ptr()) }.to_string_lossy().into_owned())
 }
 
-/// `DateTimeOriginal` and `SubSecTimeOriginal`, raw, from ImageIO's EXIF dictionary. JXL is not among the
-/// containers kamadak-exif reads directly (`decode::exif_capture_time`), so it reads through here instead.
-pub fn exif_date_time_original(path: &Path) -> Result<Option<(String, String)>, String> {
+/// `DateTimeOriginal`/`SubSecTimeOriginal`, as ImageIO gives them, raw.
+pub struct ExifDateTime {
+	pub date: String,
+	pub subsec: String,
+}
+
+/// `DateTimeOriginal`/`SubSecTimeOriginal` and `FocalLengthIn35mmFilm`, raw, from ImageIO's EXIF
+/// dictionary. JXL is not among the containers kamadak-exif reads directly (`decode::exif`), so it
+/// reads both fields through here instead.
+pub fn exif_date_time_and_focal_35mm(path: &Path) -> Result<(Option<ExifDateTime>, Option<f64>), String> {
 	let source = source(path)?;
 	let properties = Release(unsafe { CGImageSourceCopyPropertiesAtIndex(source.source.0, 0, ptr::null()) });
 	if properties.0.is_null() {
-		return Ok(None);
+		return Ok((None, None));
 	}
 	let exif = unsafe { CFDictionaryGetValue(properties.0, kCGImagePropertyExifDictionary) };
 	if exif.is_null() {
-		return Ok(None);
+		return Ok((None, None));
 	}
 	let date = unsafe { CFDictionaryGetValue(exif, kCGImagePropertyExifDateTimeOriginal) };
-	let Some(date) = cfstring(date) else { return Ok(None) };
-	let subsec = unsafe { CFDictionaryGetValue(exif, kCGImagePropertyExifSubsecTimeOriginal) };
-	let subsec = cfstring(subsec).unwrap_or_default();
-	Ok(Some((date, subsec)))
+	let date_time = cfstring(date).map(|date| {
+		let subsec = unsafe { CFDictionaryGetValue(exif, kCGImagePropertyExifSubsecTimeOriginal) };
+		ExifDateTime { date, subsec: cfstring(subsec).unwrap_or_default() }
+	});
+	let focal = unsafe { CFDictionaryGetValue(exif, kCGImagePropertyExifFocalLenIn35mmFilm) };
+	let focal_35mm = (!focal.is_null())
+		.then(|| {
+			let mut value = 0.0f64;
+			unsafe { CFNumberGetValue(focal, K_CF_NUMBER_FLOAT64_TYPE, (&raw mut value).cast()) }
+				.then_some(value)
+		})
+		.flatten()
+		.filter(|&v| v > 0.0);
+	Ok((date_time, focal_35mm))
 }
 
 /// The colour profile ImageIO reports, identified from the ICC data it gives for that colour space.

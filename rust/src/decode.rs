@@ -156,14 +156,14 @@ fn read_exif(path: &Path) -> Result<Exif, String> {
 }
 
 /// A field is `None` when the photo does not carry it, so callers fall back to filename order and to
-/// tracking without a lens prior. JXL is not among kamadak-exif's containers: its capture time reads
-/// through ImageIO, and its focal length is not read.
+/// tracking without a lens prior. JXL is not among kamadak-exif's containers: both fields read through
+/// ImageIO instead.
 pub fn exif(path: &Path) -> Result<Exif, String> {
 	match format(path)? {
 		Format::Jxl => {
-			let capture_time = crate::imageio::exif_date_time_original(path)?
-				.and_then(|(date, subsec)| capture_time_key(&date, &subsec));
-			Ok(Exif { capture_time, focal_35mm: None })
+			let (date_time, focal_35mm) = crate::imageio::exif_date_time_and_focal_35mm(path)?;
+			let capture_time = date_time.and_then(|dt| capture_time_key(&dt.date, &dt.subsec));
+			Ok(Exif { capture_time, focal_35mm })
 		}
 		Format::Avif | Format::Heic | Format::Jpeg | Format::Png => read_exif(path),
 	}
@@ -505,6 +505,17 @@ mod tests {
 			assert_eq!(image.pixels, hex(expected), "orientation {orientation}");
 			std::fs::remove_file(path).unwrap();
 		}
+	}
+
+	/// A JXL re-encoded from a Girona AVIF (JXL_PATH, e.g. via `sips`/`cjxl`) reports the same
+	/// `FocalLengthIn35mmFilm` as the AVIF (AVIF_PATH) it came from, read through ImageIO.
+	#[test]
+	#[ignore]
+	fn jxl_focal_35mm_matches_avif() {
+		let avif = exif(Path::new(&std::env::var("AVIF_PATH").unwrap())).unwrap();
+		let jxl = exif(Path::new(&std::env::var("JXL_PATH").unwrap())).unwrap();
+		assert!(avif.focal_35mm.is_some(), "AVIF fixture has no focal length");
+		assert_eq!(jxl.focal_35mm, avif.focal_35mm);
 	}
 
 	#[test]
