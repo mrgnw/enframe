@@ -12,7 +12,7 @@
 	}
 	.stage { grid-template-rows: minmax(0, 1fr); place-items: stretch; }
 	.view { position: relative; display: grid; place-items: center; container-type: size; min-height: 0; }
-	.photo { width: min(100cqw, 100cqh * var(--r)); aspect-ratio: var(--r); touch-action: none; }
+	.photo { width: min(100cqw, 100cqh * var(--r)); aspect-ratio: var(--r); touch-action: manipulation; }
 	.view.edit .photo { cursor: crosshair; }
 	.where { font-variant-numeric: tabular-nums; }
 	.where b { color: var(--fg); font-weight: 600; }
@@ -55,11 +55,22 @@
 	.toast .btn { background: rgba(255, 255, 255, 0.1); }
 	@keyframes rise { from { opacity: 0; translate: -50% 6px; } }
 
-	.box.just { animation: pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
-	@keyframes pop { from { scale: 0.85; opacity: 0.4; } }
-
 	.ghost { visibility: hidden; }
 	.photo:hover .ghost { visibility: visible; }
+	.ptag {
+		position: absolute;
+		translate: -50% calc(-100% - 12px);
+		padding: 1px 6px;
+		border-radius: 4px;
+		background: var(--accent);
+		color: var(--accent-fg);
+		font-size: 11px;
+		font-weight: 600;
+		white-space: nowrap;
+		pointer-events: none;
+	}
+	.ptag.lost { background: rgba(0, 0, 0, 0.6); color: rgba(255, 255, 255, 0.8); }
+	.ptag.tracked { background: rgba(0, 0, 0, 0.6); color: var(--accent); }
 
 	.trail { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 	.trail path, .trail circle { fill: none; }
@@ -69,13 +80,21 @@
 	.trail .dashed { stroke-dasharray: 4 4; stroke-linecap: butt; }
 	.trail .before { stroke: var(--before); }
 	.trail .after { stroke: var(--after); }
-	.trail .tick { stroke-width: 1.5; }
-	.trail .tick.halo { stroke-width: 3.5; }
 	.trail .dot.tracked { fill: currentColor; stroke: rgba(0, 0, 0, 0.6); stroke-width: 1.5; }
 	.trail .dot.mark { stroke-width: 2.25; }
 	.trail .dot.lost { stroke-width: 1.5; stroke-dasharray: 2 2; fill: rgba(0, 0, 0, 0.35); }
 	.trail .before.dot { color: var(--before); }
 	.trail .after.dot { color: var(--after); }
+	.trail .pt { fill: var(--accent); stroke: rgba(0, 0, 0, 0.65); stroke-width: 1.5; }
+	.trail .pt.tracked { opacity: 0.85; }
+	.trail .pt.lost, .trail .pt.ghost { fill: rgba(0, 0, 0, 0.3); stroke-dasharray: 3 2; }
+	.trail .pt.lost { stroke: rgba(255, 255, 255, 0.75); }
+	.trail .pt.ghost { stroke: var(--accent); stroke-width: 2; }
+	.trail .pt.just { transform-box: fill-box; transform-origin: center; animation: pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+	@keyframes pop { from { scale: 0.4; opacity: 0.4; } }
+	.looking .patch { position: relative; overflow: hidden; flex: none; }
+	.thumb.mark.listed::after { background: var(--accent); box-shadow: none; }
+	#clear-fixed { background: rgba(255, 255, 255, 0.08); }
 
 	@media (max-width: 700px) {
 		.stage { grid-template-rows: auto minmax(0, 1fr) auto; }
@@ -100,13 +119,14 @@
 			<span class="muted where" id="where"></span>
 		</div>
 		<div class="island steps mid desk">
-			<a class="step done" href="00-start.html"><span class="n">1</span>Box</a>
+			<a class="step done" href="00-start.html"><span class="n">1</span>Points</a>
 			<span class="step active"><span class="n">2</span>Fix</span>
 			<span class="step"><span class="n">3</span>Export</span>
 		</div>
 		<div class="island end" id="status">
 			<span class="count" id="count"><span class="dot"></span><span id="count-text"></span></span>
-			<button class="btn icon" id="next-lost" title="Next lost photo (Tab)">→</button>
+			<button class="btn icon" id="next-lost" title="Next photo in the fix list (Tab)">→</button>
+			<button class="btn" id="clear-fixed" title="Remove the photos you have marked from the fix list"></button>
 			<span class="sep"></span>
 			<a class="btn primary" href="02-preview.html">Preview</a>
 			<div class="bar"></div>
@@ -117,10 +137,8 @@
 		<div class="photo" id="photo">
 			<img id="img" alt="">
 			<svg class="trail" id="trail"></svg>
-			<div class="box estimate" id="estimate"><span class="cross"></span><span class="tag">estimated</span></div>
-			<div class="box" id="markbox" hidden><span class="cross"></span><span class="tag" id="mark-tag"></span></div>
-			<div class="box ghost" id="ghost"><span class="cross"></span></div>
-			<div class="box drawing" id="drawing" hidden></div>
+			<svg class="trail ghost" id="ghost"><g id="ghost-pts"></g></svg>
+			<span class="ptag" id="tag"></span>
 		</div>
 		<div class="overlay-msg hint desk" id="hint"></div>
 		<div class="overlay-msg island toast" id="toast" hidden>
@@ -131,7 +149,7 @@
 
 	<div class="dock bottom">
 		<div class="island looking start" id="looking">
-			<div class="patch" id="patch"></div>
+			<div class="patch" id="patch"><svg class="trail" id="patch-pts"></svg></div>
 			<div class="label" id="looking-label"></div>
 		</div>
 		<div class="island nav mid phone">
@@ -139,7 +157,7 @@
 			<button class="btn icon" id="next" title="Next photo">›</button>
 		</div>
 		<div class="island tools end">
-			<span class="legend" title="Path of the anchor through neighbouring photos: dashed = estimated, ring = your mark"><i class="b"></i><span class="desk">before</span><i class="a"></i><span class="desk">after</span></span>
+			<span class="legend" title="Path of the points' centre through neighbouring photos: dashed = estimated, ring = your mark"><i class="b"></i><span class="desk">before</span><i class="a"></i><span class="desk">after</span></span>
 			<button class="btn icon" id="trail-less" title="Fewer neighbours">−</button>
 			<span class="val" id="trail-n" title="Neighbours shown each side (T toggles)"></span>
 			<button class="btn icon" id="trail-more" title="More neighbours">+</button>
@@ -158,39 +176,45 @@
 
 <script src="assets/photos.js"></script>
 <script>
-	// ponytail: a scenario, not the live tracker. Real Girona anchors; IMG_4703 un-marked so four photos are left to fix.
+	// ponytail: a scenario, not the live tracker. Real Girona points; IMG_4703 un-marked so four photos are left to fix.
 	const ZOOMS = [1, 1.5, 2, 2.5, 3, 5];
-	const TRAIL_MIN = 5, TRAIL_MAX = 10, TRAIL_DEFAULT = 6, BOXES_NEAR = 1;
+	const TRAIL_MIN = 5, TRAIL_DEFAULT = 6, TRAIL_MAX = 10;
 	const ADVANCE_MS = 450, TOAST_MS = 6000, HISTORY_MAX = 100;
-	const photos = PHOTOS.map(p => ({ ...p }));
+	const HIT_PX = 12, PATCH_PX = 600;
+	// Simulated: the sidecar has one point per photo until A5. These three more sit around it as a fixed pattern,
+	// in pixels at scale 1, grown by each photo's scale. They sum to zero, so the centre stays the real point.
+	const SIMULATED = [[-150, -30], [110, -60], [40, 90]];
+	const photos = PHOTOS.map(p => {
+		const [x, y] = p.pts[0];
+		return { ...p, pts: [[x, y], ...SIMULATED.map(([dx, dy]) => [x + dx * p.scale / p.w, y + dy * p.scale / p.h])] };
+	});
 	Object.assign(photos.find(p => p.name === 'IMG_4703'), { source: 'lost', feats: 3 });
 
 	let current = photos.findIndex(p => p.name === 'IMG_4721');
 	let zoom = 1;
 	let trailN = TRAIL_DEFAULT, trailLast = TRAIL_DEFAULT;
+	// The fix list: every photo that was lost. Marking keeps a photo here; only "Clear fixed" takes it out.
+	let fixList = new Set(photos.flatMap((p, i) => p.source === 'lost' ? [i] : []));
 	const history = [];
 	let advanceTimer = null, toastTimer = null;
 
 	const $ = id => document.getElementById(id);
-	const view = $('view'), photo = $('photo'), img = $('img'), ghost = $('ghost'), estimate = $('estimate');
-	const markbox = $('markbox'), drawing = $('drawing'), filmstrip = $('filmstrip'), trail = $('trail');
+	const view = $('view'), photo = $('photo'), img = $('img'), filmstrip = $('filmstrip'), trail = $('trail');
 	const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 	const phone = matchMedia('(max-width: 700px)');
-
-	function place(el, [cx, cy, w, h]) {
-		Object.assign(el.style, { left: `${(cx - w / 2) * 100}%`, top: `${(cy - h / 2) * 100}%`, width: `${w * 100}%`, height: `${h * 100}%` });
-	}
+	const centre = p => [p.pts.reduce((s, q) => s + q[0], 0) / p.pts.length, p.pts.reduce((s, q) => s + q[1], 0) / p.pts.length];
+	const pointsSvg = (pts, cls, W, H) => pts.map(([x, y]) => `<circle class="pt ${cls}" cx="${x * W}" cy="${y * H}" r="${cls.startsWith('mark') ? 5.5 : cls === 'ghost' ? 6 : 4.5}"/>`).join('');
 
 	function prevLinked(i) {
 		for (let j = i - 1; j >= 0; j--) if (photos[j].source !== 'lost') return photos[j];
 		return photos[0];
 	}
 
-	// The box the tracker would follow here at the current zoom: the last linked box, rescaled.
-	function ghostSize(p) {
-		const ref = prevLinked(current);
-		const f = zoom / ref.scale;
-		return [ref.a[2] * ref.w * f / p.w, ref.a[3] * ref.h * f / p.h];
+	// The points the tracker would look for here at the current zoom: the last linked photo's points around their
+	// centre, rescaled, as offsets in this photo's 0–1 units.
+	function ghostOffsets(p) {
+		const ref = prevLinked(current), [cx, cy] = centre(ref), f = zoom / ref.scale;
+		return ref.pts.map(([x, y]) => [(x - cx) * ref.w * f / p.w, (y - cy) * ref.h * f / p.h]);
 	}
 
 	function renderStage() {
@@ -200,93 +224,92 @@
 		$('where').innerHTML = `<b class="desk">${p.name} · </b>${current + 1} / ${photos.length}`;
 		const lost = p.source === 'lost', editable = p.source !== 'tracked';
 		view.classList.toggle('edit', editable);
-		estimate.hidden = !lost;
-		ghost.hidden = !editable;
-		markbox.hidden = lost;
 		$('looking').hidden = !editable;
-		$('zoom-group').hidden = !editable;
+		$('zoom-group').hidden = !lost;
 		$('hint').hidden = !editable || !$('toast').hidden;
-		$('hint').textContent = lost ? 'Click the cloud · drag to narrow the search · scroll to change zoom' : 'Click or drag to move your mark';
+		$('hint').textContent = lost ? 'Click the cloud to place its points · scroll to change zoom' : 'Click to add a point · click a point to remove it';
 		if (editable) {
 			const ref = prevLinked(current);
-			zoom = lost ? ref.scale : p.scale;
-			const patch = $('patch'), pw = patch.offsetWidth || 120, ph = patch.offsetHeight || 105, k = pw / (ref.a[2] * ref.w);
-			patch.style.backgroundImage = `url(assets/${ref.name}.jpg)`;
-			patch.style.backgroundSize = `${ref.w * k}px auto`;
-			patch.style.backgroundPosition = `${-(ref.a[0] - ref.a[2] / 2) * ref.w * k}px ${-(ref.a[1] - ref.a[3] / 2) * ref.h * k + (ph - ref.a[3] * ref.h * k) / 2}px`;
+			if (lost) zoom = ref.scale;
+			drawPatch(ref);
 			$('looking-label').innerHTML = lost
 				? `Looking for<b>${ref.name} · ${ref.scale.toFixed(2)}×</b><span class="more">${phone.matches ? 'tap where it is now' : 'click where it is now<br>or <kbd>⏎</kbd> to accept the estimate'}</span>`
-				: `Your mark<b>${p.scale.toFixed(2)}×</b><button class="btn" id="clear">Clear mark <kbd class="desk">⌫</kbd></button>`;
+				: `Your mark<b>${p.pts.length} points · ${p.scale.toFixed(2)}×</b><button class="btn" id="clear">Clear mark <kbd class="desk">⌫</kbd></button>`;
 			$('clear')?.addEventListener('click', clearMark);
-			sizeGhost();
 		}
-		if (lost) place(estimate, p.a);
-		else {
-			markbox.className = `box ${p.source}`;
-			$('mark-tag').textContent = p.source === 'mark' ? `your mark · ${p.scale.toFixed(2)}×` : `${p.feats} features · ${p.scale.toFixed(2)}×`;
-			place(markbox, p.a);
-		}
-		drawTrail();
+		$('tag').className = `ptag ${p.source}`;
+		$('tag').textContent = lost ? 'estimated' : p.source === 'mark' ? `your mark · ${p.scale.toFixed(2)}×` : `${p.feats} features · ${p.scale.toFixed(2)}×`;
+		const [cx] = centre(p), top = Math.min(...p.pts.map(q => q[1]));
+		Object.assign($('tag').style, { left: `${cx * 100}%`, top: `${top * 100}%` });
+		drawGhost();
+		drawOverlay();
 	}
 
-	function sizeGhost() {
-		const [w, h] = ghostSize(photos[current]);
-		ghost.style.width = `${w * 100}%`;
-		ghost.style.height = `${h * 100}%`;
+	// The reference patch: the last linked photo around its points' centre, with the points on it.
+	function drawPatch(ref) {
+		const patch = $('patch'), pw = patch.offsetWidth || 120, ph = patch.offsetHeight || 105;
+		const k = pw / (PATCH_PX * ref.scale), [cx, cy] = centre(ref);
+		const ox = pw / 2 - cx * ref.w * k, oy = ph / 2 - cy * ref.h * k;
+		patch.style.backgroundImage = `url(assets/${ref.name}.jpg)`;
+		patch.style.backgroundSize = `${ref.w * k}px auto`;
+		patch.style.backgroundPosition = `${ox}px ${oy}px`;
+		$('patch-pts').setAttribute('viewBox', `0 0 ${pw} ${ph}`);
+		$('patch-pts').innerHTML = ref.pts.map(([x, y]) => `<circle class="pt mark" cx="${ox + x * ref.w * k}" cy="${oy + y * ref.h * k}" r="3"/>`).join('');
+	}
+
+	function drawGhost() {
+		const p = photos[current], W = photo.clientWidth, H = photo.clientHeight;
+		$('ghost').setAttribute('viewBox', `0 0 ${W} ${H}`);
 		$('zoom-val').textContent = `${+zoom.toFixed(2)}×`;
+		$('ghost-pts').innerHTML = p.source === 'lost' ? pointsSvg(ghostOffsets(p), 'ghost', W, H) : '';
 	}
 
-	// The trail: a path through the anchor centres of up to trailN photos each side, in order, with a dot per photo.
-	// Corner ticks only on the nearest BOXES_NEAR each side, where box size (a lens switch) matters most.
+	// The trail: a path through the points' centre in up to trailN photos each side, in order, with a dot per photo.
+	// Then the current photo's own points on top.
 	const fade = d => trailN === 1 ? 0.95 : 0.95 - 0.6 * (d - 1) / (trailN - 1);
 
-	function drawTrail() {
-		const W = photo.clientWidth, H = photo.clientHeight;
+	function drawOverlay(just = false) {
+		const W = photo.clientWidth, H = photo.clientHeight, p = photos[current];
 		trail.setAttribute('viewBox', `0 0 ${W} ${H}`);
 		$('trail-n').textContent = trailN ? trailN : 'off';
 		$('trail-n').classList.toggle('off', !trailN);
-		if (!trailN) { trail.innerHTML = ''; return; }
-		const pts = [];
+		const own = pointsSvg(p.pts, `${p.source}${just ? ' just' : ''}`, W, H);
+		if (!trailN) { trail.innerHTML = own; return; }
+		const cs = [];
 		for (let k = -trailN; k <= trailN; k++) {
 			const q = photos[current + k];
-			if (q) pts.push({ q, k, x: q.a[0] * W, y: q.a[1] * H });
+			if (q) { const [x, y] = centre(q); cs.push({ q, k, x: x * W, y: y * H }); }
 		}
-		let lines = '', ticks = '', dots = '';
-		for (let j = 0; j + 1 < pts.length; j++) {
-			const a = pts[j], b = pts[j + 1];
+		let lines = '', dots = '';
+		for (let j = 0; j + 1 < cs.length; j++) {
+			const a = cs[j], b = cs[j + 1];
 			const side = b.k <= 0 ? 'before' : 'after';
 			const d = Math.max(Math.abs(a.k), Math.abs(b.k));
 			const dash = a.q.source === 'lost' || b.q.source === 'lost' ? ' dashed' : '';
 			const seg = `M${a.x} ${a.y}L${b.x} ${b.y}`;
 			lines += `<g opacity="${fade(d).toFixed(2)}"><path class="line halo${dash}" d="${seg}"/><path class="line ${side}${dash}" d="${seg}"/></g>`;
 		}
-		for (const { q, k, x, y } of pts) {
+		for (const { q, k, x, y } of cs) {
 			if (k === 0) continue;
 			const side = k < 0 ? 'before' : 'after', d = Math.abs(k);
 			const r = q.source === 'mark' ? 5.5 : 4;
 			dots += `<circle class="dot ${side} ${q.source}" opacity="${fade(d).toFixed(2)}" cx="${x}" cy="${y}" r="${r}"${q.source === 'mark' ? ` stroke="var(--${side})"` : ''}/>`;
-			if (d <= BOXES_NEAR) ticks += corners(q, W, H, fade(d) * 0.8, side);
 		}
-		trail.innerHTML = ticks + lines + dots;
-	}
-
-	function corners(q, W, H, opacity, side) {
-		const [cx, cy, bw, bh] = q.a;
-		const x0 = (cx - bw / 2) * W, x1 = (cx + bw / 2) * W, y0 = (cy - bh / 2) * H, y1 = (cy + bh / 2) * H;
-		const L = clamp(0.18 * Math.min(x1 - x0, y1 - y0), 5, 14);
-		const d = `M${x0} ${y0 + L}V${y0}H${x0 + L}M${x1 - L} ${y0}H${x1}V${y0 + L}M${x1} ${y1 - L}V${y1}H${x1 - L}M${x0 + L} ${y1}H${x0}V${y1 - L}`;
-		const dash = q.source === 'lost' ? ' dashed' : '';
-		return `<g opacity="${opacity.toFixed(2)}"><path class="tick halo${dash}" d="${d}"/><path class="tick ${side}${dash}" d="${d}"/></g>`;
+		trail.innerHTML = lines + dots + own;
 	}
 
 	function renderFilmstrip() {
 		const lost = photos.filter(p => p.source === 'lost').length;
+		const fixed = [...fixList].filter(i => photos[i].source !== 'lost').length;
 		$('count').className = `count${lost ? '' : ' ok'}`;
 		$('count-text').textContent = lost ? `${lost}${phone.matches ? '' : ' to fix'}` : phone.matches ? '0' : `All ${photos.length} linked`;
-		$('next-lost').disabled = !lost;
+		$('next-lost').disabled = !fixList.size;
+		$('clear-fixed').hidden = !fixed;
+		$('clear-fixed').innerHTML = `Clear <span class="desk">${fixed} </span>fixed`;
 		filmstrip.innerHTML = photos.map((p, i) => {
-			const tip = p.source === 'mark' ? 'your mark' : p.source === 'lost' ? `lost · ${p.feats} features · estimated` : `${p.feats} features`;
-			return `<a class="thumb ${p.source}${i === current ? ' current' : ''}" data-i="${i}"><img src="assets/${p.name}-t.jpg" alt="" draggable="false"><span class="tip">${p.name} <b>${tip} · ${p.scale.toFixed(2)}×</b></span></a>`;
+			const listed = fixList.has(i) && p.source === 'mark';
+			const tip = p.source === 'mark' ? `your mark${listed ? ' · in fix list' : ''}` : p.source === 'lost' ? `lost · ${p.feats} features · estimated` : `${p.feats} features`;
+			return `<a class="thumb ${p.source}${listed ? ' listed' : ''}${i === current ? ' current' : ''}" data-i="${i}"><img src="assets/${p.name}-t.jpg" alt="" draggable="false"><span class="tip">${p.name} <b>${tip} · ${p.scale.toFixed(2)}×</b></span></a>`;
 		}).join('');
 	}
 
@@ -302,30 +325,39 @@
 		renderStage();
 	}
 
-	function nextLost(dir = 1) {
+	// Tab visits the whole fix list, marked photos included. Auto-advance after a mark skips to the next lost one.
+	function nextInList(dir = 1, lostOnly = false) {
 		for (let k = 1; k <= photos.length; k++) {
 			const i = (current + k * dir + photos.length * 2) % photos.length;
-			if (photos[i].source === 'lost') return go(i, true);
+			if (fixList.has(i) && (!lostOnly || photos[i].source === 'lost')) return go(i, true);
 		}
 	}
 
 	function remember(i) {
-		history.push({ i, before: { ...photos[i], a: [...photos[i].a] } });
+		history.push({ i, before: { ...photos[i], pts: photos[i].pts.map(q => [...q]) }, list: new Set(fixList) });
 		if (history.length > HISTORY_MAX) history.shift();
 	}
 
-	// A mark shows where it landed, with an undo, then moves on. Moving an existing mark stays put.
-	function mark(a) {
+	// A mark shows where it landed, with an undo, then moves on to the next lost photo.
+	function mark(pts) {
 		const p = photos[current], i = current;
-		if (p.source === 'tracked') return;
-		const wasLost = p.source === 'lost';
 		remember(i);
-		Object.assign(p, { source: 'mark', a, scale: zoom, feats: null });
+		Object.assign(p, { source: 'mark', pts, scale: zoom, feats: null });
 		renderStage();
-		markbox.classList.add('just');
-		toast(`${wasLost ? 'Marked' : 'Moved mark on'} ${p.name}`);
+		drawOverlay(true);
+		toast(`Marked ${p.name}`);
 		retrack();
-		if (wasLost) advanceTimer = setTimeout(() => { if (current === i) nextLost(); }, ADVANCE_MS);
+		advanceTimer = setTimeout(() => { if (current === i) nextInList(1, true); }, ADVANCE_MS);
+	}
+
+	// On a marked photo a click adds a point, and a click on a point removes it. The stage stays put.
+	function editPoints(pts, text) {
+		const p = photos[current];
+		remember(current);
+		p.pts = pts;
+		renderStage();
+		toast(`${text} ${p.name}`);
+		retrack();
 	}
 
 	function clearMark() {
@@ -333,16 +365,29 @@
 		if (p.source !== 'mark' || current === 0) return;
 		remember(current);
 		Object.assign(p, { source: 'lost', feats: 0 });
+		fixList.add(current);
 		toast(`Cleared mark on ${p.name}`);
 		retrack();
 		renderStage();
+	}
+
+	function clearFixed() {
+		const fixed = [...fixList].filter(i => photos[i].source !== 'lost');
+		if (!fixed.length) return;
+		remember(current);
+		for (const i of fixed) fixList.delete(i);
+		toast(`Took ${fixed.length} fixed off the list`);
+		renderFilmstrip();
+		filmstrip.children[current].classList.add('current');
 	}
 
 	function undo() {
 		const h = history.pop();
 		if (!h) return;
 		Object.assign(photos[h.i], h.before);
+		fixList = h.list;
 		retrack();
+		renderFilmstrip();
 		go(h.i, true);
 		toast(`Undone on ${photos[h.i].name}`, history.length > 0);
 	}
@@ -365,19 +410,23 @@
 			filmstrip.classList.remove('dim');
 			renderFilmstrip();
 			filmstrip.children[current].classList.add('current');
-			drawTrail();
+			drawOverlay();
 		}, 450);
 	}
 
 	function setTrail(n) {
 		trailN = n;
 		if (n) trailLast = n;
-		drawTrail();
+		drawOverlay();
+	}
+	function setZoom(z) {
+		if (photos[current].source !== 'lost') return;
+		zoom = z;
+		drawGhost();
 	}
 	function stepZoom(dir) {
 		const i = ZOOMS.findIndex(z => z >= zoom - 1e-6);
-		zoom = ZOOMS[clamp((i < 0 ? ZOOMS.length - 1 : i) + dir, 0, ZOOMS.length - 1)];
-		sizeGhost();
+		setZoom(ZOOMS[clamp((i < 0 ? ZOOMS.length - 1 : i) + dir, 0, ZOOMS.length - 1)]);
 	}
 
 	$('trail-less').addEventListener('click', () => setTrail(trailN <= TRAIL_MIN ? 0 : trailN - 1));
@@ -386,41 +435,30 @@
 	$('zoom-in').addEventListener('click', () => stepZoom(1));
 	$('prev').addEventListener('click', () => go(current - 1));
 	$('next').addEventListener('click', () => go(current + 1));
-	$('next-lost').addEventListener('click', () => nextLost());
+	$('next-lost').addEventListener('click', () => nextInList());
+	$('clear-fixed').addEventListener('click', clearFixed);
 	$('undo').addEventListener('click', undo);
 
-	// Stage: click or tap marks a point, drag marks a search box, scroll sets the zoom.
-	let drag = null;
+	// Stage: on a lost photo a click places the ghost's points there; on a marked photo it adds or removes one point.
 	const norm = e => { const r = photo.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }; };
 	photo.addEventListener('pointermove', e => {
 		const n = norm(e);
-		ghost.style.left = `calc(${n.x * 100}% - ${ghost.offsetWidth / 2}px)`;
-		ghost.style.top = `calc(${n.y * 100}% - ${ghost.offsetHeight / 2}px)`;
-		if (!drag) return;
-		drawing.hidden = false;
-		Object.assign(drawing.style, { left: `${Math.min(n.x, drag.x) * 100}%`, top: `${Math.min(n.y, drag.y) * 100}%`, width: `${Math.abs(n.x - drag.x) * 100}%`, height: `${Math.abs(n.y - drag.y) * 100}%` });
+		$('ghost-pts').setAttribute('transform', `translate(${n.x * photo.clientWidth} ${n.y * photo.clientHeight})`);
 	});
-	photo.addEventListener('pointerdown', e => {
-		if (photos[current].source === 'tracked') return;
-		photo.setPointerCapture(e.pointerId);
-		drag = norm(e);
-	});
-	photo.addEventListener('pointerup', e => {
-		if (!drag) return;
-		const p = photos[current], n = norm(e);
-		const w = Math.abs(n.x - drag.x), h = Math.abs(n.y - drag.y);
-		drawing.hidden = true;
-		const start = drag;
-		drag = null;
-		if (w * p.w > 12 && h * p.h > 12) mark([(n.x + start.x) / 2, (n.y + start.y) / 2, w, h]);
-		else mark([n.x, n.y, ...ghostSize(p)]);
+	photo.addEventListener('click', e => {
+		const p = photos[current], n = norm(e), W = photo.clientWidth, H = photo.clientHeight;
+		if (p.source === 'tracked') return;
+		if (p.source === 'lost') return mark(ghostOffsets(p).map(([dx, dy]) => [n.x + dx, n.y + dy]));
+		const hit = p.pts.findIndex(([x, y]) => Math.hypot((x - n.x) * W, (y - n.y) * H) <= HIT_PX);
+		if (hit < 0) editPoints([...p.pts, [n.x, n.y]], 'Added a point on');
+		else if (p.pts.length > 1) editPoints(p.pts.toSpliced(hit, 1), 'Removed a point on');
 	});
 	photo.addEventListener('wheel', e => {
-		if (photos[current].source === 'tracked') return;
+		if (photos[current].source !== 'lost') return;
 		e.preventDefault();
 		stepZoom(e.deltaY < 0 ? 1 : -1);
 	}, { passive: false });
-	new ResizeObserver(drawTrail).observe(photo);
+	new ResizeObserver(() => { drawGhost(); drawOverlay(); }).observe(photo);
 
 	// Filmstrip: press and drag to scrub; near either edge it scrolls on its own. A vertical wheel scrolls it sideways.
 	let scrubX = null;
@@ -460,14 +498,13 @@
 		else if (e.key === 'ArrowLeft') { e.preventDefault(); go(current - step); }
 		else if (e.key === 'Home') { e.preventDefault(); go(0, true); }
 		else if (e.key === 'End') { e.preventDefault(); go(photos.length - 1, true); }
-		else if (e.key === 'Tab' || e.key === 'l') { e.preventDefault(); nextLost(e.shiftKey ? -1 : 1); }
-		else if (e.key === 'Enter' && p.source === 'lost') mark(p.a);
+		else if (e.key === 'Tab' || e.key === 'l') { e.preventDefault(); nextInList(e.shiftKey ? -1 : 1); }
+		else if (e.key === 'Enter' && p.source === 'lost') mark(p.pts);
 		else if (e.key === 'Backspace' || e.key === 'Delete') clearMark();
 		else if (e.key === 't') setTrail(trailN ? 0 : trailLast);
 		else if (e.key === ']') stepZoom(1);
 		else if (e.key === '[') stepZoom(-1);
-		else if (e.key === '1' && p.source !== 'tracked') { zoom = 1; sizeGhost(); }
-		else if (e.key === 'Escape') { drag = null; drawing.hidden = true; }
+		else if (e.key === '1') setZoom(1);
 	});
 	phone.addEventListener('change', () => { renderFilmstrip(); go(current); });
 
