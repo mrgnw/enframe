@@ -120,24 +120,40 @@ def oriented_size(path):
 		return ImageOps.exif_transpose(im).size
 
 
+# x,y,w,h go into the sidecar as full f64 precision (no rounding in main.rs), and both the baseline and
+# this run's JSON round-trip a double through text exactly (serde_json and Python's json both use a
+# shortest round-trippable float format). A bit-exact rerun gives 0; this just leaves float-parsing noise.
+RECT_TOLERANCE = 1e-9
+# main.rs writes scale as `format!("{:.4}", hit.scale)`, so both sides are already quantized to 4 decimal
+# places; half that step covers the same float-parsing noise as above.
+SCALE_TOLERANCE = 5e-5
+# tracking_benchmark.py's girona_run() rounds point_px to 3 decimal places when it writes the baseline;
+# this run's point is read at full precision, so up to half that step is baseline rounding, not drift.
+POINT_TOLERANCE_PX = 6e-4
+
 worst_rect = 0.0
 worst_scale = 0.0
 worst_point_px = 0.0
 for file, row in rust.items():
 	base = baseline[Path(file).stem]
-	assert row['source'] == base['source'], f'{file}: source {row["source"]!r} vs baseline {base["source"]!r}'
-	worst_rect = max(worst_rect, max(abs(row[k] - base['rect'][i]) for i, k in enumerate('xywh')))
-	worst_scale = max(worst_scale, abs(row['scale'] - base['scale']))
+	assert row['source'] == base['source'], (
+		f'{file}: source {row["source"]!r}, baseline (analysis/tracking_baseline.json) has {base["source"]!r}'
+	)
+	rect_diff = max(abs(row[k] - base['rect'][i]) for i, k in enumerate('xywh'))
+	assert rect_diff <= RECT_TOLERANCE, f'{file}: rect differs from baseline by {rect_diff:.2e}'
+	worst_rect = max(worst_rect, rect_diff)
+	scale_diff = abs(row['scale'] - base['scale'])
+	assert scale_diff <= SCALE_TOLERANCE, f'{file}: scale differs from baseline by {scale_diff:.2e}'
+	worst_scale = max(worst_scale, scale_diff)
 	fw, fh = oriented_size(samples / file)
 	px, py = row['points'][0]
-	worst_point_px = max(
-		worst_point_px, abs(px * fw - base['point_px'][0]), abs(py * fh - base['point_px'][1])
-	)
+	point_diff = max(abs(px * fw - base['point_px'][0]), abs(py * fh - base['point_px'][1]))
+	assert point_diff <= POINT_TOLERANCE_PX, f'{file}: point differs from baseline by {point_diff:.2e}px'
+	worst_point_px = max(worst_point_px, point_diff)
 lost = sorted(f for f in rust if rust[f]['source'] == 'lost')
-assert worst_rect <= 1e-3, f'rects differ from baseline by {worst_rect:.2e} (expected about 2.95e-4)'
 print(
-	f'Girona vs baseline: max rect diff {worst_rect:.2e}, max scale diff {worst_scale:.1e}, '
-	f'max point diff {worst_point_px:.2f}px, lost {lost}'
+	f'Girona vs baseline (analysis/tracking_baseline.json): max rect diff {worst_rect:.2e}, '
+	f'max scale diff {worst_scale:.1e}, max point diff {worst_point_px:.2e}px, lost {lost}'
 )
 PY
 check 'outputs valid, Girona matches baseline' uv run "$OUT/verify.py" "$OUT"
