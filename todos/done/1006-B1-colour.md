@@ -1,3 +1,7 @@
+---
+branch: b1-colour
+---
+
 # B1 · Keep Display P3 and label the clip
 
 Depends on: — · Model: Opus · Size: M
@@ -20,9 +24,13 @@ Keep the pixel values and copy the photos' colour label onto the clip. A set who
 
 ## Done when
 
-- [ ] `avifdec --info` on a Girona clip shows P3 primaries and sRGB transfer; `ffprobe` shows the same on the `.mp4`.
-- [ ] An all-sRGB set (the JPEG conversions in `check.sh`) still gives an sRGB clip with unchanged pixels.
-- [ ] A mixed set (P3 AVIF and sRGB JPEG) gives a P3 clip, and a test checks the sRGB to P3 conversion on known values.
-- [ ] A browser screenshot of a Girona photo and of its frame in the clip match in colour (Playwright, same browser for both).
-- [ ] Tracking output is unchanged: the Girona comparison in `check.sh` still passes.
-- [ ] `bash analysis/check.sh` passes.
+- [x] `avifdec --info` on a Girona clip shows P3 primaries and sRGB transfer; `ffprobe` shows the same on the `.mp4`.
+- [x] An all-sRGB set (the JPEG conversions in `check.sh`) still gives an sRGB clip with unchanged pixels.
+- [x] A mixed set (P3 AVIF and sRGB JPEG) gives a P3 clip, and a test checks the sRGB to P3 conversion on known values.
+- [x] A browser screenshot of a Girona photo and of its frame in the clip match in colour (Playwright, same browser for both).
+- [x] Tracking output is unchanged: the Girona comparison in `check.sh` still passes.
+- [x] `bash analysis/check.sh` passes.
+
+## Result
+
+Clips, ffmpeg outputs and `--frames` PNGs carry the photos' profile (Display P3 for Girona). Mixed sets convert sRGB photos to P3 at render time, so tracking and the cache are unchanged. In Chromium a photo and its clip frame now differ by 1.07 levels on average (was 4.19). Not verified: real Safari; Playwright's WebKit ignores the label on animated AVIF.
