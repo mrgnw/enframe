@@ -20,7 +20,7 @@
 	.looking { height: auto; padding: 8px; border-radius: 14px; gap: 10px; align-items: flex-start; }
 	.looking .label { padding: 4px 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.35; }
 	.looking .label b { display: block; color: var(--fg); font-weight: 600; font-size: 13px; }
-	.looking .btn { margin-top: 6px; height: 26px; padding: 0 10px; background: rgba(255, 255, 255, 0.08); font-size: 12px; }
+	.looking .btn { margin-top: 6px; display: flex; width: fit-content; height: 26px; padding: 0 10px; background: rgba(255, 255, 255, 0.08); font-size: 12px; }
 
 	.tools { gap: 4px; font-variant-numeric: tabular-nums; }
 	.tools .val { font: 600 15px/1 var(--display); min-width: 2.4ch; text-align: center; }
@@ -69,7 +69,7 @@
 		white-space: nowrap;
 		pointer-events: none;
 	}
-	.ptag.lost { background: rgba(0, 0, 0, 0.6); color: rgba(255, 255, 255, 0.8); }
+	.ptag.lost, .ptag.skipped { background: rgba(0, 0, 0, 0.6); color: rgba(255, 255, 255, 0.8); }
 	.ptag.tracked { background: rgba(0, 0, 0, 0.6); color: var(--accent); }
 
 	.trail .halo { stroke: rgba(0, 0, 0, 0.7); }
@@ -88,12 +88,15 @@
 	@keyframes flow { from { stroke-dashoffset: var(--o); } to { stroke-dashoffset: calc(var(--o) - 22px); } }
 	@media (prefers-reduced-motion: reduce) { .trail .flow { animation: none; } }
 	.trail .pt.tracked { opacity: 0.85; }
-	.trail .pt.lost, .trail .pt.ghost { fill: rgba(0, 0, 0, 0.5); stroke-dasharray: 3 2; }
+	.trail .pt.lost, .trail .pt.skipped, .trail .pt.ghost { fill: rgba(0, 0, 0, 0.5); stroke-dasharray: 3 2; }
+	.trail .pt.skipped { stroke: var(--muted); stroke-width: 2; }
 	.trail .pt.lost { stroke: rgba(255, 255, 255, 0.9); stroke-width: 2; }
 	.trail .pt.ghost { stroke: var(--accent); stroke-width: 2; }
 	.looking .patch { position: relative; overflow: hidden; flex: none; }
 	.looking .patch .pt { stroke-width: 1.25; }
 	.thumb.mark.listed::after { background: var(--accent); box-shadow: none; }
+	.thumb.skipped::after { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted); }
+	.thumb.skipped.listed::after { background: var(--muted); box-shadow: none; }
 	#clear-fixed { background: rgba(255, 255, 255, 0.08); }
 
 	@media (max-width: 700px) {
@@ -205,8 +208,10 @@
 	const centre = p => [p.pts.reduce((s, q) => s + q[0], 0) / p.pts.length, p.pts.reduce((s, q) => s + q[1], 0) / p.pts.length];
 	const pointsSvg = (pts, cls, W, H) => pts.map(([x, y]) => `<circle class="pt ${cls}" cx="${x * W}" cy="${y * H}" r="${cls.startsWith('mark') ? 5.5 : cls === 'tracked' ? 4.5 : 6}"/>`).join('');
 
+	const seen = p => p.source === 'tracked' || p.source === 'mark';
+
 	function prevLinked(i) {
-		for (let j = i - 1; j >= 0; j--) if (photos[j].source !== 'lost') return photos[j];
+		for (let j = i - 1; j >= 0; j--) if (seen(photos[j])) return photos[j];
 		return photos[0];
 	}
 
@@ -222,23 +227,27 @@
 		img.src = `assets/${p.name}.jpg`;
 		photo.style.setProperty('--r', p.w / p.h);
 		$('where').innerHTML = `<b class="desk">${p.name} · </b>${current + 1} / ${photos.length}`;
-		const lost = p.source === 'lost', editable = p.source !== 'tracked';
+		const lost = p.source === 'lost', skipped = p.source === 'skipped', editable = lost || p.source === 'mark';
 		view.classList.toggle('edit', editable);
-		$('looking').hidden = !editable;
+		$('looking').hidden = !editable && !skipped;
 		$('zoom-group').hidden = !lost;
-		$('hint').hidden = !editable || !$('toast').hidden;
-		$('hint').textContent = lost ? 'Click the cloud to place its points · scroll to change zoom' : 'Click to add a point · click a point to remove it';
-		if (editable) {
+		$('hint').hidden = (!editable && !skipped) || !$('toast').hidden;
+		$('hint').textContent = lost ? 'Click the cloud to place its points · scroll to change zoom'
+			: skipped ? 'Skipped: the feature is hidden here, so the clip uses the estimate'
+			: 'Click to add a point · click a point to remove it';
+		if (editable || skipped) {
 			const ref = prevLinked(current);
 			if (lost) zoom = ref.scale;
 			drawPatch(ref);
 			$('looking-label').innerHTML = lost
-				? `Looking for<b>${ref.name} · ${ref.scale.toFixed(2)}×</b><span class="more">${phone.matches ? 'tap where it is now' : 'click where it is now<br>or <kbd>⏎</kbd> to accept the estimate'}</span>`
+				? `Looking for<b>${ref.name} · ${ref.scale.toFixed(2)}×</b><span class="more">${phone.matches ? 'tap where it is now' : 'click where it is now<br>or <kbd>⏎</kbd> to accept the estimate'}</span><button class="btn" id="skip" title="The feature is hidden in this photo (a building, trees). The clip keeps it at the estimate.">Skip, hidden here <kbd class="desk">S</kbd></button>`
+				: skipped ? `Skipped<b>feature hidden</b><button class="btn" id="clear">Unskip <kbd class="desk">⌫</kbd></button>`
 				: `Your mark<b>${p.pts.length} points · ${p.scale.toFixed(2)}×</b><button class="btn" id="clear">Clear mark <kbd class="desk">⌫</kbd></button>`;
 			$('clear')?.addEventListener('click', clearMark);
+			$('skip')?.addEventListener('click', skip);
 		}
 		$('tag').className = `ptag ${p.source}`;
-		$('tag').textContent = lost ? 'estimated' : p.source === 'mark' ? `your mark · ${p.scale.toFixed(2)}×` : `${p.feats} features · ${p.scale.toFixed(2)}×`;
+		$('tag').textContent = lost ? 'estimated' : skipped ? 'skipped · estimated' : p.source === 'mark' ? `your mark · ${p.scale.toFixed(2)}×` : `${p.feats} features · ${p.scale.toFixed(2)}×`;
 		const [cx] = centre(p), top = Math.min(...p.pts.map(q => q[1]));
 		Object.assign($('tag').style, { left: `${cx * 100}%`, top: `${top * 100}%` });
 		drawGhost();
@@ -337,8 +346,10 @@
 		$('clear-fixed').hidden = !fixed;
 		$('clear-fixed').innerHTML = `Clear <span class="desk">${fixed} </span>fixed`;
 		filmstrip.innerHTML = photos.map((p, i) => {
-			const listed = fixList.has(i) && p.source === 'mark';
-			const tip = p.source === 'mark' ? `your mark${listed ? ' · in fix list' : ''}` : p.source === 'lost' ? `lost · ${p.feats} features · estimated` : `${p.feats} features`;
+			const listed = fixList.has(i) && (p.source === 'mark' || p.source === 'skipped');
+			const tip = p.source === 'mark' ? `your mark${listed ? ' · in fix list' : ''}`
+				: p.source === 'skipped' ? `skipped · feature hidden${listed ? ' · in fix list' : ''}`
+				: p.source === 'lost' ? `lost · ${p.feats} features · estimated` : `${p.feats} features`;
 			return `<a class="thumb ${p.source}${listed ? ' listed' : ''}${i === current ? ' current' : ''}" data-i="${i}"><img src="assets/${p.name}-t.jpg" alt="" draggable="false"><span class="tip">${p.name} <b>${tip} · ${p.scale.toFixed(2)}×</b></span></a>`;
 		}).join('');
 	}
@@ -380,6 +391,18 @@
 		advanceTimer = setTimeout(() => { if (current === i) nextInList(1, true); }, ADVANCE_MS);
 	}
 
+	// The feature is hidden here. The photo stays in the clip at the estimate and counts as handled, like a mark.
+	function skip() {
+		const p = photos[current], i = current;
+		if (p.source !== 'lost') return;
+		remember(i);
+		p.source = 'skipped';
+		renderStage();
+		toast(`Skipped ${p.name}`);
+		retrack();
+		advanceTimer = setTimeout(() => { if (current === i) nextInList(1, true); }, ADVANCE_MS);
+	}
+
 	// On a marked photo a click adds a point, and a click on a point removes it. The stage stays put.
 	function editPoints(pts, text) {
 		const p = photos[current];
@@ -392,11 +415,11 @@
 
 	function clearMark() {
 		const p = photos[current];
-		if (p.source !== 'mark' || current === 0) return;
+		if (!(p.source === 'mark' || p.source === 'skipped') || current === 0) return;
 		remember(current);
-		Object.assign(p, { source: 'lost', feats: 0 });
+		toast(`${p.source === 'mark' ? 'Cleared mark on' : 'Unskipped'} ${p.name}`);
+		Object.assign(p, { source: 'lost', feats: p.feats ?? 0 });
 		fixList.add(current);
-		toast(`Cleared mark on ${p.name}`);
 		retrack();
 		renderStage();
 	}
@@ -477,7 +500,7 @@
 	});
 	photo.addEventListener('click', e => {
 		const p = photos[current], n = norm(e), W = photo.clientWidth, H = photo.clientHeight;
-		if (p.source === 'tracked') return;
+		if (p.source === 'tracked' || p.source === 'skipped') return;
 		if (p.source === 'lost') return mark(ghostOffsets(p).map(([dx, dy]) => [n.x + dx, n.y + dy]));
 		const hit = p.pts.findIndex(([x, y]) => Math.hypot((x - n.x) * W, (y - n.y) * H) <= HIT_PX);
 		if (hit < 0) editPoints([...p.pts, [n.x, n.y]], 'Added a point on');
@@ -531,6 +554,7 @@
 		else if (e.key === 'Tab' || e.key === 'l') { e.preventDefault(); nextInList(e.shiftKey ? -1 : 1); }
 		else if (e.key === 'Enter' && p.source === 'lost') mark(p.pts);
 		else if (e.key === 'Backspace' || e.key === 'Delete') clearMark();
+		else if (e.key === 's') skip();
 		else if (e.key === 't') setTrail(trailN ? 0 : trailLast);
 		else if (e.key === ']') stepZoom(1);
 		else if (e.key === '[') stepZoom(-1);
