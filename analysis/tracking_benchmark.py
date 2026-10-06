@@ -6,11 +6,11 @@
 
 uv run analysis/tracking_benchmark.py [REPORT]
 
-Accuracy: synthetic sequences warped from Girona photos with known shifts, crops, zooms (2-3x jumps like
+Accuracy: synthetic sequences warped from train clouds photos with known shifts, crops, zooms (2-3x jumps like
 lens switches) and small rotations, so the true anchor in every frame is exact. Reports anchor error in
 frame pixels, scale error in percent, and LOST frames.
 
-Stability: the real Girona job (analysis/girona_all.sh marks) on the AVIF originals and on copies with
+Stability: the real train clouds job (analysis/train_clouds_all.sh marks) on the AVIF originals and on copies with
 slightly different pixels. Reports how far each photo's anchor moves, in original pixels, and whether the
 LOST set changes.
 
@@ -34,8 +34,8 @@ from PIL import Image, ImageOps
 
 ROOT = Path(__file__).resolve().parent.parent
 BIN = ROOT / 'rust' / 'target' / 'release' / 'pinframe'
-GIRONA = ROOT / 'samples' / 'girona clouds'
-GIRONA_JOB = ROOT / 'analysis' / 'girona_all.sh'
+TRAIN_CLOUDS = ROOT / 'samples' / 'train clouds'
+TRAIN_CLOUDS_JOB = ROOT / 'analysis' / 'train_clouds_all.sh'
 DEFAULT_REPORT = ROOT / 'out' / 'tracking_benchmark.json'
 
 # Synthetic frames: 1024 px on the long edge, so the tracker runs SIFT at full frame size (TRACK_EDGE).
@@ -46,7 +46,7 @@ NOISE_LEVELS = 2
 NOISE_SEED = 0
 TOP_MOVERS = 5
 
-# Each sequence: a Girona photo, the anchor box in it (from girona_all.sh or check.sh marks), and frames as
+# Each sequence: a train clouds photo, the anchor box in it (from train_clouds_all.sh or check.sh marks), and frames as
 # (zoom from the photo, rotation in degrees, anchor offset from the frame centre in frame px). Frames that
 # would leave the photo are shifted back inside; the truth follows the actual frame.
 SEQUENCES = {
@@ -190,7 +190,7 @@ def render_frame(base: Image.Image, half: Image.Image, spec: tuple, anchor: tupl
 
 def accuracy_sequence(name: str, tmp: Path) -> dict:
 	photo, (bx, by, bw, bh), specs = SEQUENCES[name]
-	base = oriented(GIRONA / photo)
+	base = oriented(TRAIN_CLOUDS / photo)
 	half = base.reduce(2)
 	anchor = (bx + bw / 2, by + bh / 2)
 	work = tmp / f'seq-{name}'
@@ -242,12 +242,12 @@ def accuracy_summary(sequences: dict) -> dict:
 # --- stability ---
 
 
-def girona_marks(ext: str) -> list[str]:
-	"""--points, --at marks and --pad default from analysis/girona_all.sh, with the photo extension swapped."""
-	text = GIRONA_JOB.read_text()
+def train_clouds_marks(ext: str) -> list[str]:
+	"""--points, --at marks and --pad default from analysis/train_clouds_all.sh, with the photo extension swapped."""
+	text = TRAIN_CLOUDS_JOB.read_text()
 	points = re.search(r'--points (\S+)', text).group(1)
 	ats = re.findall(r'^\s*--at (IMG_\d+)\.avif=(\S+)$', text, re.M)
-	assert ats, 'no --at marks found in girona_all.sh'
+	assert ats, 'no --at marks found in train_clouds_all.sh'
 	pad = re.search(r'PAD=\$\{PAD-(\w+)\}', text).group(1)
 	marks = ['--points', points, '--pad', pad]
 	for stem, value in ats:
@@ -304,10 +304,10 @@ VARIANTS = {
 }
 
 
-def girona_run(photos: list[Path], ext: str, work: Path) -> dict:
+def train_clouds_run(photos: list[Path], ext: str, work: Path) -> dict:
 	work.mkdir()
-	rows = run_pinframe(photos, girona_marks(ext), work)
-	sizes = {p.stem: oriented_size(p) for p in GIRONA.glob('*.avif')}
+	rows = run_pinframe(photos, train_clouds_marks(ext), work)
+	sizes = {p.stem: oriented_size(p) for p in TRAIN_CLOUDS.glob('*.avif')}
 	result = {}
 	for row in rows:
 		stem = Path(row['file']).stem
@@ -350,8 +350,8 @@ def compare(original: dict, variant: dict) -> dict:
 
 
 def stability(tmp: Path) -> dict:
-	originals = sorted(GIRONA.glob('*.avif'))
-	assert len(originals) == 57, f'expected 57 Girona photos, found {len(originals)}'
+	originals = sorted(TRAIN_CLOUDS.glob('*.avif'))
+	assert len(originals) == 57, f'expected 57 train clouds photos, found {len(originals)}'
 	dirs = {name: tmp / name for name in VARIANTS}
 	for d in dirs.values():
 		d.mkdir()
@@ -363,11 +363,11 @@ def stability(tmp: Path) -> dict:
 		]
 		for job in jobs:
 			job.result()
-	original = girona_run(originals, 'avif', tmp / 'run-original')
+	original = train_clouds_run(originals, 'avif', tmp / 'run-original')
 	variants = {}
 	for name, (_, ext) in VARIANTS.items():
 		photos = sorted(dirs[name].glob(f'*.{ext}'))
-		variants[name] = compare(original, girona_run(photos, ext, tmp / f'run-{name}'))
+		variants[name] = compare(original, train_clouds_run(photos, ext, tmp / f'run-{name}'))
 	return {'original': original, 'variants': variants}
 
 

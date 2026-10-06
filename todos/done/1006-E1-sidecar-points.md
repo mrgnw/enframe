@@ -22,10 +22,10 @@ The UI decision of 2026-10-06 is points, not boxes (`docs/ui-plan.md`, "Decision
 ## Done when
 
 - [x] Rust writes `points` for every photo: tracked, marked and lost (estimated) alike.
-- [x] The point matches the anchor `anchor.py` prints, within 1.5 px, on all 57 Girona photos.
+- [x] The point matches the anchor `anchor.py` prints, within 1.5 px, on all 57 train clouds photos.
 - [x] README and `docs/rust.md` describe the field.
 - [x] `bash analysis/check.sh` passes.
 
 ## Result
 
-`points` is in every row. `analysis/check_points.py` matches it to `anchor.py`'s anchors on all 57 Girona photos, worst 0.496 px.
+`points` is in every row. `analysis/check_points.py` matches it to `anchor.py`'s anchors on all 57 train clouds photos, worst 0.496 px.

@@ -1,7 +1,7 @@
 # A5 · Several reference points instead of a box
 
 Design card. Built as [A5a](A5a-points-tracker.md) (tracker) then [A5b](A5b-points-syntax.md) (syntax). Blocks: E3
-Touches: `rust/src/track.rs`, `rust/src/main.rs` (CLI, sidecar), README, `docs/rust.md`, `analysis/check.sh`, `analysis/girona_all.sh`
+Touches: `rust/src/track.rs`, `rust/src/main.rs` (CLI, sidecar), README, `docs/rust.md`, `analysis/check.sh`, `analysis/train_clouds_all.sh`
 
 ## Decision (2026-10-06)
 
@@ -43,7 +43,7 @@ Written 2026-10-06 from a scratch prototype in `track.rs` (not committed) run th
 - The old `x,y,w,h` form fails loudly ("a point is x,y, not 4 numbers") instead of being read as two points. A flat `x,y,x,y` list would silently turn every old box into two points.
 - Limits: 1 to 32 points per mark, each inside its photo; zoom positive. Out-of-range input stops with a message.
 
-The Girona job (`analysis/girona_all.sh`), rewritten. Each box becomes the four centres of its quarters, so the anchor (their mean) is the box centre as before; point marks are unchanged:
+The train clouds job (`analysis/train_clouds_all.sh`), rewritten. Each box becomes the four centres of its quarters, so the anchor (their mean) is the box centre as before; point marks are unchanged:
 
 ```sh
 fixes=(
@@ -72,7 +72,7 @@ fixes=(
 	--at IMG_4798.avif=1000,400
 )
 
-$BIN "samples/girona clouds"/*.avif --points 1267.5,510/1782.5,510/1267.5,710/1782.5,710 "${fixes[@]}" ${PAD:+--pad "$PAD"} --out "$OUT" "${@:2}"
+$BIN "samples/train clouds"/*.avif --points 1267.5,510/1782.5,510/1267.5,710/1782.5,710 "${fixes[@]}" ${PAD:+--pad "$PAD"} --out "$OUT" "${@:2}"
 ```
 
 ### `--box`: removed
@@ -86,7 +86,7 @@ At the first photo and at every mark, on the downscaled photo SIFT ran on:
 1. For each keypoint, the distance to the nearest point.
 2. `r` = the 96th smallest of those distances (12 × `MIN_INLIERS`): the radius at which the discs hold 96 keypoints. Dense texture gives small discs, plain sky large ones.
 3. `r` is at least half the smallest spacing between two points, so the discs of a spread pattern touch and cover the feature between the points. With one point this term is absent.
-4. `r` is at most half of `TRACK_EDGE` (512 px). On Girona it reached 313 px at most, so the cap never binds there.
+4. `r` is at most half of `TRACK_EDGE` (512 px). On train clouds it reached 313 px at most, so the cap never binds there.
 5. The reference features are those within `r` of any point. One `r` for all points.
 
 On a tracked photo the fit moves every point and multiplies `r` by the fitted zoom, as the box width is today; `r` is not re-derived per photo, so it cannot drift. The RANSAC tolerance uses the area's width (the points' extent plus `2r`) where it uses the box width today. The A4 search window is unchanged: it already works from the reference features' bounds.
@@ -97,14 +97,14 @@ Measured (first column is `main`; patterns are made from each box as its centre 
 |-|-|-|-|-|-|
 | accuracy median / max | 0.21 / 1.00 px | 0.20 / 1.29 px | 0.12 / 1.11 px | 0.16 / 1.30 px | 0.10 / 1.09 px |
 | scale error max | 0.53% | 0.73% | 0.55% | 0.73% | 0.56% |
-| Girona LOST | 3 | 4 (+IMG_4795) | 3, same | 3, same | 3, same |
-| Girona median move vs box | | 0.4 px | 0.6 px | 0.4 px | 0.9 px |
+| train clouds LOST | 3 | 4 (+IMG_4795) | 3, same | 3, same | 3, same |
+| train clouds median move vs box | | 0.4 px | 0.6 px | 0.4 px | 0.9 px |
 | IMG_4689 move, imageio_avif | 7.8 px | | 0.9 px | | 0.9 px |
 | IMG_4795 move, worst variant | 35.7 px | | 36.2 px | | 44.4 px |
 
-N=24 lost two to three more Girona photos and moved some variants 240–650 px; N=48 and 64 lose IMG_4795 with one point. 96 is the smallest tested count that holds with one point. Benchmark time is unchanged (20.5 s against 21.0 s).
+N=24 lost two to three more train clouds photos and moved some variants 240–650 px; N=48 and 64 lose IMG_4795 with one point. 96 is the smallest tested count that holds with one point. Benchmark time is unchanged (20.5 s against 21.0 s).
 
-How A5 checks it with the benchmark: the accuracy sequences pass `--points` (their box's four quarter centres) and a second pass with one point at the truth, so one point is scored on every run. The Girona stability run reads the new `girona_all.sh`. Pass when accuracy max stays within 1.5 px, LOST stays 0 synthetic and IMG_4675/4721/4725 on Girona, and the regenerated baseline's moves are explained in `docs/tracking.md`.
+How A5 checks it with the benchmark: the accuracy sequences pass `--points` (their box's four quarter centres) and a second pass with one point at the truth, so one point is scored on every run. The train clouds stability run reads the new `train_clouds_all.sh`. Pass when accuracy max stays within 1.5 px, LOST stays 0 synthetic and IMG_4675/4721/4725 on train clouds, and the regenerated baseline's moves are explained in `docs/tracking.md`.
 
 ### Marks on later photos and the anchor
 
@@ -120,12 +120,12 @@ How A5 checks it with the benchmark: the accuracy sequences pass `--points` (the
 
 ### Risks
 
-- **Accuracy:** measured equal or better than the box, apart from a max error 0.1 px higher. The prototype only made patterns from the existing boxes; points a person clicks will differ, so A5 re-measures with the real `girona_all.sh`.
+- **Accuracy:** measured equal or better than the box, apart from a max error 0.1 px higher. The prototype only made patterns from the existing boxes; points a person clicks will differ, so A5 re-measures with the real `train_clouds_all.sh`.
 - **IMG_4689/4690:** discs remove their sensitivity: 7.8 to 0.9 px, and the largest rect change on `imageio_avif` drops from 1.60e-1 to 1.89e-2.
 - **IMG_4795:** still has two fits 30–45 px apart: worst move 36–44 px with points against 36 px with the box. Discs do not fix it; it stays A2's problem.
-- **Size:** about +80/−40 lines in `track.rs`, +40/−30 in `main.rs`, the benchmark's mark builder, `girona_all.sh`, README, `docs/rust.md`, `docs/tracking.md`, regenerated baseline and `check.sh` expectations. Split it:
+- **Size:** about +80/−40 lines in `track.rs`, +40/−30 in `main.rs`, the benchmark's mark builder, `train_clouds_all.sh`, README, `docs/rust.md`, `docs/tracking.md`, regenerated baseline and `check.sh` expectations. Split it:
   - **A5a, tracker:** the point set, the area rule, `points` in the sidecar. The CLI stays as it is; `--box` and box marks become their four quarter centres internally, point marks become one-point sets. Regenerates the baseline. This is the change that moves numbers.
-  - **A5b, syntax:** `--points`, `--at …/…@zoom`, `--box` removed, `girona_all.sh` rewritten as above, benchmark and README. Because A5a uses the same points, the baseline must stay identical; any difference is a parsing bug.
+  - **A5b, syntax:** `--points`, `--at …/…@zoom`, `--box` removed, `train_clouds_all.sh` rewritten as above, benchmark and README. Because A5a uses the same points, the baseline must stay identical; any difference is a parsing bug.
 
 ### Decisions for you
 
@@ -138,6 +138,6 @@ How A5 checks it with the benchmark: the accuracy sequences pass `--points` (the
 
 ## Done when
 
-- [ ] The Girona job runs with points only, and A1 shows accuracy and LOST count no worse than with boxes.
+- [ ] The train clouds job runs with points only, and A1 shows accuracy and LOST count no worse than with boxes.
 - [ ] README describes the new marks.
 - [ ] `bash analysis/check.sh` passes.

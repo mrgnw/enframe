@@ -19,8 +19,8 @@ It prints a one-line summary and writes a JSON report.
 
 ## What it measures
 
-- **Accuracy against known truth.** Build sequences from Girona photos with transforms you choose: crop, shift, scale (including 2–3x jumps like lens switches) and small rotations. The true anchor position is therefore known exactly. Report the anchor position error in pixels, the scale error in percent, and the LOST count.
-- **Stability under tiny input changes.** Run the real Girona job on the AVIF originals and on re-encodes: AVIF through ImageIO-equivalent pixels, HEIC, JPEG q90, and ±2-level noise. Report how far each photo's anchor moves (max and median) and whether the LOST set changes.
+- **Accuracy against known truth.** Build sequences from train clouds photos with transforms you choose: crop, shift, scale (including 2–3x jumps like lens switches) and small rotations. The true anchor position is therefore known exactly. Report the anchor position error in pixels, the scale error in percent, and the LOST count.
+- **Stability under tiny input changes.** Run the real train clouds job on the AVIF originals and on re-encodes: AVIF through ImageIO-equivalent pixels, HEIC, JPEG q90, and ±2-level noise. Report how far each photo's anchor moves (max and median) and whether the LOST set changes.
 
 ## Done when
 

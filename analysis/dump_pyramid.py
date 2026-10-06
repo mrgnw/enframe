@@ -1,4 +1,4 @@
-"""OpenCV's first SIFT octave for one Girona photo, rebuilt from public calls: the doubled float image
+"""OpenCV's first SIFT octave for one train clouds photo, rebuilt from public calls: the doubled float image
 blurred to each layer, saved as raw float32 (out/NAME.g0..g5.f32)."""
 import math
 import sys

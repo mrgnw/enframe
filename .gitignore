@@ -9,8 +9,7 @@ wheels/
 # Virtual environments
 .venv
 
-# Sample photos stay local for now
-samples/
+# Sample photos (train clouds) are committed
 .DS_Store
 
 # Outputs

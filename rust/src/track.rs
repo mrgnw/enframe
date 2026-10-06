@@ -15,12 +15,12 @@ const MAX_STEP_TURN: f64 = 15.0;
 /// where 17-inlier ones exist, and tiny pixel changes picked a different one. 2000 is OpenCV's cap.
 const RANSAC_DRAWS: usize = 2000;
 /// The spread, in degrees, of the turn RANSAC expects from one photo to the next. The camera barely rolls
-/// and distant clouds do not spin: Girona's tracked steps turn at most 1.4 degrees. At IMG_4795 two fits
+/// and distant clouds do not spin: train clouds's tracked steps turn at most 1.4 degrees. At IMG_4795 two fits
 /// tie within two inliers, one turning 0.3 degrees and one 9; 2, 3 and 5 all pick the first in every
 /// stability variant, 10 does not. Fits with clear support are unaffected: the synthetic rotate sequence,
 /// with steps of up to 13 degrees, tracks exactly as before.
 const TURN_SPREAD: f64 = 3.0;
-/// After RANSAC, refit on the refined fit's inliers until they stop changing. On Girona and the
+/// After RANSAC, refit on the refined fit's inliers until they stop changing. On train clouds and the
 /// synthetic sequences it settles within two rounds; the cap only bounds the loop.
 const REFIT_ROUNDS: usize = 10;
 /// The next photo may move the reference up to this many times as far as the last tracked step did.
@@ -28,15 +28,15 @@ const REFIT_ROUNDS: usize = 10;
 /// rotate sequence, above 5 it only costs time.
 const MOTION_MARGIN: f64 = 5.0;
 /// The area around the points holds this many keypoints, so a fit has 12 times `MIN_INLIERS` features to
-/// choose from. On Girona, 48 and 64 lose IMG_4795 with one point and 24 loses two to three more photos;
+/// choose from. On train clouds, 48 and 64 lose IMG_4795 with one point and 24 loses two to three more photos;
 /// 96 is the smallest tested count that holds with one point.
 const AREA_KEYPOINTS: usize = 12 * MIN_INLIERS;
 /// The area's radius never passes half the tracked size, so one point on plain sky cannot take in the
-/// whole photo. Girona's largest radius is 313 px, so the cap does not bind there.
+/// whole photo. train clouds's largest radius is 313 px, so the cap does not bind there.
 const MAX_RADIUS: f64 = TRACK_EDGE / 2.0;
 /// At a lens switch the fit's zoom may differ from the EXIF focal-length ratio by up to this factor. The
 /// ratio is exact for a distant sky up to the 35 mm equivalents' whole-millimetre rounding and lens
-/// distortion, a few percent: Girona's one tracked switch (IMG_4719 to IMG_4720) zooms 2.55x where EXIF
+/// distortion, a few percent: train clouds's one tracked switch (IMG_4719 to IMG_4720) zooms 2.55x where EXIF
 /// says 2.5x. A fit further off follows the wrong features.
 const LENS_SLACK: f64 = 1.25;
 /// The spread of the zoom RANSAC expects at a lens switch, as a factor on the EXIF ratio: a sample

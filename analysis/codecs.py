@@ -1,4 +1,4 @@
-"""Encode the Girona frames with each candidate codec: time, CPU, size and fidelity.
+"""Encode the train clouds frames with each candidate codec: time, CPU, size and fidelity.
 
 FFMPEG=/opt/homebrew/bin/ffmpeg uv run analysis/codecs.py
 Renders the black-padded and transparent (--pad transparent) frame sets once into out/codecs/.
@@ -82,7 +82,7 @@ def render_frames(name: str, pad: str) -> Path:
 		env = os.environ | {'PAD': pad}
 		cmd = [
 			'bash',
-			'analysis/girona_all.sh',
+			'analysis/train_clouds_all.sh',
 			str(WORK / f'{name}-render.mov'),
 			'--frames',
 			str(frames_dir),
@@ -194,6 +194,6 @@ def table(title: str, frames_dir: Path, alpha: bool, configs):
 
 if __name__ == '__main__':
 	WORK.mkdir(parents=True, exist_ok=True)
-	# The default crop (no --pad) shrinks to 392x368 on Girona, too small to tell encoders apart.
+	# The default crop (no --pad) shrinks to 392x368 on train clouds, too small to tell encoders apart.
 	table('Opaque, --pad black', render_frames('black', 'black'), False, OPAQUE)
 	table('Transparent, --pad transparent', render_frames('alpha', 'transparent'), True, ALPHA)

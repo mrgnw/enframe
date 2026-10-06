@@ -9,7 +9,7 @@ Touches: `rust/src/track.rs`, `analysis/check.sh` expectations, `docs/rust.md`
 
 ## Why
 
-The tracker matches the feature's keypoints against every keypoint in the next photo. The last photo already says roughly where the feature is. With features cached, matching is the whole cost of a re-run: 0.098 s of 0.102 s on Girona, which is what the marking screen waits on after each mark. Matching only near the predicted spot is faster and cannot pick a look-alike elsewhere in the photo.
+The tracker matches the feature's keypoints against every keypoint in the next photo. The last photo already says roughly where the feature is. With features cached, matching is the whole cost of a re-run: 0.098 s of 0.102 s on train clouds, which is what the marking screen waits on after each mark. Matching only near the predicted spot is faster and cannot pick a look-alike elsewhere in the photo.
 
 ## Goal
 
@@ -20,9 +20,9 @@ The tracker matches the feature's keypoints against every keypoint in the next p
 ## Done when
 
 - [x] A1 shows accuracy equal or better, and no more LOST photos.
-- [x] The warm-cache Girona re-run is faster; before and after go in `docs/rust.md`.
+- [x] The warm-cache train clouds re-run is faster; before and after go in `docs/rust.md`.
 - [x] `bash analysis/check.sh` passes, with its expected values updated in this branch if tracking changes.
 
 ## Result
 
-Matching looks within the reference features' bounds grown by `MOTION_MARGIN` (5) times the last step's motion, and falls back to the rest of the photo when that gives no plausible fit. Warm Girona re-run: match 100.6 to 47.7 ms, whole process 118 to 65 ms. Accuracy and every LOST set unchanged. IMG_4795 moved 32.6 px to its other near-equal fit, which shifts the stability numbers; see A2.
+Matching looks within the reference features' bounds grown by `MOTION_MARGIN` (5) times the last step's motion, and falls back to the rest of the photo when that gives no plausible fit. Warm train clouds re-run: match 100.6 to 47.7 ms, whole process 118 to 65 ms. Accuracy and every LOST set unchanged. IMG_4795 moved 32.6 px to its other near-equal fit, which shifts the stability numbers; see A2.

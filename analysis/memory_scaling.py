@@ -1,7 +1,7 @@
 """Peak memory of a pinframe run against the number of photos.
 
 uv run analysis/memory_scaling.py
-Runs pinframe on the first N Girona photos (transparent padding, AVIF out) and reads the peak RSS that
+Runs pinframe on the first N train clouds photos (transparent padding, AVIF out) and reads the peak RSS that
 /usr/bin/time -l reports for the whole process.
 """
 
@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
-PHOTOS = sorted((ROOT / 'samples' / 'girona clouds').glob('*.avif'))
+PHOTOS = sorted((ROOT / 'samples' / 'train clouds').glob('*.avif'))
 COUNTS = (10, 20, 40, 57)
 
 

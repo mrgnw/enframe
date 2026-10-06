@@ -18,6 +18,6 @@ Each mark calls E2 and updates the view.
 
 ## Done when
 
-- [ ] Marking the 4 lost photos of the mockup scenario works end to end on the real Girona folder.
+- [ ] Marking the 4 lost photos of the mockup scenario works end to end on the real train clouds folder.
 - [ ] Playwright screenshots against the mockup for the main states.
 - [ ] enframe's own checks pass.

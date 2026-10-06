@@ -13,6 +13,6 @@ The preview/export screen from `mockups/02-preview.html`:
 
 ## Done when
 
-- [ ] An exported Girona clip matches the CLI's output for the same marks (identical sidecar rects).
+- [ ] An exported train clouds clip matches the CLI's output for the same marks (identical sidecar rects).
 - [ ] Playwright screenshots against the mockup.
 - [ ] enframe's own checks pass.

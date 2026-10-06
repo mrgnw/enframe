@@ -27,7 +27,7 @@ use track::{Hit, Mark, Photo, Rect};
 /// (`analysis/rust_task_memory.py`, M4 Pro, 2026-10-05), rounded up. Re-measure them after changing
 /// libraries or TRACK_EDGE. PNG's measured working set is larger than AVIF and JPEG's.
 const PREPARE_FIXED_BYTES: usize = 130 << 20; // SIFT's pyramid at TRACK_EDGE, whatever the photo size
-const FEATURE_BYTES: usize = 1 << 20; // one photo's keypoints and byte descriptors; Girona's are under 1 MB
+const FEATURE_BYTES: usize = 1 << 20; // one photo's keypoints and byte descriptors; train clouds's are under 1 MB
 const CACHE_HASH_BYTES: usize = 1 << 20; // one streaming BLAKE3 input buffer per prepare worker
 /// Results queued per thread; they come back in order, so a slow photo must not idle the others.
 const QUEUE_DEPTH: usize = 3;
@@ -364,7 +364,7 @@ struct Resources {
 }
 
 /// Every core. Unlike anchor.py, whose OpenCV threads ran slower once the efficiency cores joined, the
-/// Rust prepare step gets faster with them (Girona: 1.73 s on 8 threads, 1.47 s on 12).
+/// Rust prepare step gets faster with them (train clouds: 1.73 s on 8 threads, 1.47 s on 12).
 fn cores() -> usize {
 	std::thread::available_parallelism().map_or(1, |n| n.get())
 }
@@ -1031,8 +1031,13 @@ mod tests {
 	#[test]
 	fn resources_stop_at_cores_then_memory() {
 		let gb = 1usize << 30;
-		let girona = plan_resources(2048 * 1536, 6 * 2048 * 1536, 11 * 2048 * 1536, 4 * gb, 12).unwrap();
-		assert!(girona.prepare_threads == 12 && girona.render_threads == 12 && girona.keep_bytes > gb / 2);
+		let train_clouds =
+			plan_resources(2048 * 1536, 6 * 2048 * 1536, 11 * 2048 * 1536, 4 * gb, 12).unwrap();
+		assert!(
+			train_clouds.prepare_threads == 12
+				&& train_clouds.render_threads == 12
+				&& train_clouds.keep_bytes > gb / 2
+		);
 		let large = plan_resources(8064 * 6048, 6 * 8064 * 6048, 11 * 8064 * 6048, 4 * gb, 12).unwrap();
 		assert!((1..12).contains(&large.prepare_threads) && large.render_threads >= 1);
 		assert!(

@@ -5,11 +5,11 @@ branch: a5b-points-syntax
 # A5b · Points syntax on the command line
 
 Depends on: — · Blocks: E3 · Model: Sonnet · Size: S
-Touches: `rust/src/main.rs` (CLI), `analysis/girona_all.sh`, `analysis/tracking_benchmark.py`, README, `docs/rust.md`
+Touches: `rust/src/main.rs` (CLI), `analysis/train_clouds_all.sh`, `analysis/tracking_benchmark.py`, README, `docs/rust.md`
 
 ## Goal
 
-`--points x,y/x,y` on the first photo and `--at PHOTO=x,y/x,y@zoom` on later ones, as in A5's design. `--box` and the `x,y,w,h` form are removed and fail with a message that gives the four-quarter-centres conversion. `girona_all.sh` is rewritten with points.
+`--points x,y/x,y` on the first photo and `--at PHOTO=x,y/x,y@zoom` on later ones, as in A5's design. `--box` and the `x,y,w,h` form are removed and fail with a message that gives the four-quarter-centres conversion. `train_clouds_all.sh` is rewritten with points.
 
 ## Done when
 

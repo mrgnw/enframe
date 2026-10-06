@@ -7,8 +7,8 @@ import decode, { init as initAvif } from '@jsquash/avif/decode.js';
 import { loadPyodide } from 'pyodide';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const A = join(root, 'samples/girona clouds/IMG_4791.avif');
-const B = join(root, 'samples/girona clouds/IMG_4792.avif');
+const A = join(root, 'samples/train clouds/IMG_4791.avif');
+const B = join(root, 'samples/train clouds/IMG_4792.avif');
 const BOX = [520, 220, 620, 500];
 
 const ms = {};

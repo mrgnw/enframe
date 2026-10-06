@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# All 57 Girona photos in one clip, with the anchor re-marked wherever tracking can't link two photos.
+# All 57 train clouds photos in one clip, with the anchor re-marked wherever tracking can't link two photos.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -35,4 +35,4 @@ fixes=(
 	--at IMG_4798.avif=1000,400
 )
 
-$BIN "samples/girona clouds"/*.avif --points 1267.5,510/1782.5,510/1267.5,710/1782.5,710 "${fixes[@]}" ${PAD:+--pad "$PAD"} --out "$OUT" "${@:2}"
+$BIN "samples/train clouds"/*.avif --points 1267.5,510/1782.5,510/1267.5,710/1782.5,710 "${fixes[@]}" ${PAD:+--pad "$PAD"} --out "$OUT" "${@:2}"

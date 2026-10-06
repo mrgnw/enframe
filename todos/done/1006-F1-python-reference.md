@@ -15,15 +15,15 @@ What goes with it: the mouse window for drawing a box. Until the marking screen 
 
 ## Goal
 
-- `check.sh` compares the Girona run against A1's committed baseline instead of `anchor.py`.
+- `check.sh` compares the train clouds run against A1's committed baseline instead of `anchor.py`.
 - Delete `anchor.py` and the scripts that exist only to run or compare it, in one commit. Keep the fixtures the Rust tests use.
 - README and docs stop pointing users to the Python version. History notes such as `docs/performance.md` may still mention it.
 
 ## Done when
 
-- [x] `check.sh` runs no Python tracker and still fails when Girona tracking moves (try a deliberate change to `RANSAC_TOLERANCE`, then revert it).
+- [x] `check.sh` runs no Python tracker and still fails when train clouds tracking moves (try a deliberate change to `RANSAC_TOLERANCE`, then revert it).
 - [x] `bash analysis/check.sh` passes.
 
 ## Result
 
-`anchor.py` and 12 scripts that only ran or compared it are gone. `check.sh` compares the Girona run against `analysis/tracking_baseline.json` exactly (rect 1e-9, scale 5e-5, point 6e-4 px, each set by storage precision); a `RANSAC_TOLERANCE` change fails it. Comments in `rust/src` that cite `anchor.py` as the origin of a behaviour remain.
+`anchor.py` and 12 scripts that only ran or compared it are gone. `check.sh` compares the train clouds run against `analysis/tracking_baseline.json` exactly (rect 1e-9, scale 5e-5, point 6e-4 px, each set by storage precision); a `RANSAC_TOLERANCE` change fails it. Comments in `rust/src` that cite `anchor.py` as the origin of a behaviour remain.

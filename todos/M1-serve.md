@@ -13,7 +13,7 @@ A SvelteKit app in `web/` carries the whole MVP: server routes now, the screens 
 
 ## Done when
 
-- [ ] `curl` against `/api/track` on Girona returns the sidecar; a warm re-run takes about 0.2 s.
+- [ ] `curl` against `/api/track` on train clouds returns the sidecar; a warm re-run takes about 0.2 s.
 - [ ] Two rapid `/api/track` posts: the first child is killed, only the newest result returns.
-- [ ] `/api/export` produces a Girona clip identical to the CLI's for the same marks.
+- [ ] `/api/export` produces a train clouds clip identical to the CLI's for the same marks.
 - [ ] A smoke test in `analysis/check.sh`: build, start, one `/api/track` round trip, stop.

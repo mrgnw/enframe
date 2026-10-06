@@ -10,8 +10,8 @@ sys.path[:0] = [str(ROOT), str(ROOT / 'wasm')]
 import anchor  # noqa: E402
 import pair  # noqa: E402
 
-A = ROOT / 'samples/girona clouds/IMG_4791.avif'
-B = ROOT / 'samples/girona clouds/IMG_4792.avif'
+A = ROOT / 'samples/train clouds/IMG_4791.avif'
+B = ROOT / 'samples/train clouds/IMG_4792.avif'
 BOX = (520, 220, 620, 500)
 
 frames = [anchor.load(A), anchor.load(B)]

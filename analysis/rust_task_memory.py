@@ -13,7 +13,7 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).parent.parent
-SOURCE = ROOT / 'samples' / 'girona clouds' / 'IMG_4698.avif'
+SOURCE = ROOT / 'samples' / 'train clouds' / 'IMG_4698.avif'
 
 
 def upscaled(size: tuple[int, int], kind: str) -> Path:

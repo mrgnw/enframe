@@ -1,6 +1,6 @@
 # Plan
 
-pinframe's Rust CLI is the only implementation: `bash analysis/check.sh` passes 19 of 19 on `main` (build, lint, tests, every README command, AVIF/HEIC/JXL/JPEG/PNG input, colour labels, valid outputs, Girona exactly equal to `analysis/tracking_baseline.json`). Everything left is below, as small task cards in `todos/`.
+pinframe's Rust CLI is the only implementation: `bash analysis/check.sh` passes 19 of 19 on `main` (build, lint, tests, every README command, AVIF/HEIC/JXL/JPEG/PNG input, colour labels, valid outputs, train clouds exactly equal to `analysis/tracking_baseline.json`). Everything left is below, as small task cards in `todos/`.
 
 ## How work runs
 

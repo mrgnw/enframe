@@ -3,7 +3,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-folder = Path('samples/girona clouds')
+folder = Path('samples/train clouds')
 out = Path(sys.argv[1])
 names = sys.argv[2:]
 tile = 900

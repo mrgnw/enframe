@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The check every task runs before it merges: bash analysis/check.sh
 # Builds from scratch-safe state, lints, tests, runs every README command and each input format, checks the
-# outputs, and compares the Girona job against the tracking baseline. Exits non-zero if anything fails.
+# outputs, and compares the train clouds job against the tracking baseline. Exits non-zero if anything fails.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -25,7 +25,7 @@ check() {
 }
 
 P=rust/target/release/pinframe
-G="samples/girona clouds"
+G="samples/train clouds"
 TURBINES=("$G"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif)
 MARKS=(--points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.avif=846,641.5/1046,641.5/846,816.5/1046,816.5)
 
@@ -41,7 +41,7 @@ check 'README: JSON only' $P "$G"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,3
 check 'README: --cache' $P "$G"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --cache $OUT/cache --out $OUT/cached.json
 check 'README: .mp4 with --vf' $P "${TURBINES[@]}" "${MARKS[@]}" --vf deflicker,tpad=stop_mode=clone:stop_duration=2 --out $OUT/turbines.mp4
 check 'README: --frames' $P "${TURBINES[@]}" "${MARKS[@]}" --frames $OUT/frames --out $OUT/frames.avif
-check 'Girona, all 57 photos' env BIN="$P --no-cache" bash analysis/girona_all.sh $OUT/all.avif
+check 'train clouds, all 57 photos' env BIN="$P --no-cache" bash analysis/train_clouds_all.sh $OUT/all.avif
 
 # Each input format: the 8 turbine photos converted, with the same marks.
 for fmt in heic jpeg png jxl; do
@@ -69,7 +69,7 @@ check 'colour: sRGB set' $P "$OUT/srgb"/*.jpeg --points 940,637.5/1140,637.5/940
 check 'colour: mixed set' $P "$OUT/mixed"/* --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.jpeg=846,641.5/1046,641.5/846,816.5/1046,816.5 --out $OUT/mixed.avif
 
 cat > "$OUT/verify.py" <<'PY'
-"""The outputs are real, and the Girona job still matches the committed tracking baseline."""
+"""The outputs are real, and the train clouds job still matches the committed tracking baseline."""
 
 import json
 import subprocess
@@ -109,10 +109,10 @@ for name, expected in (('turbines.avif', p3), ('turbines.mp4', p3), ('srgb.avif'
 with Image.open(out / 'frames/0001.png') as im:
 	assert im.info.get('icc_profile'), 'a Display P3 frame carries its ICC profile'
 
-# Tracking: Rust against the committed baseline (analysis/tracking_baseline.json) on all 57 Girona photos.
+# Tracking: Rust against the committed baseline (analysis/tracking_baseline.json) on all 57 train clouds photos.
 baseline = json.loads(Path('analysis/tracking_baseline.json').read_text())['stability']['original']
 rust = {p['file']: p for p in json.loads((out / 'all.json').read_text())['photos']}
-samples = Path('samples/girona clouds')
+samples = Path('samples/train clouds')
 
 
 def oriented_size(path):
@@ -127,7 +127,7 @@ RECT_TOLERANCE = 1e-9
 # main.rs writes scale as `format!("{:.4}", hit.scale)`, so both sides are already quantized to 4 decimal
 # places; half that step covers the same float-parsing noise as above.
 SCALE_TOLERANCE = 5e-5
-# tracking_benchmark.py's girona_run() rounds point_px to 3 decimal places when it writes the baseline;
+# tracking_benchmark.py's train_clouds_run() rounds point_px to 3 decimal places when it writes the baseline;
 # this run's point is read at full precision, so up to half that step is baseline rounding, not drift.
 POINT_TOLERANCE_PX = 6e-4
 
@@ -154,11 +154,11 @@ for file, row in rust.items():
 	worst_point_px = max(worst_point_px, point_diff)
 lost = sorted(f for f in rust if rust[f]['source'] == 'lost')
 print(
-	f'Girona vs baseline (analysis/tracking_baseline.json): max rect diff {worst_rect:.2e}, '
+	f'train clouds vs baseline (analysis/tracking_baseline.json): max rect diff {worst_rect:.2e}, '
 	f'max scale diff {worst_scale:.1e}, max point diff {worst_point_px:.2e}px, lost {lost}'
 )
 PY
-check 'outputs valid, Girona matches baseline' uv run "$OUT/verify.py" "$OUT"
+check 'outputs valid, train clouds matches baseline' uv run "$OUT/verify.py" "$OUT"
 tail -1 "$LOG"
 
 echo "--- $pass passed, $fail failed"

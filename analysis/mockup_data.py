@@ -1,8 +1,8 @@
-"""Turn the Girona sidecar into photos.js for the HTML mockups.
+"""Turn the train clouds sidecar into photos.js for the HTML mockups.
 
 The sidecar gives each photo's reference points, scale and source. The run log adds what the sidecar leaves
 out: each photo's pixel size and, for tracked photos, the feature count. Run after:
-BIN=rust/target/release/pinframe PAD=transparent analysis/girona_all.sh /tmp/pin/all.json > /tmp/pin/all.log
+BIN=rust/target/release/pinframe PAD=transparent analysis/train_clouds_all.sh /tmp/pin/all.json > /tmp/pin/all.log
 """
 
 import json

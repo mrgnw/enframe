@@ -289,7 +289,7 @@ mod tests {
 		let cache = FeatureCache { root: root.clone(), cap: u64::MAX };
 		let sample = sample();
 		for (photo, decoder) in [
-			("../samples/girona clouds/IMG_4667.avif", "dav1d [dec]:"),
+			("../samples/train clouds/IMG_4667.avif", "dav1d [dec]:"),
 			("testdata/orientation-6.heic", "ImageIO macOS "),
 			("testdata/orientation-6.jxl", "ImageIO macOS "),
 			("testdata/orientation-6.png", "png 0."),

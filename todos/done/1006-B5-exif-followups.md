@@ -16,7 +16,7 @@ Touches: `analysis/tracking_benchmark.py`, `analysis/tracking_baseline.json`, `r
 ## Done when
 
 - [x] Every stability variant compares like with like; `pillow_png` and `noise_2` back near 0 and 1.7e-2.
-- [x] A JXL converted from a Girona photo reports the same focal length as the AVIF.
+- [x] A JXL converted from a train clouds photo reports the same focal length as the AVIF.
 - [x] `bash analysis/check.sh` passes.
 
 ## Result

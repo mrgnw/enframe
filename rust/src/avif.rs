@@ -121,7 +121,7 @@ pub fn decode(path: &Path, threads: i32) -> Result<Image, String> {
 }
 
 /// Pillow's libavif converts with libyuv; this crate's Homebrew libavif has no libyuv. For full-range
-/// BT.601 4:4:4, the layout of the Girona photos, convert here exactly as libyuv does.
+/// BT.601 4:4:4, the layout of the train clouds photos, convert here exactly as libyuv does.
 fn libyuv_jpeg_444(image: &avifImage) -> bool {
 	let matrix = image.matrixCoefficients as u32;
 	image.yuvFormat == AVIF_PIXEL_FORMAT_YUV444

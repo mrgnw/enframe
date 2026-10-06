@@ -14,6 +14,6 @@ Turn the signed-off mockup (`mockups/01-marking.html`) into the real marking scr
 
 ## Done when
 
-- [ ] Marking the 4 lost Girona photos works end to end against the real folder.
+- [ ] Marking the 4 lost train clouds photos works end to end against the real folder.
 - [ ] Playwright screenshots match the mockup for the main states, desktop and phone widths.
 - [ ] The mockup files are untouched; the live screen lives in `web/src/`.

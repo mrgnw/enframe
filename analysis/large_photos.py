@@ -13,7 +13,7 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).parent.parent
-SOURCES = [ROOT / 'samples' / 'girona clouds' / f'IMG_{n}.avif' for n in range(4698, 4706)]
+SOURCES = [ROOT / 'samples' / 'train clouds' / f'IMG_{n}.avif' for n in range(4698, 4706)]
 WORK = ROOT / 'out' / 'large'
 SIZE = (8064, 6048)
 SCALE = SIZE[0] / 2048

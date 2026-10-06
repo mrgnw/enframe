@@ -24,7 +24,7 @@ Inside, install cmake, meson, ninja and libclang, then build with `cd rust && ca
 ## Done when
 
 - [ ] `cargo build --release`, `cargo test --release` and `cargo clippy --release --all-targets -- -D warnings` pass on Linux.
-- [ ] The Girona job runs (`BIN=rust/target/release/pinframe bash analysis/girona_all.sh out/linux.avif`) and its rects match the macOS build exactly, since both decode AVIF with libavif + dav1d.
+- [ ] The train clouds job runs (`BIN=rust/target/release/pinframe bash analysis/train_clouds_all.sh out/linux.avif`) and its rects match the macOS build exactly, since both decode AVIF with libavif + dav1d.
 - [ ] The decode-parity tests against Python dumps pass (`cargo test --release -- --include-ignored --test-threads=1` after the `analysis/dump_*.py` scripts).
 - [ ] HEIC and JPEG XL inputs fail with the clear message, before any decoding.
 - [ ] `ldd rust/target/release/pinframe` lists only system libraries: libavif, dav1d and libaom are linked statically.

@@ -4,7 +4,7 @@
 use crate::{avif, pixels};
 use std::path::Path;
 
-const SAMPLES: &str = "../samples/girona clouds";
+const SAMPLES: &str = "../samples/train clouds";
 const DUMPS: &str = "../out";
 
 /// float32 values of a .npy file written by numpy.save.
@@ -331,7 +331,7 @@ fn task_memory() {
 	println!("task_memory: {} px, peak {} bytes, before {before}", w * h, crate::profile::peak_rss());
 }
 /// What a new mark costs when every photo's features are already in memory, as they could be in a
-/// long-running app: tracking, filling lost photos and planning the crop for all 57 Girona photos.
+/// long-running app: tracking, filling lost photos and planning the crop for all 57 train clouds photos.
 #[test]
 #[ignore]
 fn retrack_bench() {
@@ -362,7 +362,7 @@ fn retrack_bench() {
 		handles.into_iter().flat_map(|h| h.join().unwrap()).collect()
 	});
 	let mut marks = vec![None; paths.len()];
-	// Box 1010,410,1030,400's four quarter centres (girona_all.sh's --points, A5b).
+	// Box 1010,410,1030,400's four quarter centres (train_clouds_all.sh's --points, A5b).
 	marks[0] = Some(crate::track::Mark {
 		points: vec![(1267.5, 510.0), (1782.5, 510.0), (1267.5, 710.0), (1782.5, 710.0)],
 		zoom: None,

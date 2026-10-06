@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Profile the Girona run N times and print median self-time per stage: [OUT=out/x.mov] analysis/profile.sh 5 [--frames]
+# Profile the train clouds run N times and print median self-time per stage: [OUT=out/x.mov] analysis/profile.sh 5 [--frames]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -14,9 +14,9 @@ TIMEFORMAT=%R
 for _ in $(seq "$RUNS"); do
 	rm -rf out/profile-frames
 	if [[ "$FRAMES" == --frames ]]; then
-		{ time PROFILE_LOG=$log RUN=analysis/profile_stages.py bash analysis/girona_all.sh "$OUT" --frames out/profile-frames > /dev/null; } 2>> "$walls"
+		{ time PROFILE_LOG=$log RUN=analysis/profile_stages.py bash analysis/train_clouds_all.sh "$OUT" --frames out/profile-frames > /dev/null; } 2>> "$walls"
 	else
-		{ time PROFILE_LOG=$log RUN=analysis/profile_stages.py bash analysis/girona_all.sh "$OUT" > /dev/null; } 2>> "$walls"
+		{ time PROFILE_LOG=$log RUN=analysis/profile_stages.py bash analysis/train_clouds_all.sh "$OUT" > /dev/null; } 2>> "$walls"
 	fi
 done
 uv run analysis/profile_stages.py --summarize "$log" "$walls"
