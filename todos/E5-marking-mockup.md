@@ -29,5 +29,7 @@ Merged from branch `e5-marking-mockup`; waiting for the user's review. Open poin
 
 The user's feedback: "maybe the trail could have some feature that ensures they're at least somewhat visible regardless of the photo it's on?"
 
-- [ ] The trail (lines, dots, points) stays visible on any photo: bright sky, white cloud, dark foliage, busy texture. Compare a few treatments on the hardest Girona photos with screenshots and keep the simplest that works.
-- [ ] `mockups/00-start.html` uses points instead of a box (`--box` is being removed).
+- [x] The trail (lines, dots, points) stays visible on any photo: bright sky, white cloud, dark foliage, busy texture. Compare a few treatments on the hardest Girona photos with screenshots and keep the simplest that works.
+- [x] `mockups/00-start.html` uses points instead of a box (`--box` is being removed).
+
+Round 2 merged from branch `e5-trail-visibility`: a stronger halo that fades with its line, a gentler fade (1 to 0.55), dark discs under trail dots, outlined points; the start page uses points. Waiting for the user's review.

@@ -28,7 +28,7 @@ pinframe's Rust CLI is the main line and runs: `bash analysis/check.sh` passes 1
 
 Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md), [A1](todos/done/1006-A1-tracking-benchmark.md), [B1](todos/done/1006-B1-colour.md), [F1](todos/done/1006-F1-python-reference.md), [B2](todos/done/1006-B2-capture-time-order.md), [A4](todos/done/1006-A4-search-window.md).
 
-Order is in [todos/_priority.md](todos/_priority.md). Running: E5 round 2 (trail visibility, start page).
+Order is in [todos/_priority.md](todos/_priority.md). Running: none.
 
 ## Decisions
 
