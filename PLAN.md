@@ -15,8 +15,7 @@ pinframe's Rust CLI is the main line and runs: `bash analysis/check.sh` passes 1
 
 | Card | What | Depends on | Touches | Model | Size |
 |-|-|-|-|-|-|
-| [E1](todos/E1-sidecar-points.md) | Reference points per photo in the sidecar | — | `rust/src/main.rs` (sidecar), docs | Sonnet | S |
-| [A1](todos/A1-tracking-benchmark.md) | Tracking accuracy and stability benchmark | E1 | `analysis/` (new), `docs/tracking.md` (new) | Opus | M |
+| [A1](todos/A1-tracking-benchmark.md) | Tracking accuracy and stability benchmark | — | `analysis/` (new), `docs/tracking.md` (new) | Opus | M |
 | [A2](todos/A2-tracker-sensitivity.md) | Tracker sensitivity to tiny pixel differences | A1 | `rust/src/track.rs`, `check.sh` expectations | Opus | M |
 | [A3](todos/A3-track-edge.md) | Smaller tracking size for speed, if accuracy holds | A1 | `rust/src/track.rs` (constant), docs | Terra | S |
 | [A4](todos/A4-search-window.md) | Look for the feature near where it should be | A1, F1 | `rust/src/track.rs`, docs | Opus | M |
@@ -25,15 +24,15 @@ pinframe's Rust CLI is the main line and runs: `bash analysis/check.sh` passes 1
 | [B4](todos/B4-zoom-from-exif.md) | Seed lens-switch zoom from EXIF focal length | A1, B2 | `rust/src/track.rs`, `decode.rs` | Opus | M |
 | [D1](todos/D1-linux-build.md) | Build and test on Linux | — | `rust/build.rs`, `rust/src/decode.rs`, `imageio.rs` gating | Opus | M |
 | [B1](todos/B1-colour.md) | Keep Display P3 and label the clip | — | `decode.rs`, `imageio.rs`, `avif.rs`, `main.rs` (outputs) | Opus | M |
-| [E5](todos/E5-marking-mockup.md) | Marking mockup: points and the fix list | E1 | `mockups/`, `analysis/mockup_data.py`, `docs/ui-plan.md` | Sonnet | S |
-| [E2](todos/E2-serve-endpoint.md) | enframe-serve endpoint that runs pinframe | E1 | enframe repo | Opus | M |
+| [E5](todos/E5-marking-mockup.md) | Marking mockup: points and the fix list | — | `mockups/`, `analysis/mockup_data.py`, `docs/ui-plan.md` | Sonnet | S |
+| [E2](todos/E2-serve-endpoint.md) | enframe-serve endpoint that runs pinframe | — | enframe repo | Opus | M |
 | [E3](todos/E3-marking-screen.md) | Marking screen in enframe | E2, E5, A5 | enframe repo | Opus | L |
 | [E4](todos/E4-preview-export.md) | Preview and export screen in enframe | E3 | enframe repo | Sonnet | M |
 | [F1](todos/F1-python-reference.md) | Retire the Python reference | A1 | `anchor.py`, `check.sh`, README | Sonnet | S |
 
-Done: [B3](todos/done/1006-B3-heic10-cost.md).
+Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md).
 
-Order is in [todos/_priority.md](todos/_priority.md). Safe pairs, in order, after E1:  **A1 + B1**, then **F1 + E5**, then **B2 + A4**.
+Order is in [todos/_priority.md](todos/_priority.md). Safe pairs, in order: **A1 + B1**, then **F1 + E5**, then **B2 + A4**.
 
 ## Decisions
 

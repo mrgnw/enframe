@@ -1,3 +1,7 @@
+---
+branch: e1-sidecar-points
+---
+
 # E1 · Reference points per photo in the sidecar
 
 Depends on: — · Blocks: A1, E2, E5 · Model: Sonnet · Size: S
@@ -17,7 +21,11 @@ The UI decision of 2026-10-06 is points, not boxes (`docs/ui-plan.md`, "Decision
 
 ## Done when
 
-- [ ] Rust writes `points` for every photo: tracked, marked and lost (estimated) alike.
-- [ ] The point matches the anchor `anchor.py` prints, within 1.5 px, on all 57 Girona photos.
-- [ ] README and `docs/rust.md` describe the field.
-- [ ] `bash analysis/check.sh` passes.
+- [x] Rust writes `points` for every photo: tracked, marked and lost (estimated) alike.
+- [x] The point matches the anchor `anchor.py` prints, within 1.5 px, on all 57 Girona photos.
+- [x] README and `docs/rust.md` describe the field.
+- [x] `bash analysis/check.sh` passes.
+
+## Result
+
+`points` is in every row. `analysis/check_points.py` matches it to `anchor.py`'s anchors on all 57 Girona photos, worst 0.496 px.
