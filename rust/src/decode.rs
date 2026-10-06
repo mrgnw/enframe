@@ -175,16 +175,20 @@ mod tests {
 
 	#[test]
 	fn imageio_orientation_fixtures_are_applied() {
-		for name in ["orientation-6.heic", "orientation-8.heic", "orientation-6.jxl"] {
+		for (name, reference) in [
+			("orientation-6.heic", "orientation-6-heic.png"),
+			("orientation-8.heic", "orientation-8-heic.png"),
+			("orientation-6.jxl", "orientation-6-jxl.png"),
+			("orientation-mirror.heic", "orientation-mirror-heic.png"),
+		] {
 			let path = Path::new("testdata").join(name);
 			let image = decode(&path).unwrap();
-			assert_eq!((image.width, image.height), (2, 3), "{name}");
-			assert_eq!(oriented_size(&path).unwrap(), (2, 3), "{name}");
+			let expected = decode(Path::new("testdata").join(reference).as_path()).unwrap();
+			assert_eq!((image.width, image.height), (expected.width, expected.height), "{name}");
+			assert_eq!(oriented_size(&path).unwrap(), (expected.width as u32, expected.height as u32), "{name}");
+			let worst = image.pixels.iter().zip(expected.pixels).map(|(a, b)| a.abs_diff(b)).max().unwrap();
+			assert!(worst <= 16, "{name}: reference arrangement differs by {worst}");
 		}
-		let mirror = Path::new("testdata/orientation-mirror.heic");
-		let image = decode(mirror).unwrap();
-		assert_eq!((image.width, image.height), (3, 2));
-		assert_eq!(oriented_size(mirror).unwrap(), (3, 2));
 	}
 
 	#[test]
