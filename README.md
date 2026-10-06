@@ -7,11 +7,24 @@ Turn a series of photos into a short clip where one chosen feature, like a cloud
 
 ## Usage
 
+Build the Rust CLI, `pinframe`:
+
 ```sh
-uv run anchor.py "samples/girona clouds"/IMG_479{1,2,3,4,5}.avif --out out/heart.avif
+brew install libavif
 ```
 
-A window opens on the first photo. Drag a box around the feature to hold still, then press Enter. To skip the window, pass the box as `--box x,y,w,h` in first-photo pixels.
+```sh
+cd rust
+cargo build --release
+```
+
+This needs Rust stable, Homebrew's libavif (pulls in aom and libpng), pkg-config, and libclang for bindgen (Xcode or the Command Line Tools). See [docs/rust.md](docs/rust.md) for the full build notes.
+
+```sh
+rust/target/release/pinframe "samples/girona clouds"/IMG_479{1,2,3,4,5}.avif --box 520,220,620,500 --out out/heart.avif
+```
+
+Unlike the Python reference implementation below, there's no box-drawing window: `--box x,y,w,h` is required, in first-photo pixels, and gives the feature to hold still.
 
 Any photo the tracker reports as `LOST` can be fixed by marking the feature there, and tracking carries on from the mark:
 
@@ -22,13 +35,13 @@ Any photo the tracker reports as `LOST` can be fixed by marking the feature ther
 Otherwise a mark keeps the zoom of the photo before it.
 
 ```sh
-uv run anchor.py "samples/girona clouds"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif --box 840,550,400,350 --at IMG_4703.avif=746,554,400,350 --out out/turbines.avif
+rust/target/release/pinframe "samples/girona clouds"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif --box 840,550,400,350 --at IMG_4703.avif=746,554,400,350 --out out/turbines.avif
 ```
 
 By default the crop shrinks until every photo fills it. `--pad` lets it overhang photos instead, filled with `black`, `white`, a `#rrggbb` colour, or `transparent`:
 
 ```sh
-uv run anchor.py "samples/girona clouds"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --box 400,940,540,180 --pad transparent --out out/portrait.avif
+rust/target/release/pinframe "samples/girona clouds"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --box 400,940,540,180 --pad transparent --out out/portrait.avif
 ```
 
 The extension of `--out` picks the format. The default, `.avif`, is an animated AVIF that keeps transparency and plays in browsers as an image. On the 57-photo Girona clip it encodes as fast as ProRes, and the file is 9 MB instead of 109 MB. Through ffmpeg, `.mp4` writes H.264, `.mov` writes ProRes 4444 when transparent (for video editors), and `.webm` writes VP9.
@@ -42,20 +55,38 @@ Both files are written under names unique to the run, then renamed into place to
 `--vf` passes ffmpeg filters to a `.mp4`, `.mov` or `.webm` clip (not to `--frames`). `deflicker` evens exposure jumps between shots, `minterpolate=fps=24:mi_mode=blend` blends between photos instead of cutting, and `tpad=stop_mode=clone:stop_duration=2` holds the last photo for 2 seconds:
 
 ```sh
-uv run anchor.py "samples/girona clouds"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif --box 840,550,400,350 --at IMG_4703.avif=746,554,400,350 --vf deflicker,tpad=stop_mode=clone:stop_duration=2 --out out/turbines.mp4
+rust/target/release/pinframe "samples/girona clouds"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif --box 840,550,400,350 --at IMG_4703.avif=746,554,400,350 --vf deflicker,tpad=stop_mode=clone:stop_duration=2 --out out/turbines.mp4
 ```
 
 The whole sample folder, with every mark, is one script:
 
 ```sh
-analysis/girona_all.sh out/all.avif
+BIN=rust/target/release/pinframe bash analysis/girona_all.sh out/all.avif
 ```
 
-Run with no arguments for the self-check:
+Run the test suite as the self-check:
+
+```sh
+cd rust && cargo test --release
+```
+
+### Python reference implementation
+
+`anchor.py` was the original implementation. It's kept as the one place with the interactive box window, and as the reference the Rust output is checked against (`analysis/compare_rects.py`, `analysis/rect_diff.py`):
+
+```sh
+uv run anchor.py "samples/girona clouds"/IMG_479{1,2,3,4,5}.avif --out out/heart.avif
+```
+
+A window opens on the first photo. Drag a box around the feature to hold still, then press Enter. To skip the window, pass the box as `--box x,y,w,h`, same as the Rust CLI.
+
+Run with no arguments for `anchor.py`'s own self-check:
 
 ```sh
 uv run anchor.py
 ```
+
+Every other flag and output above is the same between the two.
 
 ## How it works
 
@@ -66,6 +97,8 @@ uv run anchor.py
 5. A photo with fewer than 8 agreeing keypoints is `LOST`. It stays in the clip, with the anchor's position and zoom interpolated from the photos either side, unless `--at` marks it.
 6. Each photo is scaled so the anchor is the same size in all of them. The crop then keeps the anchor at one fixed spot in every photo. Portrait, landscape, 1x, 2x and 3x photos mix freely.
 7. The clip is sized at the median photo's zoom, so a single zoomed-out photo doesn't shrink the rest. ffmpeg assembles the crops at `--fps` (default 4).
+
+The Rust CLI and `anchor.py` implement this the same way; `docs/rust.md` has where their SIFT and AVIF handling differ by a few parts in ten thousand.
 
 ## Results on the Girona samples
 
@@ -87,7 +120,7 @@ Across scene changes, "the same cloud" is a judgement call. Where the shots allo
 
 ## Next steps, in order
 
-- **Point picking in enframe.** Draw a box on the first photo, then mark any photo flagged `LOST`. The box UI, normalized coordinates and crop export already exist there, and the `.json` output matches that model. Marking 24 photos by typing coordinates is the slow part today. [docs/wasm.md](docs/wasm.md) settles where the tracking should run.
+- **Point picking in a UI, not the terminal.** [docs/ui-plan.md](docs/ui-plan.md) and the mockups in `mockups/` sketch a phone-first flow: draw a box on the first photo, then mark any photo flagged `LOST`. The mockups are previewable at [00-start.html](https://mox.xcc.es/pinframe/00-start.html), [01-marking.html](https://mox.xcc.es/pinframe/01-marking.html) and [02-preview.html](https://mox.xcc.es/pinframe/02-preview.html). Marking 24 photos by typing coordinates is the slow part today.
 - **Zoom from EXIF.** Original iPhone files record the focal length, which gives each photo's lens directly. These AVIF exports had none, so lens switches were measured or marked by hand.
 - **A choice between same-size and full-frame.** Keeping the cloud the same size shrinks zoomed photos. An option to keep each photo's own zoom would fill the frame instead, with the cloud changing size at lens switches.
 - **Soft lock.** Today the anchor is pinned exactly. Letting it drift a little along a smoothed path may look more natural.
@@ -96,6 +129,9 @@ Across scene changes, "the same cloud" is a judgement call. Where the shots allo
 
 - [docs/prior-art.md](docs/prior-art.md) — tools that keep one feature fixed across a sequence, and how they name their options.
 - [docs/wasm.md](docs/wasm.md) — can this run in the browser? Pyodide matches a pair correctly but 12x slower than native, SIFT is missing from opencv.js, and browsers can't encode transparent video. Recommendation: track on the server behind enframe-serve, mark in the browser. The proof of concept is in `wasm/`.
+- [docs/rust.md](docs/rust.md) — the Rust port: why it exists, how it compares to `anchor.py` on speed, memory and correctness, and what it means for packaging pinframe into enframe.
+- [docs/performance.md](docs/performance.md) — `anchor.py`'s own performance measurements that the Rust comparison builds on.
+- [docs/ui-plan.md](docs/ui-plan.md) — the marking UI plan behind the `mockups/` sketches.
 
 ## No-code alternative
 
@@ -107,7 +143,7 @@ The one-click stabilizers (ffmpeg `vidstab`, Warp Stabilizer, Resolve's automati
 
 This project is licensed under [MIT](LICENSE).
 
-It depends on these libraries, under their own licenses:
+The Rust CLI depends on the crates and C libraries listed in [docs/rust.md](docs/rust.md#crates-and-licenses). `anchor.py`, the Python reference implementation, depends on these libraries, under their own licenses:
 
 - [OpenCV](https://github.com/opencv/opencv-python) — Apache-2.0 (keypoint tracking, image resizing)
 - [NumPy](https://numpy.org) — BSD-3-Clause (arrays)
