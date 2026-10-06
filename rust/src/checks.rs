@@ -378,7 +378,14 @@ fn retrack_bench() {
 			},
 		});
 		let path = crate::track::fill_lost(
-			crate::track::track(photos, &sizes, k, &marks, &vec![None; sizes.len()]),
+			crate::track::track(
+				photos,
+				&sizes,
+				k,
+				&marks,
+				&vec![None; sizes.len()],
+				&vec![false; sizes.len()],
+			),
 			&sizes,
 		);
 		std::hint::black_box(crate::track::plan(&path, &sizes, true));

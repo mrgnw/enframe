@@ -58,6 +58,7 @@ pub enum Source {
 	Tracked,
 	Mark,
 	Lost,
+	Skipped,
 }
 
 impl Source {
@@ -66,6 +67,7 @@ impl Source {
 			Source::Tracked => "tracked",
 			Source::Mark => "mark",
 			Source::Lost => "lost",
+			Source::Skipped => "skipped",
 		}
 	}
 }
@@ -490,16 +492,20 @@ fn lens_scale(focal_35mm: Option<f64>, (w, h): (u32, u32)) -> Option<f64> {
 
 /// Per photo: anchor position, its scale relative to the first photo, and how it was found. Photos are
 /// consumed one at a time, in order; `marks[i]` is the user's mark on photo i, and photo 0 needs one.
-/// `focals[i]` is photo i's 35 mm focal length, when its EXIF has one.
+/// `focals[i]` is photo i's 35 mm focal length, when its EXIF has one. `skips[i]` marks a photo whose
+/// feature is hidden: it is never matched, and stays at an estimated position like a lost photo, but the
+/// next photo is still matched against the last found photo, as after a lost photo.
 pub fn track(
 	photos: impl Iterator<Item = Photo>,
 	sizes: &[(u32, u32)],
 	k: f64,
 	marks: &[Option<Mark>],
 	focals: &[Option<f64>],
+	skips: &[bool],
 ) -> Vec<Hit> {
 	assert!(marks[0].is_some(), "the first photo needs a mark");
-	assert!(marks.len() == sizes.len() && focals.len() == sizes.len());
+	assert!(!skips[0], "the first photo cannot be skipped");
+	assert!(marks.len() == sizes.len() && focals.len() == sizes.len() && skips.len() == sizes.len());
 	let mut path = Vec::with_capacity(sizes.len());
 	// The point set and the radius around each point, on the downscaled photo.
 	let mut points: Vec<(f64, f64)> = Vec::new();
@@ -514,6 +520,11 @@ pub fn track(
 	let mut count = 0;
 	for (i, photo) in photos.enumerate() {
 		count += 1;
+		if skips[i] {
+			assert!(marks[i].is_none(), "a skipped photo must not have a mark");
+			path.push(Hit { source: Source::Skipped, note: "skipped".to_string(), ..hit(&points, scale, k) });
+			continue;
+		}
 		let source;
 		let note;
 		let lens = lens_scale(focals[i], sizes[i]);
@@ -597,7 +608,8 @@ fn interp(at: f64, xs: &[f64], ys: &[f64]) -> f64 {
 
 /// Estimate hidden anchors from the nearest photos where it was found.
 pub fn fill_lost(path: Vec<Hit>, sizes: &[(u32, u32)]) -> Vec<Hit> {
-	let good: Vec<usize> = (0..path.len()).filter(|&i| path[i].source != Source::Lost).collect();
+	let good: Vec<usize> =
+		(0..path.len()).filter(|&i| !matches!(path[i].source, Source::Lost | Source::Skipped)).collect();
 	if good.len() < 2 {
 		fail("the anchor was found in fewer than two photos; mark more of them with --at");
 	}
@@ -611,10 +623,10 @@ pub fn fill_lost(path: Vec<Hit>, sizes: &[(u32, u32)]) -> Vec<Hit> {
 			let x = interp(i as f64, &xs, &gx).clamp(0.0, fw as f64);
 			let y = interp(i as f64, &xs, &gy).clamp(0.0, fh as f64);
 			let scale = interp(i as f64, &xs, &gs);
-			if hit.source != Source::Lost {
+			if !matches!(hit.source, Source::Lost | Source::Skipped) {
 				return Hit { x, y, scale, ..hit.clone() };
 			}
-			// A lost hit holds the last found photo's points and scale: move them to the estimate.
+			// A lost or skipped hit holds the last found photo's points and scale: move them to the estimate.
 			let (cx, cy) = mean(&hit.points);
 			let grow = scale / hit.scale;
 			let points =
@@ -814,8 +826,9 @@ mod tests {
 
 	fn run(features: Vec<Features>, marks: &[Option<Mark>], focals: &[Option<f64>]) -> Vec<Hit> {
 		let sizes = vec![(1024, 768); features.len()];
+		let skips = vec![false; features.len()];
 		let photos = features.into_iter().map(|features| Photo { small: (1024, 768), features });
-		track(photos, &sizes, 1.0, marks, focals)
+		track(photos, &sizes, 1.0, marks, focals, &skips)
 	}
 
 	#[test]
@@ -842,6 +855,23 @@ mod tests {
 		assert_eq!(step([None, None]), (Source::Tracked, 2.5), "without focal lengths, as before");
 		assert_eq!(step([Some(48.0), Some(48.0)]).0, Source::Tracked, "the same lens is no switch");
 		assert_eq!(step([Some(48.0), Some(24.0)]).0, Source::Lost, "EXIF says 0.5x, the fit 2.5x");
+	}
+
+	#[test]
+	fn a_skipped_photo_is_never_matched_and_the_next_tracks_from_before_it() {
+		let marks = [Some(Mark { points: vec![(400.0, 375.0)], zoom: None }), None, None];
+		let sizes = vec![(1024, 768); 3];
+		let skips = [false, true, false];
+		// IMG_4721's tree: a big plausible shift that would otherwise be a wrong but confident fit.
+		let hidden = scattered(40, 300.0, 300.0);
+		let after = scattered(40, 6.0, 2.0);
+		let photos = vec![scattered(40, 0.0, 0.0), hidden, after]
+			.into_iter()
+			.map(|features| Photo { small: (1024, 768), features });
+		let path = track(photos, &sizes, 1.0, &marks, &[None; 3], &skips);
+		assert_eq!(path[1].source, Source::Skipped);
+		assert_eq!(path[2].source, Source::Tracked, "tracks from IMG_4720's features, not the skipped one");
+		assert!((path[2].x - 406.0).abs() < 1e-3 && (path[2].y - 377.0).abs() < 1e-3);
 	}
 
 	#[test]

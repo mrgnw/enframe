@@ -38,8 +38,8 @@ const AVIF_QUALITY: i32 = 75;
 const CLIP_SUFFIXES: [&str; 4] = ["avif", "mp4", "mov", "webm"];
 
 const USAGE: &str = "usage: pinframe PHOTO... --points x,y[/x,y]... [--at PHOTO=x,y[/x,y]...[@zoom]]...
-				[--pad COLOUR] [--fps N] [--out CLIP-or-JSON] [--frames DIR] [--vf FILTERS]
-				[--cache DIR|--no-cache] [--order time|name]";
+				[--skip PHOTO]... [--pad COLOUR] [--fps N] [--out CLIP-or-JSON] [--frames DIR]
+				[--vf FILTERS] [--cache DIR|--no-cache] [--order time|name]";
 
 /// The message given when `--box` or an old `x,y,w,h` mark is used: the conversion to point form.
 const BOX_REMOVED: &str = "--box is removed; use --points, and turn a box x,y,w,h into its four quarter \
@@ -68,6 +68,7 @@ struct Args {
 	photos: Vec<PathBuf>,
 	points: Option<String>,
 	at: Vec<String>,
+	skip: Vec<String>,
 	pad: Option<String>,
 	fps: f64,
 	out: PathBuf,
@@ -83,6 +84,7 @@ fn parse_args() -> Args {
 		photos: vec![],
 		points: None,
 		at: vec![],
+		skip: vec![],
 		pad: None,
 		fps: 4.0,
 		out: PathBuf::from("out.avif"),
@@ -99,6 +101,7 @@ fn parse_args() -> Args {
 			"--points" => args.points = Some(value()),
 			"--box" => fail(&format!("{BOX_REMOVED}\n{USAGE}")),
 			"--at" => args.at.push(value()),
+			"--skip" => args.skip.push(value()),
 			"--pad" => args.pad = Some(value()),
 			"--fps" => args.fps = value().parse().unwrap_or_else(|_| fail("--fps must be a number")),
 			"--out" => args.out = PathBuf::from(value()),
@@ -269,6 +272,29 @@ fn read_marks(
 		}
 	}
 	Ok(marks)
+}
+
+/// Every `--skip`, by photo index, matched to a photo file name like `--at`. A skipped photo may not also
+/// carry a mark: the tracker has nothing to read either the feature or the user's point from.
+fn read_skips(skips: &[String], paths: &[PathBuf], marks: &[Option<Mark>]) -> Result<Vec<bool>, String> {
+	let names: Vec<String> = paths.iter().map(|p| file_name(p)).collect();
+	let mut flags = vec![false; paths.len()];
+	for name in skips {
+		let Some(i) = names.iter().position(|n| n == name) else {
+			return Err(format!("--skip {name}: not one of the photo file names"));
+		};
+		if i == 0 {
+			return Err(format!("--skip {name}: the first photo cannot be skipped"));
+		}
+		if marks[i].is_some() {
+			return Err(format!("--skip {name}: already marked with --at"));
+		}
+		if flags[i] {
+			return Err(format!("--skip {name}: skipped twice"));
+		}
+		flags[i] = true;
+	}
+	Ok(flags)
 }
 
 fn parse_fill(value: &str) -> Result<Vec<u8>, String> {
@@ -684,7 +710,7 @@ fn publish(pairs: &[(&Path, &Path)], folder: &Path) {
 fn main() {
 	profile::start();
 	let args = parse_args();
-	let (paths, sizes, marks, focals, fill, k, resources, cache, json_only, profiles) =
+	let (paths, sizes, marks, skips, focals, fill, k, resources, cache, json_only, profiles) =
 		step("check input and plan resources", || {
 			let (paths, focals, order) = order_photos(args.photos.clone(), args.order);
 			println!("order: {order}");
@@ -704,6 +730,7 @@ fn main() {
 			let sizes = read_sizes(&paths).unwrap_or_else(|e| fail(&e));
 			let marks =
 				read_marks(args.points.as_deref(), &args.at, &paths, &sizes).unwrap_or_else(|e| fail(&e));
+			let skips = read_skips(&args.skip, &paths, &marks).unwrap_or_else(|e| fail(&e));
 			if let Some(dir) = &args.frames {
 				std::fs::create_dir_all(dir)
 					.unwrap_or_else(|e| fail(&format!("--frames {}: {e}", dir.display())));
@@ -747,7 +774,7 @@ fn main() {
 			};
 			let profiles =
 				if json_only { vec![] } else { read_profiles(&paths).unwrap_or_else(|e| fail(&e)) };
-			(paths, sizes, marks, focals, fill, k, resources, cache, json_only, profiles)
+			(paths, sizes, marks, skips, focals, fill, k, resources, cache, json_only, profiles)
 		});
 	let keep = (!json_only).then(|| Keep::new(resources.keep_bytes));
 	let path = step("decode, find features, track", || {
@@ -761,7 +788,7 @@ fn main() {
 					tx.send(photo).unwrap()
 				});
 			});
-			track::track(rx.into_iter(), sizes, k, &marks, &focals)
+			track::track(rx.into_iter(), sizes, k, &marks, &focals, &skips)
 		})
 	});
 	let (path, sources, size) = step("plan the crop", || {
