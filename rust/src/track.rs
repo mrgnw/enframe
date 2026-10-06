@@ -10,6 +10,19 @@ const RATIO_TEST: f64 = 0.8;
 const RANSAC_TOLERANCE: f64 = 0.03;
 const MAX_STEP_ZOOM: f64 = 6.0;
 const MAX_STEP_TURN: f64 = 15.0;
+/// Every fit draws this many RANSAC samples. OpenCV stops once it is 99% sure of one all-inlier sample:
+/// about 20 draws at half inliers, too few to see a better fit. At IMG_4795 that kept a 14-inlier fit
+/// where 17-inlier ones exist, and tiny pixel changes picked a different one. 2000 is OpenCV's cap.
+const RANSAC_DRAWS: usize = 2000;
+/// The spread, in degrees, of the turn RANSAC expects from one photo to the next. The camera barely rolls
+/// and distant clouds do not spin: Girona's tracked steps turn at most 1.4 degrees. At IMG_4795 two fits
+/// tie within two inliers, one turning 0.3 degrees and one 9; 2, 3 and 5 all pick the first in every
+/// stability variant, 10 does not. Fits with clear support are unaffected: the synthetic rotate sequence,
+/// with steps of up to 13 degrees, tracks exactly as before.
+const TURN_SPREAD: f64 = 3.0;
+/// After RANSAC, refit on the refined fit's inliers until they stop changing. On Girona and the
+/// synthetic sequences it settles within two rounds; the cap only bounds the loop.
+const REFIT_ROUNDS: usize = 10;
 /// The next photo may move the reference up to this many times as far as the last tracked step did.
 /// Photos are hand-held, so steps vary a lot; below 5 the window changes results on the synthetic
 /// rotate sequence, above 5 it only costs time.
@@ -251,16 +264,6 @@ fn inliers(m: &Affine, from: &[(f32, f32)], to: &[(f32, f32)], threshold: f64, m
 	count
 }
 
-fn ransac_iterations(confidence: f64, outlier_share: f64, max: usize) -> usize {
-	let num = (1.0 - confidence).max(f64::MIN_POSITIVE).ln();
-	let denom = 1.0 - (1.0 - outlier_share.clamp(0.0, 1.0)).powi(2);
-	if denom < f64::MIN_POSITIVE {
-		return 0;
-	}
-	let denom = denom.ln();
-	if denom >= 0.0 || -num >= max as f64 * -denom { max } else { (num / denom).round_ties_even() as usize }
-}
-
 /// The least-squares similarity through all inlier pairs. OpenCV refines with Levenberg-Marquardt,
 /// which on this linear model converges to the same solution.
 fn refine(from: &[(f32, f32)], to: &[(f32, f32)], mask: &[bool]) -> Affine {
@@ -288,18 +291,23 @@ fn refine(from: &[(f32, f32)], to: &[(f32, f32)], mask: &[bool]) -> Affine {
 	[[a, -b, mu - a * mx + b * my], [b, a, mv - b * mx - a * my]]
 }
 
-/// `cv2.estimateAffinePartial2D(src, dst, method=RANSAC, ransacReprojThreshold=threshold)`: the model and
-/// the inlier count. The sampling replays OpenCV's generator, so the same pairs give the same samples.
+/// A RANSAC sample's score: its inliers, less a Gaussian penalty on its turn, so of two fits with about
+/// the same support the one that turns less wins.
+fn score(model: &Affine, inliers: usize) -> f64 {
+	inliers as f64 - (turn_degrees(model) / TURN_SPREAD).powi(2) / 2.0
+}
+
+/// RANSAC as `cv2.estimateAffinePartial2D(src, dst, method=RANSAC, ransacReprojThreshold=threshold)`, with
+/// three changes for stability: it always draws `RANSAC_DRAWS` samples, scores them with `score`, and
+/// refits until the inliers settle. Returns the model and its inlier count. The sampling replays OpenCV's
+/// generator, so the same pairs give the same samples.
 fn estimate_similarity(from: &[(f32, f32)], to: &[(f32, f32)], threshold: f64) -> Option<(Affine, usize)> {
-	const MAX_ITERS: usize = 2000;
-	const CONFIDENCE: f64 = 0.99;
 	let count = from.len();
 	assert!(count > 2 && count == to.len());
 	let mut rng = Rng(u64::MAX);
-	let mut best: Option<Affine> = None;
 	let (mut best_mask, mut mask) = (vec![false; count], vec![false; count]);
-	let (mut best_count, mut iterations, mut i) = (0, MAX_ITERS, 0);
-	while i < iterations {
+	let mut best_score = f64::NEG_INFINITY;
+	for _ in 0..RANSAC_DRAWS {
 		let a = rng.uniform(count);
 		let mut b = rng.uniform(count);
 		while b == a {
@@ -307,15 +315,26 @@ fn estimate_similarity(from: &[(f32, f32)], to: &[(f32, f32)], threshold: f64) -
 		}
 		let model = similarity_from_two([from[a], from[b]], [to[a], to[b]]);
 		let good = inliers(&model, from, to, threshold, &mut mask);
-		if good > best_count.max(1) {
+		if good >= 2 && score(&model, good) > best_score {
 			std::mem::swap(&mut mask, &mut best_mask);
-			best = Some(model);
-			best_count = good;
-			iterations = ransac_iterations(CONFIDENCE, (count - good) as f64 / count as f64, iterations);
+			best_score = score(&model, good);
 		}
-		i += 1;
 	}
-	best.map(|_| (refine(from, to, &best_mask), best_count))
+	if best_score == f64::NEG_INFINITY {
+		return None;
+	}
+	let mut model = refine(from, to, &best_mask);
+	for _ in 0..REFIT_ROUNDS {
+		let good = inliers(&model, from, to, threshold, &mut mask);
+		if mask == best_mask || good < 2 {
+			break;
+		}
+		std::mem::swap(&mut mask, &mut best_mask);
+		model = refine(from, to, &best_mask);
+	}
+	let agreed = best_mask.iter().filter(|&&inside| inside).count();
+	assert!(agreed >= 2);
+	Some((model, agreed))
 }
 
 /// Scale + rotation + shift taking the box's features onto the next photo, and how many agree.
@@ -407,10 +426,14 @@ fn find(
 	(m, agreed, true)
 }
 
+fn turn_degrees(m: &Affine) -> f64 {
+	m[1][0].atan2(m[0][0]).to_degrees()
+}
+
 /// Photo to photo, the anchor stays near the same zoom or jumps lens; it never spins.
 fn plausible(m: &Affine) -> (bool, f64, f64) {
 	let step = m[0][0].hypot(m[1][0]);
-	let turn = m[1][0].atan2(m[0][0]).to_degrees();
+	let turn = turn_degrees(m);
 	((1.0 / MAX_STEP_ZOOM..=MAX_STEP_ZOOM).contains(&step) && turn.abs() <= MAX_STEP_TURN, step, turn)
 }
 
@@ -627,6 +650,41 @@ mod tests {
 				assert!((m[r][c] - truth[r][c]).abs() < 1e-4, "{m:?}");
 			}
 		}
+	}
+
+	type Points = Vec<(f32, f32)>;
+
+	/// Pairs where one group of `still` points shifts and another of `turning` points turns 9 degrees
+	/// about a spot 100 px away: two fits that disagree, as at IMG_4795.
+	fn two_fits(still: usize, turning: usize) -> (Points, Points) {
+		let spot = |i: usize, (cx, cy): (f32, f32)| (cx + (i * 7 % 40) as f32, cy + (i * 13 % 30) as f32);
+		let (sin, cos) = 9f32.to_radians().sin_cos();
+		let mut from = Vec::new();
+		let mut to = Vec::new();
+		for i in 0..still {
+			let (x, y) = spot(i, (0.0, 0.0));
+			from.push((x, y));
+			to.push((x + 5.0, y + 3.0));
+		}
+		for i in 0..turning {
+			let (x, y) = spot(i, (200.0, 0.0));
+			let (dx, dy) = (x - 100.0, y - 100.0);
+			from.push((x, y));
+			to.push((100.0 + cos * dx - sin * dy, 100.0 + sin * dx + cos * dy));
+		}
+		(from, to)
+	}
+
+	#[test]
+	fn near_tied_fits_go_to_the_one_that_turns_less() {
+		let (from, to) = two_fits(10, 11);
+		let (m, agreed) = estimate_similarity(&from, &to, 1.0).unwrap();
+		assert_eq!(agreed, 10);
+		assert!(turn_degrees(&m).abs() < 0.1, "{m:?}");
+		let (from, to) = two_fits(10, 20);
+		let (m, agreed) = estimate_similarity(&from, &to, 1.0).unwrap();
+		assert_eq!(agreed, 20);
+		assert!((turn_degrees(&m) - 9.0).abs() < 0.1, "{m:?}");
 	}
 
 	/// Features at distinct spots with distinct descriptors, shifted by (dx, dy). Every fourth descriptor
