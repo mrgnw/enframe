@@ -185,6 +185,23 @@ The Girona acceptance run used converted 2048×1536 fixtures and the normal `gir
 
 Rebuilding the lossless JXL inputs from Pillow's AVIF RGB (the same RGB as pinframe's libavif path) gives exactly zero rect and scale difference and the same three LOST photos.
 
+### Decode speed
+
+M4 Pro, ten 2048×1536 Girona photos, five round-robin rounds. Values are seconds per photo, `fastest / median`; CPU is process user + system time. ImageIO and libavif timings call the decoder directly, with no CLI start-up or output file. `jxl-oxide` 0.12.6 and `djxl` 0.11.2 are separate CLI processes writing a temporary PNG, so their rows include process start-up and PNG output and are not directly comparable to the in-process rows.
+
+| input | decoder | wall | CPU |
+|-|-|-:|-:|
+| AVIF | libavif/dav1d | 0.0488 / 0.0492 | 0.0486 / 0.0491 |
+| AVIF | ImageIO | 0.0225 / 0.0234 | 0.0123 / 0.0127 |
+| HEIC Main 8 | ImageIO | 0.0250 / 0.0258 | 0.0123 / 0.0127 |
+| HEIC Main 10 | ImageIO | 0.0433 / 0.0442 | 0.0407 / 0.0416 |
+| JXL lossless | ImageIO | 0.0985 / 0.1001 | 0.3518 / 0.3535 |
+| JXL lossy d1 | ImageIO | 0.0329 / 0.0335 | 0.0739 / 0.0751 |
+| JXL lossless | jxl-oxide CLI | 0.3768 / 0.3795 | 0.7597 / 0.7631 |
+| JXL lossless | djxl CLI | 0.1725 / 0.1738 | 0.6742 / 0.6860 |
+
+ImageIO makes AVIF roughly twice as fast here and consumes about one quarter of the CPU, plausibly using the media engine. It is not worth switching: libavif/dav1d is bit-exact with the Python reference while ImageIO's colour and conversion behavior is not that reference, and AVIF decoding is not the pipeline bottleneck.
+
 Colour profiles are not transformed. In particular, a Display P3 iPhone HEIC is treated as if its native RGB numbers were sRGB, so saturated colours can look wrong; tracking still sees the native decoded values. This is deliberate until colour-managed input is added.
 
 `jxl-oxide` is a portable pure-Rust alternative for JXL, but it would add a separate decoder and cannot use ImageIO's integration on this target. `djxl` is useful as an external reference, not an embeddable CLI dependency. `libheif` plus `libde265` would add LGPL components and a static-build/distribution obligation; it also gives up the system HEVC path. Linux and Windows builds need a feature-gated decoder (for example jxl-oxide for JXL and dynamically linked libheif, or platform-native APIs) instead of this macOS module. AVIF deliberately stays on libavif/dav1d for its existing bit-exact reference behavior.

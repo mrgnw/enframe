@@ -216,20 +216,33 @@ mod tests {
 	fn decode_bench() {
 		let dir = std::env::var("BENCH_DIR").unwrap();
 		let decoder = std::env::var("BENCH_DECODER").unwrap();
-		let mut paths: Vec<_> = std::fs::read_dir(dir).unwrap().flatten().map(|entry| entry.path()).collect();
+		let mut paths: Vec<_> = std::fs::read_dir(dir)
+			.unwrap()
+			.flatten()
+			.map(|entry| entry.path())
+			.filter(|path| path.is_file() && !path.file_name().unwrap().to_string_lossy().starts_with('.'))
+			.collect();
 		paths.sort();
 		paths.truncate(10);
 		let mut wall = vec![];
-		for _ in 0..5 {
+		let mut cpu = vec![];
+		for _ in 0..std::env::var("BENCH_ROUNDS").map_or(5, |v| v.parse().unwrap()) {
+			let mut before: libc::rusage = unsafe { std::mem::zeroed() };
+			unsafe { libc::getrusage(libc::RUSAGE_SELF, &raw mut before) };
 			let start = std::time::Instant::now();
 			for path in &paths {
 				let image = if decoder == "imageio" { crate::imageio::decode(path) } else { crate::avif::decode(path, 1) }.unwrap();
 				std::hint::black_box(image);
 			}
 			wall.push(start.elapsed().as_secs_f64() / paths.len() as f64);
+			let mut after = before;
+			unsafe { libc::getrusage(libc::RUSAGE_SELF, &raw mut after) };
+			let seconds = |v: libc::timeval| v.tv_sec as f64 + v.tv_usec as f64 / 1e6;
+			cpu.push((seconds(after.ru_utime) + seconds(after.ru_stime) - seconds(before.ru_utime) - seconds(before.ru_stime)) / paths.len() as f64);
 		}
 		wall.sort_by(f64::total_cmp);
-		println!("decode_bench {decoder}: fastest {:.4} s/photo, median {:.4} s/photo", wall[0], wall[wall.len() / 2]);
+		cpu.sort_by(f64::total_cmp);
+		println!("decode_bench {decoder}: wall fastest {:.4}, median {:.4}; CPU fastest {:.4}, median {:.4} s/photo", wall[0], wall[wall.len() / 2], cpu[0], cpu[cpu.len() / 2]);
 	}
 
 	#[test]
