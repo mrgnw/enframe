@@ -84,9 +84,8 @@
 	.trail .dot.lost { stroke-width: 1.5; stroke-dasharray: 2 2; fill: rgba(0, 0, 0, 0.35); }
 	.trail .before.dot { color: var(--before); }
 	.trail .after.dot { color: var(--after); }
-		.trail .flow { stroke-width: 2.5; stroke-dasharray: 12 10; animation: flow 0.9s linear infinite; }
-	@keyframes flow { from { stroke-dashoffset: var(--o); } to { stroke-dashoffset: calc(var(--o) - 22px); } }
-	@media (prefers-reduced-motion: reduce) { .trail .flow { animation: none; } }
+		.trail .flow { stroke-width: 6; stroke-linecap: round; stroke-dasharray: 16 14; opacity: 0.9; filter: blur(6px); animation: flow 1.6s linear infinite; }
+	@keyframes flow { from { stroke-dashoffset: var(--o); } to { stroke-dashoffset: calc(var(--o) - 30px); } }
 	.trail .pt.tracked { opacity: 0.85; }
 	.trail .pt.lost, .trail .pt.skipped, .trail .pt.ghost { fill: rgba(0, 0, 0, 0.5); stroke-dasharray: 3 2; }
 	.trail .pt.skipped { stroke: var(--muted); stroke-width: 2; }
@@ -277,10 +276,10 @@
 	// Then the current photo's own points on top.
 	// ?trail=fade|steps|flow compares three ways to show distance from the current photo.
 	// fade: opacity 1 to 0.55 (round 2). steps: one OKLCH colour per photo, hue and lightness stepping with distance,
-	// at full opacity. flow: each segment blends from one photo's colour to the next, and lighter dashes of that
-	// blend move along the path in photo order, so each colour travels from one point to the next.
+	// at full opacity. flow: each segment blends from one photo's colour to the next, and a soft blurred glow of
+	// that blend slides continuously along the path in photo order, so each colour flows from one point to the next.
 	const TRAIL_MODE = ['fade', 'steps', 'flow'].find(m => m === new URLSearchParams(location.search).get('trail')) ?? 'steps';
-	const FLOW_MS = 900;
+	const FLOW_MS = 1600;
 	const RAMP = {
 		before: { near: [0.8, 0.14, 295], far: [0.72, 0.17, 352] },
 		after: { near: [0.82, 0.13, 182], far: [0.78, 0.17, 145] },
@@ -321,7 +320,7 @@
 			const seg = `M${a.x} ${a.y}L${b.x} ${b.y}`;
 			let stroke = stepColour(side, d);
 			if (TRAIL_MODE === 'flow') {
-				defs += flowGradient(`fg${j}`, a, b, side, -0.2) + flowGradient(`fl${j}`, a, b, side, 0);
+				defs += flowGradient(`fg${j}`, a, b, side, -0.2) + flowGradient(`fl${j}`, a, b, side, 0.22);
 				stroke = `url(#fg${j})`;
 				flows += `<path class="flow" d="${seg}" style="stroke:url(#fl${j});--o:${run.toFixed(1)}px;animation-delay:${delay.toFixed(0)}ms"/>`;
 				run += Math.hypot(b.x - a.x, b.y - a.y);
