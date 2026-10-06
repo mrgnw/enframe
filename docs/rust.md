@@ -181,7 +181,7 @@ HEIC/HEIF and JPEG XL decode through macOS ImageIO (`CGImageSource`), linked to 
 
 On the M4 Pro, `analysis/rust_task_memory.py` measured HEIC Main 8 and Main 10 at 8 B/pixel to prepare and 11 B/pixel to render (both rounded up). ImageIO JXL cost 10/14 B/pixel; that is the conservative maximum of its lossless and lossy measurements. The planner uses those values rather than AVIF's 6/11 B/pixel.
 
-The Girona acceptance run used converted 2048×1536 fixtures and the normal `girona_all.sh` marks. Against the Rust AVIF originals, Main 8 HEIC differed by 4.71e-2 (IMG_4798), lossless JXL by 3.89e-2 (IMG_4798), and lossy JXL by 2.29e-2 (IMG_4689); all retained AVIF's three LOST photos. Main 10 HEIC differed materially (9.04e-1 at IMG_4681) and added four LOST photos. The lossless-JXL result is not pixel-identical because its source was an ffmpeg RGB decode of the AVIF rather than the AVIF's original decoded RGB path; it is a conversion-pipeline comparison, not a JXL round-trip claim.
+The Girona acceptance run used converted 2048×1536 fixtures and the normal `girona_all.sh` marks. Against the Rust AVIF originals, Main 8 HEIC differed by 4.71e-2 (IMG_4798), lossless JXL by 3.89e-2 (IMG_4798), and lossy JXL by 2.29e-2 (IMG_4689); all retained AVIF's three LOST photos. Main 10 HEIC first differed by 9.04e-1 (IMG_4681) with four extra LOST photos, because the decoder read ImageIO's packed `l10r` words with red and blue swapped. After the fix (`caf1a5b`) it differs by 4.47e-2 (IMG_4798) and keeps AVIF's three LOST photos. The lossless-JXL result is not pixel-identical because its source was an ffmpeg RGB decode of the AVIF rather than the AVIF's original decoded RGB path; it is a conversion-pipeline comparison, not a JXL round-trip claim.
 
 Rebuilding the lossless JXL inputs from Pillow's AVIF RGB (the same RGB as pinframe's libavif path) gives exactly zero rect and scale difference and the same three LOST photos.
 
@@ -202,9 +202,22 @@ M4 Pro, ten 2048×1536 Girona photos, five round-robin rounds. Values are second
 
 ImageIO makes AVIF roughly twice as fast here and consumes about one quarter of the CPU, plausibly using the media engine. It is not worth switching: libavif/dav1d is bit-exact with the Python reference while ImageIO's colour and conversion behavior is not that reference, and AVIF decoding is not the pipeline bottleneck.
 
+A full-pipeline trial confirmed it. With AVIF routed through ImageIO, decoded pixels differ from libavif's by at most 2–3 levels (PSNR about 50 dB), yet the Girona rects moved by up to 1.60e-1 and the scale by 1.7e-1 at IMG_4689/4690, with 7 of 57 photos past 2e-2; the LOST set stayed the same. The whole run used about 3 CPU-seconds less but took longer: 2.37 / 2.45 s against 2.12 / 2.22 s (fastest / median, 9 interleaved rounds), so ImageIO does not scale across pinframe's decode threads the way its per-photo time suggests. AVIF therefore stays on libavif/dav1d on every platform. That such small pixel differences move a fit so far also shows the tracker is sensitive at some photos; see `todos/`.
+
 Colour profiles are not transformed. In particular, a Display P3 iPhone HEIC is treated as if its native RGB numbers were sRGB, so saturated colours can look wrong; tracking still sees the native decoded values. This is deliberate until colour-managed input is added.
 
 `jxl-oxide` is a portable pure-Rust alternative for JXL, but it would add a separate decoder and cannot use ImageIO's integration on this target. `djxl` is useful as an external reference, not an embeddable CLI dependency. `libheif` plus `libde265` would add LGPL components and a static-build/distribution obligation; it also gives up the system HEVC path. Linux and Windows builds need a feature-gated decoder (for example jxl-oxide for JXL and dynamically linked libheif, or platform-native APIs) instead of this macOS module. AVIF deliberately stays on libavif/dav1d for its existing bit-exact reference behavior.
+
+## Platforms
+
+| | macOS | Linux |
+|-|-|-|
+| status | built and tested (M4 Pro, macOS 27) | **does not build yet, untested** |
+| AVIF | libavif + dav1d (bit-exact with Python) | libavif + dav1d |
+| HEIC/HEIF, JPEG XL | ImageIO | not available |
+| JPEG, PNG | zune-jpeg, png | zune-jpeg, png |
+
+The Linux build fails today: `rust/build.rs` links the ImageIO, CoreGraphics and CoreFoundation frameworks unconditionally, and `rust/src/imageio.rs` is always compiled. Making it build means gating both behind `cfg(target_os = "macos")` and refusing HEIC and JPEG XL with a clear message elsewhere. [todos/test-linux-build.md](../todos/test-linux-build.md) tracks that and the test plan.
 
 ## Crates and licenses
 

@@ -26,7 +26,7 @@ rust/target/release/pinframe "samples/girona clouds"/IMG_479{1,2,3,4,5}.avif --b
 
 Unlike the Python reference implementation below, there's no box-drawing window: `--box x,y,w,h` is required, in first-photo pixels, and gives the feature to hold still.
 
-Input photos may be AVIF, HEIC/HEIF, JPEG XL, JPEG, or PNG. pinframe identifies them from their contents rather than their file extension; other formats are refused before decoding. HEIC and JPEG XL use macOS ImageIO, so those inputs require macOS.
+Input photos may be AVIF, HEIC/HEIF, JPEG XL, JPEG, or PNG. pinframe identifies them from their contents rather than their file extension; other formats are refused before decoding. HEIC and JPEG XL use macOS ImageIO, so those inputs require macOS. pinframe is built and tested on macOS only; the Linux build does not compile yet (see [docs/rust.md](docs/rust.md#platforms) and [todos/test-linux-build.md](todos/test-linux-build.md)).
 
 Any photo the tracker reports as `LOST` can be fixed by marking the feature there, and tracking carries on from the mark:
 
