@@ -15,7 +15,6 @@ pinframe's Rust CLI is the main line and runs: `bash analysis/check.sh` passes 1
 
 | Card | What | Depends on | Touches | Model | Size |
 |-|-|-|-|-|-|
-| [A6](todos/A6-skip-photos.md) | Skip photos where the feature is hidden | — | `track.rs`, `main.rs`, README | Sonnet | S |
 | [B5](todos/B5-exif-followups.md) | Finish B4: EXIF in benchmark variants, JXL focal length | — | `tracking_benchmark.py`, `imageio.rs`, `decode.rs` | Sonnet | S |
 | [D1](todos/D1-linux-build.md) | Build and test on Linux | — | `rust/build.rs`, `rust/src/decode.rs`, `imageio.rs` gating | Opus | M |
 | [E5](todos/E5-marking-mockup.md) ⚑ | Marking mockup: points and the fix list (merged, waiting for review) | — | `mockups/`, `analysis/mockup_data.py`, `docs/ui-plan.md` | Sonnet | S |
@@ -23,9 +22,9 @@ pinframe's Rust CLI is the main line and runs: `bash analysis/check.sh` passes 1
 | [E3](todos/E3-marking-screen.md) | Marking screen in enframe | E2, E5 | enframe repo | Opus | L |
 | [E4](todos/E4-preview-export.md) | Preview and export screen in enframe | E3 | enframe repo | Sonnet | M |
 
-Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md), [A1](todos/done/1006-A1-tracking-benchmark.md), [B1](todos/done/1006-B1-colour.md), [F1](todos/done/1006-F1-python-reference.md), [B2](todos/done/1006-B2-capture-time-order.md), [A4](todos/done/1006-A4-search-window.md), [A5a](todos/done/1006-A5a-points-tracker.md), [D2](todos/done/1006-D2-build-downloads.md), [A5b](todos/done/1006-A5b-points-syntax.md) (design: [A5](todos/done/1006-A5-reference-points.md)), [A2](todos/done/1006-A2-tracker-sensitivity.md), [A3](todos/done/1006-A3-track-edge.md) (kept 1024), [B4](todos/done/1006-B4-zoom-from-exif.md).
+Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md), [A1](todos/done/1006-A1-tracking-benchmark.md), [B1](todos/done/1006-B1-colour.md), [F1](todos/done/1006-F1-python-reference.md), [B2](todos/done/1006-B2-capture-time-order.md), [A4](todos/done/1006-A4-search-window.md), [A5a](todos/done/1006-A5a-points-tracker.md), [D2](todos/done/1006-D2-build-downloads.md), [A5b](todos/done/1006-A5b-points-syntax.md) (design: [A5](todos/done/1006-A5-reference-points.md)), [A2](todos/done/1006-A2-tracker-sensitivity.md), [A3](todos/done/1006-A3-track-edge.md) (kept 1024), [B4](todos/done/1006-B4-zoom-from-exif.md), [A6](todos/done/1006-A6-skip-photos.md).
 
-Order is in [todos/_priority.md](todos/_priority.md). Running: A6, E5 round 4 (trail flow). Next: E2, B5.
+Order is in [todos/_priority.md](todos/_priority.md). Running: E2, B5.
 
 ## Decisions
 

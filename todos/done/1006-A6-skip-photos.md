@@ -1,3 +1,7 @@
+---
+branch: a6-skip-photos
+---
+
 # A6 · Skip photos where the feature is hidden
 
 Depends on: — · Model: Sonnet · Size: S
@@ -15,6 +19,10 @@ Sometimes the feature is simply not in the photo: a building or trees block it. 
 
 ## Done when
 
-- [ ] A test where a skipped photo would otherwise produce a wrong fit, and the photos after it still track.
-- [ ] README documents `--skip`.
-- [ ] `bash analysis/check.sh` passes.
+- [x] A test where a skipped photo would otherwise produce a wrong fit, and the photos after it still track.
+- [x] README documents `--skip`.
+- [x] `bash analysis/check.sh` passes.
+
+## Result
+
+`--skip PHOTO` (repeatable). A skipped photo is never matched; the next photo tracks from the last found one, with the search window and lens ratio carried across. Sidecar `source: "skipped"` at the interpolated position. Without `--skip` the output is unchanged.
