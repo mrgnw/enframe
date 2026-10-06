@@ -23,8 +23,7 @@ pinframe's Rust CLI is the main line and runs: `bash analysis/check.sh` passes 1
 | [B3](todos/B3-heic10-cost.md) | Cut 10-bit HEIC decode CPU | — | `rust/src/imageio.rs` | Terra | S |
 | [B4](todos/B4-zoom-from-exif.md) | Seed lens-switch zoom from EXIF focal length | A1, B2 | `rust/src/track.rs`, `decode.rs` | Opus | M |
 | [D1](todos/D1-linux-build.md) | Build and test on Linux | — | `rust/build.rs`, `rust/src/decode.rs`, `imageio.rs` gating | Opus | M |
-| [B1](todos/B1-colour.md) ⚑ | Colour policy for Display P3 input | decision | `decode.rs`, `imageio.rs`, `avif.rs` | Opus | M |
-| [C1](todos/C1-output-colour.md) | Colour profile in the output clip | B1 | `rust/src/avif.rs`, render | Terra | S |
+| [B1](todos/B1-colour.md) | Keep Display P3 and label the clip | B3 | `decode.rs`, `imageio.rs`, `avif.rs`, `main.rs` (outputs) | Opus | M |
 | [E0](todos/E0-ui-decisions.md) ⚑ | Answer the UI plan's open questions | decision | `docs/ui-plan.md` | — | — |
 | [E2](todos/E2-serve-endpoint.md) | enframe-serve endpoint that runs pinframe | E1, E0 | enframe repo | Opus | M |
 | [E3](todos/E3-marking-screen.md) | Marking screen in enframe | E2 | enframe repo | Opus | L |
@@ -33,9 +32,14 @@ pinframe's Rust CLI is the main line and runs: `bash analysis/check.sh` passes 1
 
 Order is in [todos/_priority.md](todos/_priority.md). Safe pairs to run together today: **E1 + B3**, then **A1 + B2**.
 
-## Decisions waiting for the user
+## Decisions
 
-- ⚑ **B1:** what to do with Display P3 photos (ignore, convert to sRGB, or keep and tag the output).
+Made on 2026-10-06:
+
+- **B1 colour:** keep Display P3 pixel values and label the clip with the photos' profile. This also covers the old C1 card.
+
+Waiting for the user:
+
 - ⚑ **E0:** the seven open questions in `docs/ui-plan.md`, starting with whether a box mark means its centre and whether dragging a box sets zoom.
 - ⚑ **F1:** keep `anchor.py` as the reference that `check.sh` compares against, or retire it once the Rust tests carry their own fixtures.
 
