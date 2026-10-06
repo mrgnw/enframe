@@ -145,6 +145,43 @@ Fit A, the one that turns 0.3°:
 
 44 of 57 photos are identical. IMG_4795 moved 40.5 px to fit A (scale 1.062 → 1.080). IMG_4793 and IMG_4794 moved 2.3 px, IMG_4777 2.5 px, and IMG_4721–4729 0.8–1.6 px. The last run is tracked at scale 2.6 from the IMG_4718 mark, where each pixel of anchor shift is a large crop shift: it held the old largest rect change, 2.15e-2 at IMG_4724 in `heic`, where the run moved 2–3 px. It now moves at most 1.2 px and heic's largest rect change is 7.78e-3.
 
+## Track size (A3)
+
+`TRACK_EDGE` (1024) sets the longest edge SIFT runs at (`track_factor`); the cache key already includes
+`k` (`cache::key`), so changing it needs no cache version bump. Two other constants are expressed in
+tracking pixels but need no code change: `MAX_RADIUS` is defined as `TRACK_EDGE / 2.0`, so it scales on
+its own, and `RANSAC_TOLERANCE` is a ratio multiplied by `area_width`, itself computed from points and
+radii on the downscaled photo, so it scales with whatever `TRACK_EDGE` is in effect. `AREA_KEYPOINTS` is a
+count, not a distance, and `MOTION_MARGIN` a multiplier on the measured `reach`; neither needs a size term.
+
+896 and 768 were tried by changing only `TRACK_EDGE` and rebuilding, no other edits:
+
+| measure | 1024 (current) | 896 | 768 |
+|-|-|-|-|
+| accuracy, all 26 frames | median 0.096 px, max 1.092 px, scale max 0.56%, 0 lost | median 0.127 px, max 1.504 px, scale max 0.363%, 0 lost | median 0.111 px, max 0.913 px, scale max 0.34%, 0 lost |
+| LOST set, every variant | IMG_4675, IMG_4721, IMG_4725 | imageio_avif and noise_2 lose IMG_4681 instead | same as 1024 |
+| worst stability move | 2.8 px (heic, IMG_4777) | 240.4 px (imageio_avif/noise_2, IMG_4681) | 6.0 px (noise_2, IMG_4795) |
+| largest crop change | 1.49e-2 (imageio_avif) | 8.99e-1 (imageio_avif) | 3.21e-2 (heic) |
+| cold Girona, median of 5 | 2.244 s | 2.082 s (7.2% faster) | 1.847 s (17.7% faster) |
+| warm Girona, median of 5 | 1.134 s | 1.121 s | 1.133 s |
+
+Cold runs point `--cache` at a fresh empty directory each time; warm runs reuse one cache directory across
+the 5 reps. Sizes were interleaved within each repetition (cold 1024, 896, 768, then warm 1024, 896, 768,
+repeated 5 times) to average out any drift.
+
+- **896 fails outright.** Accuracy max (1.504 px) is already past the 1.5 px bound, IMG_4681 joins the
+  LOST set in two variants, and the worst stability move (240 px) is two orders of magnitude over
+  baseline: a different, wrong fit. 896 px must be cutting too close to some feature set's edge.
+- **768 passes accuracy** (max 0.913 px, same LOST set) but fails stability: heic's largest crop change
+  (3.21e-2) and noise_2's worst move (6.0 px) both exceed the baseline-noise bounds (2e-2, 5 px).
+- **Neither saves enough to matter anyway.** 768 would have saved 17.7% of cold wall time, over the 10%
+  bar, but it fails stability. 896 saves only 7.2%, under the bar regardless of its accuracy failure.
+- **Warm-cache time is flat across sizes** (1.12-1.13 s): once features are cached, almost all remaining
+  work (decode, crop, encode) is independent of `TRACK_EDGE`.
+
+`TRACK_EDGE` stays at 1024; nothing in `rust/src` changed and `analysis/tracking_baseline.json` is
+unchanged.
+
 ### 16-bit PNG
 
 pinframe still drops the low byte of 16-bit PNG. Rounding instead was measured: `imageio_png` then gives exactly `imageio_avif`'s numbers (2.2 px, median 0.15 px, rect 1.49e-2), because sips writes ImageIO's own decode, so rounding reproduces ImageIO's 8-bit result. Truncation gives 0.9 px, median 0.10 px, rect 9.59e-3. Neither matters for stability, and rounding takes a conversion of its own rather than a one-line change, so it is left as is.
