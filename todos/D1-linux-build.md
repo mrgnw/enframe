@@ -1,4 +1,7 @@
-# Build and test pinframe on Linux
+# D1 · Build and test pinframe on Linux
+
+Depends on: — · Model: Opus · Size: M
+Touches: `rust/build.rs`, `rust/src/decode.rs`, `rust/src/imageio.rs` (gating only), docs
 
 The Rust CLI is built and tested on macOS only. On Linux it does not compile yet.
 

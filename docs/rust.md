@@ -217,7 +217,7 @@ Colour profiles are not transformed. In particular, a Display P3 iPhone HEIC is 
 | HEIC/HEIF, JPEG XL | ImageIO | not available |
 | JPEG, PNG | zune-jpeg, png | zune-jpeg, png |
 
-The Linux build fails today: `rust/build.rs` links the ImageIO, CoreGraphics and CoreFoundation frameworks unconditionally, and `rust/src/imageio.rs` is always compiled. Making it build means gating both behind `cfg(target_os = "macos")` and refusing HEIC and JPEG XL with a clear message elsewhere. [todos/test-linux-build.md](../todos/test-linux-build.md) tracks that and the test plan.
+The Linux build fails today: `rust/build.rs` links the ImageIO, CoreGraphics and CoreFoundation frameworks unconditionally, and `rust/src/imageio.rs` is always compiled. Making it build means gating both behind `cfg(target_os = "macos")` and refusing HEIC and JPEG XL with a clear message elsewhere. [todos/D1-linux-build.md](../todos/D1-linux-build.md) tracks that and the test plan.
 
 ## Crates and licenses
 

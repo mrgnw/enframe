@@ -1,4 +1,7 @@
-# Make tracking less sensitive to tiny pixel differences
+# A2 · Make tracking less sensitive to tiny pixel differences
+
+Depends on: A1 (to measure fixes; the diagnosis can start before) · Model: Opus · Size: M
+Touches: `rust/src/track.rs`, `analysis/check.sh` expectations, docs
 
 Decoding the same AVIF photos through macOS ImageIO instead of libavif changes pixels by at most 2–3 levels (PSNR about 50 dB). Yet on the Girona job the rects at IMG_4689/4690 moved by up to 1.60e-1 and the anchor's scale by 1.7e-1. Lossy re-encodes show the same effect at lens switches: JPEG 1.7e-2, HEIC 4.5e-2. Real photos arrive in many formats, so this matters for the core feature. Details: `docs/rust.md`, "Decode speed".
 
@@ -16,4 +19,6 @@ Decoding the same AVIF photos through macOS ImageIO instead of libavif changes p
 ## Done when
 
 - [ ] The cause at IMG_4689/4690 is explained with numbers.
-- [ ] A fix keeps the Python reference parity check meaningful, and brings the ImageIO-against-libavif rect difference under 2e-2 on Girona without changing the LOST set.
+- [ ] A fix brings A1's stability score (and the ImageIO-against-libavif rect difference on Girona) under 2e-2, without making A1's accuracy worse or changing the LOST set.
+- [ ] If the fix changes tracking, `check.sh`'s Python comparison is updated deliberately in the same branch, with the new expected difference explained (or the Python reference gets the same fix, per F1).
+- [ ] `bash analysis/check.sh` passes.

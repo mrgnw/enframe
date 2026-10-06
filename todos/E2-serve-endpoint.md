@@ -1,0 +1,20 @@
+# E2 · enframe-serve endpoint that runs pinframe
+
+Depends on: E1, E0 · Blocks: E3 · Model: Opus · Size: M
+Touches: the enframe repo (`/Users/user/dev/enframe`, its server), not pinframe
+
+## Goal
+
+The server route the marking screen calls, as recommended in `docs/wasm.md` and `docs/ui-plan.md`. It takes a project's photos, box and marks, runs pinframe in JSON-only mode with the feature cache, and returns the sidecar. Export runs the full clip.
+
+## Requirements
+
+- One run per project at a time. A new mark cancels the run in progress, so only the newest result counts.
+- Uses the sidecar's run ID to drop stale results.
+- Calls the pinframe binary from a configured path; no pinframe code is copied into enframe.
+
+## Done when
+
+- [ ] A re-run after a mark returns in about 0.15 s on Girona with a warm cache, measured through the endpoint.
+- [ ] Rapid repeated marks never return an older result.
+- [ ] enframe's own checks pass.
