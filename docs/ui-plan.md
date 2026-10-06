@@ -120,11 +120,13 @@ Over the current photo, the trail draws the feature's **path** through up to N p
 
 | Property | Choice | Why |
 |-|-|-|
-| Colour | Before: violet `#b49cff`. After: teal `#3fd8c4`. | Distinct from amber, which is the current points and marks, and from red, which is lost. A dark halo under every line keeps both readable on sky, cloud and foliage. |
-| Line | 2.5 px on a 5.5 px dark halo. Each segment takes the opacity of its farther end. | The line is the strongest element of the trail, because the connection is what the user reads. |
-| Opacity | Linear, from 0.95 at the nearest neighbour to 0.35 at the Nth. | The nearest neighbour is the one the click depends on, and the far end must stay visible. |
+| Colour | Before: violet `#b49cff`. After: teal `#3fd8c4`. | Distinct from amber, which is the current points and marks, and from red, which is lost. Both are light, so they stand out on dark foliage by themselves; the halo covers bright sky and cloud. |
+| Line | 2.5 px on a 6.5 px halo of 70% black. Every dot sits on a dark disc 2.5 px wider than it. A segment and its halo share the opacity of the segment's farther end. | The line is the strongest element of the trail, because the connection is what the user reads. |
+| Opacity | Linear, from 1 at the nearest neighbour to 0.55 at the Nth. | The nearest neighbour is the one the click depends on, and the far end must stay visible. Below about 0.5 the far segments disappear on white cloud. |
 | Default N | 6 per side, adjustable from 5 to 10 with `−` `+`. `T` turns the trail off. | The Girona set's 57 photos form 27 linked chains, so most chains are one to three photos long. At 6, the path crosses a scene change or two on each side, which is where lost photos are. |
 | Cost | One SVG over the photo: at most 20 line segments, 12 dots and the current photo's points. It is redrawn on photo change and on resize. | No images and no blur, so scrubbing stays instant. |
+
+**Readable on any photo** (card E5, round 2). The Girona photos run from white cloud to dark foliage and rooftops, and at 2.5x the trail crosses most of the photo. Three treatments were compared on those photos: a stronger halo, a two-tone casing (dark outside, white rim, colour core, as on route maps), and a drop shadow on the whole overlay. The stronger halo won. The two-tone casing was a little crisper on rooftops but heavier and needed a third stroke. The drop shadow was too faint on white cloud. The fade had done more damage than the thin halo: at 0.35 the far segments vanished, and a halo that did not fade with its line turned them into black lines. So the halo now fades with its line, only to 0.55. The current photo's points have a 2 px dark outline. Estimated points are drawn larger (6 px) on a darker fill, because they are what `Enter` accepts.
 
 How the source changes the trail:
 
