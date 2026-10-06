@@ -185,3 +185,61 @@ unchanged.
 ### 16-bit PNG
 
 pinframe still drops the low byte of 16-bit PNG. Rounding instead was measured: `imageio_png` then gives exactly `imageio_avif`'s numbers (2.2 px, median 0.15 px, rect 1.49e-2), because sips writes ImageIO's own decode, so rounding reproduces ImageIO's 8-bit result. Truncation gives 0.9 px, median 0.10 px, rect 9.59e-3. Neither matters for stability, and rounding takes a conversion of its own rather than a one-line change, so it is left as is.
+
+## Lens from EXIF (B4)
+
+The Girona originals keep their EXIF. pinframe now reads `FocalLengthIn35mmFormat` with the capture time, in the same read (AVIF, HEIC, JPEG and PNG; JXL reads its capture time through ImageIO and gets no focal length). Between the last found photo and the next, the expected zoom is the ratio of focal length times image diagonal. It is used in two places (constants in `rust/src/track.rs`):
+
+- **A mark without `@zoom`** takes the last found photo's scale times that ratio. An explicit `@zoom` wins. Before, it kept the scale unchanged.
+- **A tracked step across a lens switch** searches the whole photo (the search window cannot follow a zoom about an unknown centre), scores RANSAC samples less (ln(zoom / ratio) / ln 1.1)² / 2 (`ZOOM_SPREAD`), and rejects a fit whose zoom is more than 1.25x off the ratio (`LENS_SLACK`), in place of the 6x limit.
+
+Photos without a focal length on either side behave exactly as before; so do steps between photos with the same lens and size.
+
+### What EXIF says at each Girona lens switch
+
+| step | 35 mm focal | EXIF ratio | before B4 |
+|-|-|-:|-|
+| IMG_4673 → 4675 | 120 → 14 | 0.12 | LOST (2 matches) |
+| 4673 → 4680 | 120 → 48 | 0.4 | mark, no `@zoom`: scale kept at 1.00 |
+| 4681 → 4684 | 48 → 120 | 2.5 | mark `@3` |
+| 4690 → 4695 | 120 → 48 | 0.4 | mark `@1` (EXIF gives 3.03 × 0.4 = 1.21) |
+| 4697 → 4698 | 48 → 120 | 2.5 | mark `@2.5`, equal to EXIF |
+| 4705 → 4706 | 120 → 24 | 0.2 | mark `@1` (EXIF gives 0.52) |
+| 4706 → 4708 | 24 → 48 | 2 | mark `@1` (EXIF gives 2) |
+| 4708 → 4713 | 48 → 120 | 2.5 | mark `@2.5`, equal to EXIF |
+| 4713 → 4716 | 120 → 48 | 0.4 | mark `@1`, equal to EXIF |
+| 4719 → 4720 | 48 → 120 | 2.5 | tracked: 2.55x |
+| 4772 → 4773 | 120 → 48 | 0.4 | point mark: scale kept at 0.99 |
+| 4773 → 4774 | 48 → 120 | 2.5 | point mark: scale kept at 0.99 |
+| 4780 → 4791 | 120 → 24 | 0.2 | mark `@1` (EXIF gives 0.20) |
+| 4795 → 4796 | 24 → 48 | 2 | point mark: scale kept at 1.08 |
+
+- **The 35 mm focal length alone predicts the step.** The one switch the tracker links measures 2.55x against 2.5x. 24 and 48 mm are the same main camera (`FocalLength` 6.8 mm); the 2x crop shows only in the 35 mm value. `DigitalZoomRatio` is absent or 1.0003–1.0013.
+- **Most `@zoom` marks are framing choices, not lens ratios.** They reset 48 mm photos to about 1 and 120 mm to 2.5–3, while the first photo is 120 mm at 1. EXIF never overrides them.
+
+### Gain
+
+- **`@zoom` marks: 11 → 8.** IMG_4698 `@2.5`, IMG_4713 `@2.5` and IMG_4716 `@1` equal the EXIF default. Without them the sidecar is identical (every rect, scale, source and point), so `girona_all.sh` drops them. The other 8 differ from EXIF by 4.8e-3 (IMG_4697 `@1`, scale 0.998 from IMG_4696) up to a 2x framing choice.
+- **Whole marks: none.** Dropping any lens-switch mark loses that photo. Matching fails before the fit: 1–7 matches pass the ratio test, 8 are needed, so the zoom prior has nothing to choose from. IMG_4716 tracks without its mark, as it already did on `main`. A larger reference area at a switch (the disc radius divided by the ratio, up to 8.6x) linked none of them either, and was dropped.
+- **Zoomless marks at a switch now keep the sky's magnification.** IMG_4680 and 4681 go from scale 1.00 to 0.40, IMG_4773 from 0.99 to 0.40, IMG_4796 and 4798 from 1.08 to 2.16. Before, the sky in those photos showed at 0.4x or 2x the size of the photo before. IMG_4675 (lost) is interpolated to 0.70. The clip is 1476x1172 instead of 1430x1184, and every crop rect moves with it. No tracked step changed.
+
+### Before → after
+
+The baseline was regenerated in this branch.
+
+| measure | before | after |
+|-|-|-|
+| accuracy, all 26 frames | median 0.096 px, max 1.092 px, scale max 0.56%, 0 LOST | identical, frame by frame (no EXIF) |
+| imageio_avif max / median move, max rect | 2.2 px (IMG_4777) / 0.15 px, 1.49e-2 | 2.2 px / 0.15 px, 2.05e-2 (IMG_4689) |
+| imageio_png | 0.9 px / 0.10 px, 9.59e-3 | 0.9 px / 0.10 px, 9.80e-3 |
+| heic | 2.8 px / 0.12 px, 7.78e-3 | 2.8 px / 0.12 px, 8.03e-3 |
+| jpeg_q90 | 2.1 px / 0.09 px, 1.01e-2 | 2.1 px / 0.09 px, 2.02e-2 (IMG_4705) |
+| pillow_png | 0 | 0 px, rect 1.11 (no EXIF: see below) |
+| noise_2 | 1.9 px / 0.14 px, 1.29e-2 | 1.9 px / 0.14 px, rect 1.11 (1.72e-2 with EXIF kept) |
+| LOST set, every variant | IMG_4675, IMG_4721, IMG_4725 | same |
+| warm JSON re-run of `girona_all.sh`, median of 25 | 155 ms | 155 ms |
+
+- **Every move is identical:** tracking did not change in any variant.
+- **The largest rect change rises past 2e-2 in two variants.** With `--pad`, each side of the crop is the median margin over all photos in first-photo scale. The new 0.4 and 2.16 scales change which photo sets that median, and the new one moves more under pixel noise; IMG_4689 and IMG_4705, at scale 3.0 and 2.6, magnify it. Either change alone stays under: with IMG_4680 `@1` the largest is 1.53e-2, with IMG_4796 and 4798 at their old 1.08, 1.40e-2.
+- **`pillow_png` and `noise_2` compare a run without EXIF to one with it.** The benchmark writes them with Pillow, which drops EXIF, so their marks keep the old scales. A local copy of the benchmark that saves the EXIF into the PNGs gives `pillow_png` 0 and `noise_2` 1.9 px, 1.72e-2.
+- **Header cost:** focal length comes from the same EXIF read as the capture time, so the warm re-run is unchanged. `--order name` now reads EXIF too.

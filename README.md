@@ -36,7 +36,7 @@ Any photo the tracker reports as `LOST` can be fixed by marking the feature ther
 - `--at PHOTO=x,y/x,y...` marks several points, which keeps foreground clutter out around a small or distant cloud; a mark replaces the photo's whole point set.
 - `--at PHOTO=x,y/x,y...@zoom` also sets the zoom relative to the first photo, for a lost photo taken on a different lens.
 
-Otherwise a mark keeps the zoom of the photo before it.
+Otherwise a mark keeps the zoom of the photo before it, times the change in EXIF 35 mm focal length when both photos record one (AVIF, HEIC, JPEG and PNG). At a lens switch the tracker also expects that zoom, within 1.25x.
 
 ```sh
 rust/target/release/pinframe "samples/girona clouds"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.avif=846,641.5/1046,641.5/846,816.5/1046,816.5 --out out/turbines.avif
@@ -118,7 +118,6 @@ Across scene changes, "the same cloud" is a judgement call. Where the shots allo
 ## Next steps, in order
 
 - **Point picking in a UI, not the terminal.** [docs/ui-plan.md](docs/ui-plan.md) and the mockups in `mockups/` sketch a phone-first flow: draw a box on the first photo, then mark any photo flagged `LOST`. The mockups are previewable at [00-start.html](https://mox.xcc.es/pinframe/00-start.html), [01-marking.html](https://mox.xcc.es/pinframe/01-marking.html) and [02-preview.html](https://mox.xcc.es/pinframe/02-preview.html). Marking 24 photos by typing coordinates is the slow part today.
-- **Zoom from EXIF.** Original iPhone files record the focal length, which gives each photo's lens directly. These AVIF exports had none, so lens switches were measured or marked by hand.
 - **A choice between same-size and full-frame.** Keeping the cloud the same size shrinks zoomed photos. An option to keep each photo's own zoom would fill the frame instead, with the cloud changing size at lens switches.
 - **Soft lock.** Today the anchor is pinned exactly. Letting it drift a little along a smoothed path may look more natural.
 
