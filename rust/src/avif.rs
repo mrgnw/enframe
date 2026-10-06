@@ -67,6 +67,15 @@ impl Decoder {
 	}
 }
 
+/// libavif's version and its codecs' (dav1d, aom), for the feature cache key.
+pub fn decoder_version() -> String {
+	let mut codecs = [0 as std::ffi::c_char; 256];
+	unsafe { avifCodecVersions(codecs.as_mut_ptr()) };
+	let libavif = unsafe { CStr::from_ptr(avifVersion()) };
+	let codecs = unsafe { CStr::from_ptr(codecs.as_ptr()) };
+	format!("libavif {}; {}", libavif.to_string_lossy(), codecs.to_string_lossy())
+}
+
 /// Width and height after orientation, from the header alone.
 pub fn oriented_size(path: &Path) -> Result<(u32, u32), String> {
 	let decoder = Decoder::open(path, 1)?;

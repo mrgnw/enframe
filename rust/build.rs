@@ -27,6 +27,7 @@ struct Source {
 fn main() {
 	println!("cargo:rerun-if-changed=build.rs");
 	println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
+	locked_versions(&["png", "zune-jpeg"]);
 	println!("cargo:rustc-link-lib=framework=ImageIO");
 	println!("cargo:rustc-link-lib=framework=CoreGraphics");
 	println!("cargo:rustc-link-lib=framework=CoreFoundation");
@@ -54,6 +55,18 @@ fn main() {
 		.generate()
 		.expect("bindgen");
 	bindings.write_to_file(out.join("avif_sys.rs")).unwrap();
+}
+
+/// Exposes each crate's locked version as `PINFRAME_VERSION_<NAME>` for the feature cache key.
+fn locked_versions(crates: &[&str]) {
+	println!("cargo:rerun-if-changed=Cargo.lock");
+	let lock = std::fs::read_to_string("Cargo.lock").expect("Cargo.lock");
+	for name in crates {
+		let entry = format!("name = \"{name}\"\nversion = \"");
+		let start = lock.find(&entry).unwrap_or_else(|| panic!("{name} is not in Cargo.lock")) + entry.len();
+		let version = &lock[start..start + lock[start..].find('"').unwrap()];
+		println!("cargo:rustc-env=PINFRAME_VERSION_{}={version}", name.replace('-', "_").to_uppercase());
+	}
 }
 
 /// Downloads and unpacks a source tarball into OUT_DIR once, after checking its SHA-256.

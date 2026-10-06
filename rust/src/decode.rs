@@ -4,6 +4,7 @@ use crate::pixels::{Image, orient};
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
+use std::sync::OnceLock;
 
 const PNG_SIGNATURE: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
 
@@ -57,6 +58,18 @@ fn format(path: &Path) -> Result<Format, String> {
 	let count = File::open(path).map_err(|e| e.to_string())?.read(&mut bytes).map_err(|e| e.to_string())?;
 	format_from_magic(&bytes[..count])
 		.ok_or_else(|| "unsupported format (supported: AVIF, HEIC, JPEG XL, JPEG, PNG)".into())
+}
+
+/// The decoder and version that produce this photo's pixels, for the feature cache key. Read once per run.
+pub fn decoder_id(path: &Path) -> Result<&'static str, String> {
+	static AVIF: OnceLock<String> = OnceLock::new();
+	static IMAGEIO: OnceLock<String> = OnceLock::new();
+	Ok(match format(path)? {
+		Format::Avif => AVIF.get_or_init(crate::avif::decoder_version),
+		Format::Heic | Format::Jxl => IMAGEIO.get_or_init(crate::imageio::decoder_version),
+		Format::Jpeg => concat!("zune-jpeg ", env!("PINFRAME_VERSION_ZUNE_JPEG")),
+		Format::Png => concat!("png ", env!("PINFRAME_VERSION_PNG")),
+	})
 }
 
 /// The first image as 8-bit RGB, oriented for display.

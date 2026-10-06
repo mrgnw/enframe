@@ -110,6 +110,24 @@ fn orientation(source: CGImageSourceRef) -> u8 {
 	u8::try_from(orientation).ok().filter(|v| (1..=8).contains(v)).unwrap_or(1)
 }
 
+/// The macOS build (`kern.osversion`, e.g. 25A354): ImageIO's output can change with an OS update.
+pub fn decoder_version() -> String {
+	let mut build = [0u8; 64];
+	let mut len = build.len();
+	let status = unsafe {
+		libc::sysctlbyname(
+			c"kern.osversion".as_ptr(),
+			build.as_mut_ptr().cast(),
+			&raw mut len,
+			ptr::null_mut(),
+			0,
+		)
+	};
+	assert!(status == 0 && len > 0 && len <= build.len(), "sysctl kern.osversion failed");
+	let build = std::ffi::CStr::from_bytes_until_nul(&build[..len]).expect("kern.osversion is a C string");
+	format!("ImageIO macOS {}", build.to_string_lossy())
+}
+
 pub fn oriented_size(path: &Path) -> Result<(u32, u32), String> {
 	let source = source(path)?;
 	let image = Release(unsafe { CGImageSourceCreateImageAtIndex(source.source.0, 0, ptr::null()) });

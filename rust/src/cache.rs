@@ -8,7 +8,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 const MAGIC: &[u8; 8] = b"PFCACHE1";
-const FORMAT: u32 = 1;
+const FORMAT: u32 = 2;
 const SIFT_ID: &str = "opencv-sift-port-2026-10-05";
 
 pub struct CachedFeatures {
@@ -76,13 +76,22 @@ impl FeatureCache {
 	}
 }
 
-/// The key hashes photo bytes, the global scaling decision and every cache-format/SIFT constant.
-pub fn key(path: &Path, k: f64, small: (usize, usize), track_edge: f64) -> Result<String, String> {
+/// The key hashes photo bytes, the decoder and its version, the global scaling decision and every
+/// cache-format/SIFT constant.
+pub fn key(
+	path: &Path,
+	decoder: &str,
+	k: f64,
+	small: (usize, usize),
+	track_edge: f64,
+) -> Result<String, String> {
 	let mut file = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
 	let mut hash = blake3::Hasher::new();
 	hash.update(b"pinframe-feature-key\0");
 	hash.update(&FORMAT.to_le_bytes());
 	hash.update(SIFT_ID.as_bytes());
+	hash.update(&(decoder.len() as u64).to_le_bytes());
+	hash.update(decoder.as_bytes());
 	hash.update(&track_edge.to_bits().to_le_bytes());
 	hash.update(&k.to_bits().to_le_bytes());
 	hash.update(&(small.0 as u64).to_le_bytes());
@@ -246,7 +255,55 @@ mod tests {
 		let root = temp("key");
 		let photo = root.join("photo.avif");
 		std::fs::write(&photo, b"pixels").unwrap();
-		assert_ne!(key(&photo, 1.0, (100, 80), 1024.0).unwrap(), key(&photo, 0.5, (50, 40), 1024.0).unwrap());
+		let decoder = "libavif 1.4.2";
+		assert_ne!(
+			key(&photo, decoder, 1.0, (100, 80), 1024.0).unwrap(),
+			key(&photo, decoder, 0.5, (50, 40), 1024.0).unwrap()
+		);
+		let _ = std::fs::remove_dir_all(root);
+	}
+
+	#[test]
+	fn key_changes_with_the_decoder_and_its_version() {
+		let root = temp("decoder-key");
+		let photo = root.join("photo.avif");
+		std::fs::write(&photo, b"pixels").unwrap();
+		let keys: Vec<String> = [
+			"libavif 1.4.2; dav1d [dec]:1.5.4, aom [enc]:3.15.0",
+			"libavif 1.4.2; dav1d [dec]:1.5.5, aom [enc]:3.15.0",
+			"libavif 1.4.3; dav1d [dec]:1.5.4, aom [enc]:3.15.0",
+			"ImageIO macOS 25A354",
+			"ImageIO macOS 25B78",
+		]
+		.iter()
+		.map(|decoder| key(&photo, decoder, 1.0, (100, 80), 1024.0).unwrap())
+		.collect();
+		let unique: std::collections::HashSet<_> = keys.iter().collect();
+		assert_eq!(unique.len(), keys.len());
+		let _ = std::fs::remove_dir_all(root);
+	}
+
+	#[test]
+	fn warm_cache_hits_within_one_build_and_os() {
+		let root = temp("warm");
+		let cache = FeatureCache { root: root.clone(), cap: u64::MAX };
+		let sample = sample();
+		for (photo, decoder) in [
+			("../samples/girona clouds/IMG_4667.avif", "dav1d [dec]:"),
+			("testdata/orientation-6.heic", "ImageIO macOS "),
+			("testdata/orientation-6.jxl", "ImageIO macOS "),
+			("testdata/orientation-6.png", "png 0."),
+		] {
+			let photo = Path::new(photo);
+			let id = crate::decode::decoder_id(photo).unwrap();
+			assert!(id.contains(decoder), "{id}");
+			assert!(std::ptr::eq(id, crate::decode::decoder_id(photo).unwrap()), "read once per run");
+			let cold = key(photo, id, 1.0, (100, 80), 1024.0).unwrap();
+			assert!(cache.load(&cold).is_none());
+			cache.store(&cold, sample.small, &sample.features);
+			let warm = key(photo, crate::decode::decoder_id(photo).unwrap(), 1.0, (100, 80), 1024.0).unwrap();
+			assert!(cache.load(&warm).is_some(), "{}", photo.display());
+		}
 		let _ = std::fs::remove_dir_all(root);
 	}
 

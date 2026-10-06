@@ -315,7 +315,11 @@ fn prepare(
 	cache: Option<&cache::FeatureCache>,
 ) -> Photo {
 	let small = ((size.0 as f64 * k).round() as usize, (size.1 as f64 * k).round() as usize);
-	let key = cache.zip(cache::key(path, k, small, track::TRACK_EDGE).ok());
+	let key = cache.zip(
+		decode::decoder_id(path)
+			.and_then(|decoder| cache::key(path, decoder, k, small, track::TRACK_EDGE))
+			.ok(),
+	);
 	if let Some(cached) = key.as_ref().and_then(|(cache, key)| cache.load(key)) {
 		if let Some(keep) = keep {
 			let rgb = work(Work::Decode, || decode::decode(path))
