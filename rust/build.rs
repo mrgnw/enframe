@@ -96,7 +96,8 @@ fn locked_versions(crates: &[&str]) {
 /// Shared cache directory for verified source tarballs, next to pinframe's feature cache
 /// (`~/Library/Caches/pinframe`), so every worktree on the same machine downloads each tarball once.
 fn sources_cache_dir() -> PathBuf {
-	let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+	let home =
+		PathBuf::from(std::env::var_os("HOME").expect("HOME must be set to find the shared source cache"));
 	let dir = home.join("Library/Caches/pinframe-sources");
 	std::fs::create_dir_all(&dir).unwrap();
 	dir
