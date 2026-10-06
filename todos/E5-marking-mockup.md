@@ -13,6 +13,14 @@ Bring the marking mockup and `docs/ui-plan.md` in line with the decisions of 202
 
 ## Done when
 
-- [ ] https://mox.xcc.es/pinframe/01-marking.html shows the points, the trail and the fix list, at desktop and phone widths (Playwright screenshots).
-- [ ] `docs/ui-plan.md` describes no box gestures, apart from history notes.
-- [ ] The user has looked at it and said yes, or the changes they asked for are in.
+- [x] https://mox.xcc.es/pinframe/01-marking.html shows the points, the trail and the fix list, at desktop and phone widths (Playwright screenshots).
+- [x] `docs/ui-plan.md` describes no box gestures, apart from history notes.
+- [ ] ⚑ The user has looked at it and said yes, or the changes they asked for are in.
+
+## Status (2026-10-06)
+
+Merged from branch `e5-marking-mockup`; waiting for the user's review. Open points for the user:
+
+- On a lost photo, one click places the whole pattern of points (keeps a mark at one click). Clicking adds or removes single points only on a photo already marked.
+- The three extra points are simulated in a fixed pattern around the real anchor.
+- `mockups/00-start.html` still says "Box" and draws a box.

@@ -22,7 +22,7 @@ pinframe's Rust CLI is the main line and runs: `bash analysis/check.sh` passes 1
 | [B2](todos/B2-capture-time-order.md) | Order photos by capture time | — | `rust/src/main.rs` (path order), `decode.rs` (EXIF read) | Terra | S |
 | [B4](todos/B4-zoom-from-exif.md) | Seed lens-switch zoom from EXIF focal length | F1, B2 | `rust/src/track.rs`, `decode.rs` | Opus | M |
 | [D1](todos/D1-linux-build.md) | Build and test on Linux | — | `rust/build.rs`, `rust/src/decode.rs`, `imageio.rs` gating | Opus | M |
-| [E5](todos/E5-marking-mockup.md) | Marking mockup: points and the fix list | — | `mockups/`, `analysis/mockup_data.py`, `docs/ui-plan.md` | Sonnet | S |
+| [E5](todos/E5-marking-mockup.md) ⚑ | Marking mockup: points and the fix list (merged, waiting for review) | — | `mockups/`, `analysis/mockup_data.py`, `docs/ui-plan.md` | Sonnet | S |
 | [E2](todos/E2-serve-endpoint.md) | enframe-serve endpoint that runs pinframe | — | enframe repo | Opus | M |
 | [E3](todos/E3-marking-screen.md) | Marking screen in enframe | E2, E5, A5 | enframe repo | Opus | L |
 | [E4](todos/E4-preview-export.md) | Preview and export screen in enframe | E3 | enframe repo | Sonnet | M |
