@@ -38,7 +38,7 @@ def main() -> None:
 			im = im.convert('RGBA')
 			im.thumbnail((FRAME_LONG, FRAME_LONG))
 			im.save(OUT / f'frame-{f.stem}.webp', quality=70, method=6)
-	rows = json.loads(SIDECAR.read_text())
+	rows = json.loads(SIDECAR.read_text())['photos']
 	(OUT / 'rects.json').write_text(json.dumps(rows, separators=(',', ':')))
 	files = list(OUT.iterdir())
 	total = sum(p.stat().st_size for p in files)
