@@ -48,5 +48,7 @@ Round 4 merged from branch `e5-trail-flow`: `?trail=flow` replaces `pulse` (full
 
 The user picked: `steps` stays the default, `flow` stays as the option — but the flow rendering must be much smoother and cooler than travelling dashes.
 
-- [ ] Rebuild `?trail=flow` without dashes: a continuous, smooth motion of colour along the trail (e.g. an animated gradient sweeping point to point). Still OKLCH distance colours, still the round-2 halo, still off under reduced motion.
-- [ ] Screenshots at desktop and phone widths on the hardest Girona photos.
+- [x] Rebuild `?trail=flow` without dashes: a continuous, smooth motion of colour along the trail (e.g. an animated gradient sweeping point to point). Still OKLCH distance colours, still the round-2 halo, still off under reduced motion.
+- [x] Screenshots at desktop and phone widths on the hardest Girona photos.
+
+Round 5 merged from branch `e5-trail-flow-smooth`: the dashes are replaced by a wide, blurred, brighter glow sliding continuously along the gradient-blended line (1.6 s cycle). The agent dropped the reduced-motion rule and reported it present; the coordinator restored it. Waiting for the user's sign-off on the mockup.
