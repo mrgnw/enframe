@@ -86,6 +86,7 @@
 	.trail .after.dot { color: var(--after); }
 		.trail .flow { stroke-width: 6; stroke-linecap: round; stroke-dasharray: 16 14; opacity: 0.9; filter: blur(6px); animation: flow 1.6s linear infinite; }
 	@keyframes flow { from { stroke-dashoffset: var(--o); } to { stroke-dashoffset: calc(var(--o) - 30px); } }
+	@media (prefers-reduced-motion: reduce) { .trail .flow { animation: none; } }
 	.trail .pt.tracked { opacity: 0.85; }
 	.trail .pt.lost, .trail .pt.skipped, .trail .pt.ghost { fill: rgba(0, 0, 0, 0.5); stroke-dasharray: 3 2; }
 	.trail .pt.skipped { stroke: var(--muted); stroke-width: 2; }
