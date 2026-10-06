@@ -1,6 +1,6 @@
 # A5 · Several reference points instead of a box
 
-Depends on: — · Blocks: E3 · Model: Opus · Size: L (tracker first, then CLI, if it grows)
+Design card. Built as [A5a](A5a-points-tracker.md) (tracker) then [A5b](A5b-points-syntax.md) (syntax). Blocks: E3
 Touches: `rust/src/track.rs`, `rust/src/main.rs` (CLI, sidecar), README, `docs/rust.md`, `analysis/check.sh`, `analysis/girona_all.sh`
 
 ## Decision (2026-10-06)
@@ -20,6 +20,15 @@ Before building, the thread writes into this card and stops for the user's OK:
 - the CLI syntax for points on the first photo and in `--at` marks, including zoom
 - what happens to `--box` (kept as a shorthand, or removed)
 - the rule for the area around each point
+
+## Decisions (2026-10-06)
+
+1. `--box` is removed.
+2. Syntax as proposed: `x,y` per point, points joined with `/`, optional `@zoom` last (`--points x,y/x,y`, `--at PHOTO=x,y/x,y@2.5`).
+3. ⚑ Open: does a mark replace the point set, or can a mark also move the previous pattern? Explained to the user; waiting.
+4. The anchor is the mean of the points.
+5. Area rule as proposed: 96 keypoints, at least half the smallest point spacing, at most 512 px.
+6. Split into A5a (tracker) and A5b (syntax).
 
 ## Design (proposed)
 

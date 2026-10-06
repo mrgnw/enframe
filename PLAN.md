@@ -17,17 +17,18 @@ pinframe's Rust CLI is the main line and runs: `bash analysis/check.sh` passes 1
 |-|-|-|-|-|-|
 | [A2](todos/A2-tracker-sensitivity.md) | Tracker sensitivity to tiny pixel differences | — | `rust/src/track.rs`, `check.sh` expectations | Opus | M |
 | [A3](todos/A3-track-edge.md) | Smaller tracking size for speed, if accuracy holds | — | `rust/src/track.rs` (constant), docs | Terra | S |
-| [A5](todos/A5-reference-points.md) ⚑ | Several reference points instead of a box | — | `track.rs`, `main.rs` (CLI, sidecar), README | Opus | L |
+| [A5a](todos/A5a-points-tracker.md) ⚑ | Track a set of points instead of a box (design in [A5](todos/A5-reference-points.md)) | decision 3 | `track.rs`, `main.rs` (marks), baseline | Opus | M |
+| [A5b](todos/A5b-points-syntax.md) | Points syntax on the command line | A5a | `main.rs` (CLI), `girona_all.sh`, README | Sonnet | S |
 | [B4](todos/B4-zoom-from-exif.md) | Seed lens-switch zoom from EXIF focal length | — | `rust/src/track.rs`, `decode.rs` | Opus | M |
 | [D1](todos/D1-linux-build.md) | Build and test on Linux | — | `rust/build.rs`, `rust/src/decode.rs`, `imageio.rs` gating | Opus | M |
 | [E5](todos/E5-marking-mockup.md) ⚑ | Marking mockup: points and the fix list (merged, waiting for review) | — | `mockups/`, `analysis/mockup_data.py`, `docs/ui-plan.md` | Sonnet | S |
 | [E2](todos/E2-serve-endpoint.md) | enframe-serve endpoint that runs pinframe | — | enframe repo | Opus | M |
-| [E3](todos/E3-marking-screen.md) | Marking screen in enframe | E2, E5, A5 | enframe repo | Opus | L |
+| [E3](todos/E3-marking-screen.md) | Marking screen in enframe | E2, E5, A5b | enframe repo | Opus | L |
 | [E4](todos/E4-preview-export.md) | Preview and export screen in enframe | E3 | enframe repo | Sonnet | M |
 
 Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md), [A1](todos/done/1006-A1-tracking-benchmark.md), [B1](todos/done/1006-B1-colour.md), [F1](todos/done/1006-F1-python-reference.md), [B2](todos/done/1006-B2-capture-time-order.md), [A4](todos/done/1006-A4-search-window.md).
 
-Order is in [todos/_priority.md](todos/_priority.md). Running: A5 (design first).
+Order is in [todos/_priority.md](todos/_priority.md). Running: E5 round 2 (trail visibility, start page).
 
 ## Decisions
 
@@ -39,7 +40,7 @@ Made on 2026-10-06:
 
 Waiting for the user:
 
-- ⚑ **A5:** the CLI syntax for points and what happens to `--box`. The A5 thread proposes it in its card and stops.
+- ⚑ **A5 decision 3:** whether a mark only replaces the point set, or can also move the previous pattern.
 - E5's updated mockup, for you to look at before E3.
 
 ## Out of scope for now

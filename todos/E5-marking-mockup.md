@@ -24,3 +24,10 @@ Merged from branch `e5-marking-mockup`; waiting for the user's review. Open poin
 - On a lost photo, one click places the whole pattern of points (keeps a mark at one click). Clicking adds or removes single points only on a photo already marked.
 - The three extra points are simulated in a fixed pattern around the real anchor.
 - `mockups/00-start.html` still says "Box" and draws a box.
+
+## Round 2 (2026-10-06)
+
+The user's feedback: "maybe the trail could have some feature that ensures they're at least somewhat visible regardless of the photo it's on?"
+
+- [ ] The trail (lines, dots, points) stays visible on any photo: bright sky, white cloud, dark foliage, busy texture. Compare a few treatments on the hardest Girona photos with screenshots and keep the simplest that works.
+- [ ] `mockups/00-start.html` uses points instead of a box (`--box` is being removed).
