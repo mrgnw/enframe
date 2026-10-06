@@ -23,7 +23,10 @@ pub fn memory_cost(path: &Path) -> Result<(usize, usize), String> {
 }
 
 fn format_from_magic(bytes: &[u8]) -> Option<Format> {
-	if bytes.len() >= 12 && &bytes[4..8] == b"ftyp" && matches!(&bytes[8..12], b"avif" | b"avis") {
+	if bytes.len() >= 12
+		&& &bytes[4..8] == b"ftyp"
+		&& bytes[8..].chunks_exact(4).any(|brand| matches!(brand, b"avif" | b"avis"))
+	{
 		Some(Format::Avif)
 	} else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
 		Some(Format::Jpeg)
@@ -35,7 +38,7 @@ fn format_from_magic(bytes: &[u8]) -> Option<Format> {
 }
 
 fn format(path: &Path) -> Result<Format, String> {
-	let mut bytes = [0; 12];
+	let mut bytes = [0; 32];
 	let count = File::open(path).map_err(|e| e.to_string())?.read(&mut bytes).map_err(|e| e.to_string())?;
 	format_from_magic(&bytes[..count]).ok_or_else(|| "unsupported format (supported: AVIF, JPEG, PNG)".into())
 }
@@ -131,6 +134,7 @@ mod tests {
 	#[test]
 	fn detects_supported_signatures() {
 		assert_eq!(format_from_magic(b"\0\0\0\x18ftypavif"), Some(Format::Avif));
+		assert_eq!(format_from_magic(b"\0\0\0\x18ftypmif1\0\0\0\0avif"), Some(Format::Avif));
 		assert_eq!(format_from_magic(&[0xff, 0xd8, 0xff, 0xe0]), Some(Format::Jpeg));
 		assert_eq!(format_from_magic(&PNG_SIGNATURE), Some(Format::Png));
 		assert_eq!(format_from_magic(b"RIFF....WEBP"), None);
