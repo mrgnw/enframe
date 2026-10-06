@@ -3,7 +3,7 @@
 //! Entries are deliberately independent: a BLAKE3 content key includes every result-affecting
 //! input, and the entry has its own BLAKE3 checksum. A bad entry is simply a miss.
 
-use crate::sift::{Features, KeyPoint, DESCRIPTOR_LEN};
+use crate::sift::{DESCRIPTOR_LEN, Features, KeyPoint};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 

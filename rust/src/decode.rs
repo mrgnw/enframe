@@ -1,6 +1,6 @@
 //! Photo input decoding. Dispatches by file signatures so renamed photos still work.
 
-use crate::pixels::{orient, Image};
+use crate::pixels::{Image, orient};
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
@@ -185,7 +185,11 @@ mod tests {
 			let image = decode(&path).unwrap();
 			let expected = decode(Path::new("testdata").join(reference).as_path()).unwrap();
 			assert_eq!((image.width, image.height), (expected.width, expected.height), "{name}");
-			assert_eq!(oriented_size(&path).unwrap(), (expected.width as u32, expected.height as u32), "{name}");
+			assert_eq!(
+				oriented_size(&path).unwrap(),
+				(expected.width as u32, expected.height as u32),
+				"{name}"
+			);
 			let worst = image.pixels.iter().zip(expected.pixels).map(|(a, b)| a.abs_diff(b)).max().unwrap();
 			assert!(worst <= 16, "{name}: reference arrangement differs by {worst}");
 		}
@@ -208,7 +212,11 @@ mod tests {
 		}
 		let n = (a.pixels.len() / 3) as f64;
 		let mse = square as f64 / a.pixels.len() as f64;
-		println!("mean {:?}, max {max}, PSNR {:.2} dB", sum.map(|v| v as f64 / n), 10.0 * (255.0 * 255.0 / mse).log10());
+		println!(
+			"mean {:?}, max {max}, PSNR {:.2} dB",
+			sum.map(|v| v as f64 / n),
+			10.0 * (255.0 * 255.0 / mse).log10()
+		);
 	}
 
 	#[test]
@@ -231,18 +239,34 @@ mod tests {
 			unsafe { libc::getrusage(libc::RUSAGE_SELF, &raw mut before) };
 			let start = std::time::Instant::now();
 			for path in &paths {
-				let image = if decoder == "imageio" { crate::imageio::decode(path) } else { crate::avif::decode(path, 1) }.unwrap();
+				let image = if decoder == "imageio" {
+					crate::imageio::decode(path)
+				} else {
+					crate::avif::decode(path, 1)
+				}
+				.unwrap();
 				std::hint::black_box(image);
 			}
 			wall.push(start.elapsed().as_secs_f64() / paths.len() as f64);
 			let mut after = before;
 			unsafe { libc::getrusage(libc::RUSAGE_SELF, &raw mut after) };
 			let seconds = |v: libc::timeval| v.tv_sec as f64 + v.tv_usec as f64 / 1e6;
-			cpu.push((seconds(after.ru_utime) + seconds(after.ru_stime) - seconds(before.ru_utime) - seconds(before.ru_stime)) / paths.len() as f64);
+			cpu.push(
+				(seconds(after.ru_utime) + seconds(after.ru_stime)
+					- seconds(before.ru_utime)
+					- seconds(before.ru_stime))
+					/ paths.len() as f64,
+			);
 		}
 		wall.sort_by(f64::total_cmp);
 		cpu.sort_by(f64::total_cmp);
-		println!("decode_bench {decoder}: wall fastest {:.4}, median {:.4}; CPU fastest {:.4}, median {:.4} s/photo", wall[0], wall[wall.len() / 2], cpu[0], cpu[cpu.len() / 2]);
+		println!(
+			"decode_bench {decoder}: wall fastest {:.4}, median {:.4}; CPU fastest {:.4}, median {:.4} s/photo",
+			wall[0],
+			wall[wall.len() / 2],
+			cpu[0],
+			cpu[cpu.len() / 2]
+		);
 	}
 
 	#[test]
@@ -269,7 +293,7 @@ mod tests {
 			"c47c5f9061f8af8b33fc653c2e22943159df147146739c71271166b5d4f1d9d67f9ae659c6655f1398e3b1589abfee3f",
 			"ecb2f043c16f15fe88143c43f14bc21f0bfc4ae3fe29fa507d3ff1fc4dc73c7fc01c29c63c61c458ea7f4fcfa4de0e9e",
 			"373de26e22ca731ceb37c5c30986c3616188cc31b88ad1c361e8508cd52a54e31fffd9"
-	);
+		);
 		let expected = [
 			"fe000001ff000000feffff0000ffffff00fe",
 			"0000fe01ff00fe0000ff00fe00ffffffff00",

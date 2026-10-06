@@ -1,6 +1,6 @@
 //! HEIC and JPEG XL through macOS ImageIO, preserving the decoder's native pixels.
 
-use crate::pixels::{orient, Image};
+use crate::pixels::{Image, orient};
 use std::ffi::c_void;
 use std::fs;
 use std::path::Path;
@@ -238,20 +238,12 @@ fn sample(bytes: &[u8], channel: usize, bits: usize, order: u32) -> u16 {
 		u16::from(bytes[channel]) * 257
 	} else {
 		let bytes = [bytes[channel * 2], bytes[channel * 2 + 1]];
-		if order == BYTE_ORDER_16_LITTLE {
-			u16::from_le_bytes(bytes)
-		} else {
-			u16::from_be_bytes(bytes)
-		}
+		if order == BYTE_ORDER_16_LITTLE { u16::from_le_bytes(bytes) } else { u16::from_be_bytes(bytes) }
 	}
 }
 
 fn reduce(sample: u16, bits: usize) -> u8 {
-	if bits == 8 {
-		(sample / 257) as u8
-	} else {
-		((u32::from(sample) + 128) / 257) as u8
-	}
+	if bits == 8 { (sample / 257) as u8 } else { ((u32::from(sample) + 128) / 257) as u8 }
 }
 
 fn reduce_10(sample: u32) -> u8 {

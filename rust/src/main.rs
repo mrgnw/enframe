@@ -14,8 +14,8 @@ mod render;
 mod sift;
 mod track;
 
-use profile::{step, work, Work};
-use render::{ordered, place, Keep};
+use profile::{Work, step, work};
+use render::{Keep, ordered, place};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::sync_channel;
@@ -444,11 +444,7 @@ fn render(job: &RenderJob, sink: &mut Sink) {
 			let path = dir.join(format!("{:04}.png", i + 1));
 			save_png(&path, &frame).unwrap_or_else(|e| fail(&format!("{}: {e}", path.display())));
 		}
-		if job.avif {
-			Frame::Yuv(work(Work::Place, || avif::to_yuv420(&frame)))
-		} else {
-			Frame::Rgb(frame)
-		}
+		if job.avif { Frame::Yuv(work(Work::Place, || avif::to_yuv420(&frame))) } else { Frame::Rgb(frame) }
 	};
 	let mut waited = std::time::Instant::now();
 	ordered(job.paths.len(), job.threads, QUEUE_DEPTH * job.threads, place_one, |_, frame| {
