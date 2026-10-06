@@ -32,3 +32,7 @@ Inside, install cmake, meson, ninja and libclang, then build with `cd rust && ca
 ## Later
 
 HEIC and JPEG XL on Linux need another decoder: `jxl-oxide` for JPEG XL (pure Rust, slower than ImageIO; see the speed table in `docs/rust.md`), and libheif + libde265 for HEIC (LGPL, so link dynamically or accept the distribution terms).
+
+## Note from D2
+
+`rust/build.rs` caches source tarballs in `~/Library/Caches/pinframe-sources`. On Linux use `$XDG_CACHE_HOME` (or `~/.cache`) instead.

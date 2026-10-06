@@ -1,3 +1,7 @@
+---
+branch: d2-build-downloads
+---
+
 # D2 · Fetch the C library sources once, reliably
 
 Depends on: — · Model: Sonnet · Size: S
@@ -16,5 +20,9 @@ Every new worktree downloads libaom, dav1d and libavif again in `build.rs`. On 2
 
 ## Done when
 
-- [ ] A second fresh worktree builds without network access to the three source hosts (block them or work offline to prove it).
-- [ ] `bash analysis/check.sh` passes.
+- [x] A second fresh worktree builds without network access to the three source hosts (block them or work offline to prove it).
+- [x] `bash analysis/check.sh` passes.
+
+## Result
+
+Verified tarballs live in `~/Library/Caches/pinframe-sources`, written atomically and checked on every use. dav1d falls back to downloads.videolan.org; libaom and libavif have no second official source host. A fresh worktree builds in about 30 s and works with the source hosts blocked, so sharing built libraries is not worth a card.
