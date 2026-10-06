@@ -20,7 +20,12 @@ enum Format {
 pub fn memory_cost(path: &Path) -> Result<(usize, usize), String> {
 	Ok(match format(path)? {
 		Format::Png => (8, 13),
-		Format::Avif | Format::Jpeg | Format::Heic | Format::Jxl => (6, 11),
+		// ImageIO retains a substantial decoded surface while the tracker and renderer work.
+		// `rust_task_memory.py` measured both 8- and 10-bit HEIC at 8/11 B/px and JXL
+		// (using the higher lossless/lossy result) at 10/14 B/px; always round up.
+		Format::Heic => (8, 11),
+		Format::Jxl => (10, 14),
+		Format::Avif | Format::Jpeg => (6, 11),
 	})
 }
 
