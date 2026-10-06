@@ -183,6 +183,8 @@ On the M4 Pro, `analysis/rust_task_memory.py` measured HEIC Main 8 and Main 10 a
 
 The Girona acceptance run used converted 2048×1536 fixtures and the normal `girona_all.sh` marks. Against the Rust AVIF originals, Main 8 HEIC differed by 4.71e-2 (IMG_4798), lossless JXL by 3.89e-2 (IMG_4798), and lossy JXL by 2.29e-2 (IMG_4689); all retained AVIF's three LOST photos. Main 10 HEIC differed materially (9.04e-1 at IMG_4681) and added four LOST photos. The lossless-JXL result is not pixel-identical because its source was an ffmpeg RGB decode of the AVIF rather than the AVIF's original decoded RGB path; it is a conversion-pipeline comparison, not a JXL round-trip claim.
 
+Rebuilding the lossless JXL inputs from Pillow's AVIF RGB (the same RGB as pinframe's libavif path) gives exactly zero rect and scale difference and the same three LOST photos.
+
 Colour profiles are not transformed. In particular, a Display P3 iPhone HEIC is treated as if its native RGB numbers were sRGB, so saturated colours can look wrong; tracking still sees the native decoded values. This is deliberate until colour-managed input is added.
 
 `jxl-oxide` is a portable pure-Rust alternative for JXL, but it would add a separate decoder and cannot use ImageIO's integration on this target. `djxl` is useful as an external reference, not an embeddable CLI dependency. `libheif` plus `libde265` would add LGPL components and a static-build/distribution obligation; it also gives up the system HEVC path. Linux and Windows builds need a feature-gated decoder (for example jxl-oxide for JXL and dynamically linked libheif, or platform-native APIs) instead of this macOS module. AVIF deliberately stays on libavif/dav1d for its existing bit-exact reference behavior.

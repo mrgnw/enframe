@@ -212,6 +212,27 @@ mod tests {
 	}
 
 	#[test]
+	#[ignore]
+	fn decode_bench() {
+		let dir = std::env::var("BENCH_DIR").unwrap();
+		let decoder = std::env::var("BENCH_DECODER").unwrap();
+		let mut paths: Vec<_> = std::fs::read_dir(dir).unwrap().flatten().map(|entry| entry.path()).collect();
+		paths.sort();
+		paths.truncate(10);
+		let mut wall = vec![];
+		for _ in 0..5 {
+			let start = std::time::Instant::now();
+			for path in &paths {
+				let image = if decoder == "imageio" { crate::imageio::decode(path) } else { crate::avif::decode(path, 1) }.unwrap();
+				std::hint::black_box(image);
+			}
+			wall.push(start.elapsed().as_secs_f64() / paths.len() as f64);
+		}
+		wall.sort_by(f64::total_cmp);
+		println!("decode_bench {decoder}: fastest {:.4} s/photo, median {:.4} s/photo", wall[0], wall[wall.len() / 2]);
+	}
+
+	#[test]
 	fn jpeg_orientations_match_pillow_exif_transpose() {
 		// A 3x2, quality-100 JPEG and Pillow's `exif_transpose` RGB output, both dumped by
 		// `uv run out/make_image_inputs.py`. Keeping the fixture here makes `cargo test` standalone.
