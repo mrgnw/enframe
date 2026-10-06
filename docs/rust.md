@@ -15,7 +15,6 @@ Machine: Mac mini, Apple M4 Pro (8 performance + 4 efficiency cores), 24 GB, mac
 Before the Rust version can replace `anchor.py`:
 
 - **Choose the SIFT.** The Rust port in this prototype needs no extra dependencies but is not bit-exact with OpenCV: Girona rects differ by up to 3.0e-4 of the photo size (0.6 px) with the same LOST photos. OpenCV's own SIFT through the `opencv` crate matches `anchor.py` within 8.2e-8, but needs OpenCV 5 built for every platform enframe ships on.
-- **Bundle libavif.** The prototype links Homebrew's libavif (with dav1d and libaom) dynamically. A distributable app needs it built statically, which needs cmake, meson, ninja and nasm.
 - **Port what the prototype skips:** drawing the first box (`--box` is required), and inputs other than AVIF (`anchor.py` reads anything Pillow reads, with EXIF orientation).
 
 ## Rust against Python
@@ -157,8 +156,8 @@ cd rust && cargo test --release -- --ignored --nocapture
 
 ## AVIF decode and encode
 
-- **libavif through bindgen** (`rust/build.rs`), linked to Homebrew's libavif 1.4.2 with dav1d 1.5.4 for decode and libaom 3.15.0 for encode. Animated AVIF needs libavif or something like it; the pure-Rust options cannot write it.
-- **Homebrew's libavif has no libyuv**, while Pillow's does. Its YUV to RGB conversion differed from Pillow's by up to 3 levels, so the 4:4:4 full-range BT.601 case (the Girona photos) converts in Rust the way libyuv does: bit-exact with Pillow. Other layouts fall back to libavif's own conversion (`avif.rs`, marked `ponytail:`). Its RGB to YUV conversion for encoding was slow (above), so frames convert in Rust on the render threads.
+- **libavif through bindgen** (`rust/build.rs`), built from source and linked statically: libavif 1.4.2 with dav1d 1.5.4 for decode and libaom 3.15.0 for encode, the versions Homebrew ships. Animated AVIF needs libavif or something like it; the pure-Rust options cannot write it.
+- **The libavif build has no libyuv** (Homebrew's has none either), while Pillow's does. Its YUV to RGB conversion differed from Pillow's by up to 3 levels, so the 4:4:4 full-range BT.601 case (the Girona photos) converts in Rust the way libyuv does: bit-exact with Pillow. Other layouts fall back to libavif's own conversion (`avif.rs`, marked `ponytail:`). Its RGB to YUV conversion for encoding was slow (above), so frames convert in Rust on the render threads.
 - **Orientation** comes from the AVIF `irot` and `imir` boxes, as Pillow reports it. It is unit-tested on synthetic images only: no rotated AVIF was at hand.
 - **Encoder settings** follow `anchor.py`'s Pillow call: speed 10, quality 75, 4:2:0, full range, alpha kept, 250 ms frames, run ID in the XMP. ffmpeg outputs (`.mov`, `.mp4`, `.webm`) pipe RGB(A) as before, with the run ID in the comment tag.
 - **Alternatives considered:**
@@ -173,24 +172,29 @@ cd rust && cargo test --release -- --ignored --nocapture
 | libc 0.2 | memory statistics, `flock`, `arc4random_buf`, `getrusage` | MIT or Apache-2.0 |
 | png 0.18 | `--frames` PNGs and test fixtures | MIT or Apache-2.0 |
 | serde 1, serde_json 1 | the sidecar, profiles | MIT or Apache-2.0 |
-| bindgen 0.72, pkg-config 0.3 (build) | libavif bindings | BSD-3-Clause; MIT or Apache-2.0 |
+| bindgen 0.72, cmake 0.1 (build) | libavif bindings and build | BSD-3-Clause; MIT or Apache-2.0 |
 | kornia-imgproc 0.2 (optional) | alternative SIFT | Apache-2.0 |
 | opencv 0.101 (optional) | OpenCV's SIFT | MIT (OpenCV itself Apache-2.0) |
-| libavif, dav1d, libaom (C, Homebrew) | AVIF | BSD-2-Clause (libaom also carries the AOM patent license) |
+| libavif, dav1d, libaom (C, linked statically) | AVIF | BSD-2-Clause (libaom also carries the AOM patent license); see Build and install |
 
-A default build compiles 26 crates, 45 with the build dependencies. SIFT's patent expired in March 2020.
+A default build compiles 26 crates, 48 with the build dependencies. SIFT's patent expired in March 2020.
 
 ## Build and install
 
 ```sh
-brew install libavif
-cd rust
-cargo build --release
+brew install cmake meson ninja
 ```
 
-- **Requirements:** Rust stable (1.97 here), Homebrew libavif (1.1 MB; it pulls aom and libpng, both already installed here), pkg-config, and libclang for bindgen (Xcode or the Command Line Tools).
-- **Build cost:** a clean release build without sccache takes 5.9 s wall (28 CPU-s); after an edit it takes about 2 s. The binary is 1.2 MB and links libavif dynamically.
-- **This spike installed only libavif 1.4.2** (1.1 MB) system-wide, plus `cargo-pgo` 0.3.0 (4 MB, in `~/.cargo/bin`). The minimal OpenCV build lives in `/Volumes/disk/cache/opencv-spike` (375 MB with its source and build tree; safe to delete).
+```sh
+cd rust && cargo build --release
+```
+
+- **Requirements:** Rust stable (1.97 here), cmake, meson and ninja, libclang for bindgen (Xcode or the Command Line Tools), and network access on the first build. nasm is needed only on x86 (aom's and dav1d's assembly). Homebrew's libavif is not needed.
+- **The C libraries are built by `rust/build.rs`.** It downloads the release tarballs of libavif 1.4.2, dav1d 1.5.4 and libaom 3.15.0, checks their SHA-256 (the same as Homebrew's for libavif and dav1d; aom's tarball is identical to its git tag `v3.15.0`), and builds them as static libraries in cargo's build directory (`OUT_DIR`), aom and libavif with cmake and dav1d with meson. Tarballs rather than git submodules: a clean checkout needs no extra step, the pins and checksums sit in one file, and aom's history is not cloned. aom builds only its encoder, without apps, docs, tests or VMAF tuning; dav1d without tools or tests; libavif without apps and with aom for encoding only. The C code targets macOS 11.0, like rustc, unless `MACOSX_DEPLOYMENT_TARGET` says otherwise.
+- **Build cost:** a clean release build without sccache takes 37 s wall (116 CPU-s), most of it the C libraries; the C build leaves 107 MB in `OUT_DIR` (73 MB of it unpacked sources). The C libraries are rebuilt only when `build.rs` or `MACOSX_DEPLOYMENT_TARGET` changes, so a build after a Rust edit still takes about 1.5 s.
+- **The binary is 7.5 MB** (6.8 MB stripped; the dynamic build was 1.2 MB) and links only `/usr/lib/libSystem` and `/usr/lib/libiconv`. Its output is the same as the Homebrew-linked build: identical sidecar rects and decoded frames for the Girona job. The Girona job runs as fast (12 interleaved runs at load 35: fastest 2.19 s against 2.20 s, median 2.34 s against 2.36 s).
+- **Licenses for distribution.** libavif, dav1d and libaom are BSD-2-Clause: a binary must reproduce each copyright notice, the conditions and the disclaimer in its documentation or other materials. Also bundled are libyuv-derived scaling code in libavif (BSD-3-Clause, in libavif's `LICENSE`), and fastfeat (BSD-3-Clause) and vector (MIT) in libaom. libaom also comes under the Alliance for Open Media Patent License 1.0 (`PATENTS`), a royalty-free patent grant that ends for anyone who sues over AV1 patents; ship its text with the others. The texts are in each source tree under `OUT_DIR/src`.
+- **This spike installed** meson 1.12.1 and ninja 1.13.2 (Homebrew; meson pulled python@3.14 3.14.8), plus `cargo-pgo` 0.3.0 (4 MB, in `~/.cargo/bin`). The minimal OpenCV build lives in `/Volumes/disk/cache/opencv-spike` (375 MB with its source and build tree; safe to delete).
 
 Optional SIFT backends:
 
@@ -225,7 +229,7 @@ cd rust && cargo test --release -- --include-ignored --test-threads=1 --nocaptur
 - **Integration.** Today's plan (`docs/wasm.md` on `spike-wasm`) runs `uv run anchor.py` from `enframe-serve` per click. With a Rust core, `enframe-serve` and the Tauri app call a `pinframe` library crate in-process.
   - The first run decodes and finds features (about 1.5 s for Girona). Later marks re-track from features held in memory in 145 ms, and a preview clip encodes in about 0.8 s.
   - Nothing Python ships with the app, and there is no 135 ms start-up per call.
-- **Dependencies.** enframe's Rust side has `image` with pure-Rust AVIF (ravif) and no C codec libraries. pinframe adds libavif, dav1d and libaom. For a distributable app they should be built statically in `build.rs` (cmake for libavif and aom, meson and ninja for dav1d, nasm for aom on x86) instead of linking Homebrew's dylibs.
+- **Dependencies.** enframe's Rust side has `image` with pure-Rust AVIF (ravif) and no C codec libraries. pinframe adds libavif, dav1d and libaom. `build.rs` builds them statically (cmake for libavif and aom, meson and ninja for dav1d, nasm on x86), so the binary needs no Homebrew.
 - **Platforms.** The Rust code is portable (no intrinsics). Free-memory and core-count queries are macOS-only (`host_statistics64`) and need Linux and Windows versions. The OpenCV backend would need OpenCV built for every target, which is the main argument for the own port or kornia.
 - **The web build** stays without pinframe, as `docs/wasm.md` concluded. The Rust core could compile to WASM later (no threads assumed in the algorithm), but libavif would need an Emscripten build, and nothing was measured here.
 
