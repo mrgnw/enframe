@@ -174,6 +174,20 @@ mod tests {
 	}
 
 	#[test]
+	fn imageio_orientation_fixtures_are_applied() {
+		for name in ["orientation-6.heic", "orientation-8.heic", "orientation-6.jxl"] {
+			let path = Path::new("testdata").join(name);
+			let image = decode(&path).unwrap();
+			assert_eq!((image.width, image.height), (2, 3), "{name}");
+			assert_eq!(oriented_size(&path).unwrap(), (2, 3), "{name}");
+		}
+		let mirror = Path::new("testdata/orientation-mirror.heic");
+		let image = decode(mirror).unwrap();
+		assert_eq!((image.width, image.height), (3, 2));
+		assert_eq!(oriented_size(mirror).unwrap(), (3, 2));
+	}
+
+	#[test]
 	fn jpeg_orientations_match_pillow_exif_transpose() {
 		// A 3x2, quality-100 JPEG and Pillow's `exif_transpose` RGB output, both dumped by
 		// `uv run out/make_image_inputs.py`. Keeping the fixture here makes `cargo test` standalone.
