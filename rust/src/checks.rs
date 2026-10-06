@@ -362,7 +362,7 @@ fn retrack_bench() {
 		handles.into_iter().flat_map(|h| h.join().unwrap()).collect()
 	});
 	let mut marks = vec![None; paths.len()];
-	marks[0] = Some(crate::track::Mark(vec![1010.0, 410.0, 1030.0, 400.0]));
+	marks[0] = Some(crate::to_points(&[1010.0, 410.0, 1030.0, 400.0]));
 	let mut best = std::time::Duration::MAX;
 	for _ in 0..5 {
 		let started = std::time::Instant::now();

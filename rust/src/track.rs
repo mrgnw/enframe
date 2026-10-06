@@ -14,10 +14,21 @@ const MAX_STEP_TURN: f64 = 15.0;
 /// Photos are hand-held, so steps vary a lot; below 5 the window changes results on the synthetic
 /// rotate sequence, above 5 it only costs time.
 const MOTION_MARGIN: f64 = 5.0;
+/// The area around the points holds this many keypoints, so a fit has 12 times `MIN_INLIERS` features to
+/// choose from. On Girona, 48 and 64 lose IMG_4795 with one point and 24 loses two to three more photos;
+/// 96 is the smallest tested count that holds with one point.
+const AREA_KEYPOINTS: usize = 12 * MIN_INLIERS;
+/// The area's radius never passes half the tracked size, so one point on plain sky cannot take in the
+/// whole photo. Girona's largest radius is 313 px, so the cap does not bind there.
+const MAX_RADIUS: f64 = TRACK_EDGE / 2.0;
 
-/// A user mark: a point x,y or a box x,y,w,h, with an optional zoom relative to the first photo.
+/// A user mark: the points that replace the set on its photo, in photo pixels, and an optional zoom
+/// relative to the first photo.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Mark(pub Vec<f64>);
+pub struct Mark {
+	pub points: Vec<(f64, f64)>,
+	pub zoom: Option<f64>,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Source {
@@ -43,6 +54,8 @@ pub struct Hit {
 	pub scale: f64,
 	pub source: Source,
 	pub note: String,
+	/// Every point of the set, in photo pixels; their mean is (x, y).
+	pub points: Vec<(f64, f64)>,
 }
 
 /// One downscale for every photo, so differing resolutions show up as scale, like a lens change.
@@ -58,6 +71,7 @@ pub struct Photo {
 }
 
 /// The features whose rounded position falls in the box, as OpenCV's mask filter keeps them.
+#[cfg(test)]
 pub fn features_in(photo: &Photo, cx: f64, cy: f64, w: f64, h: f64) -> Features {
 	let (sw, sh) = photo.small;
 	let round = |v: f64| v.round_ties_even() as i64;
@@ -74,6 +88,66 @@ pub fn features_in(photo: &Photo, cx: f64, cy: f64, w: f64, h: f64) -> Features 
 		}
 	}
 	kept
+}
+
+fn mean(points: &[(f64, f64)]) -> (f64, f64) {
+	assert!(!points.is_empty());
+	let n = points.len() as f64;
+	let (sx, sy) = points.iter().fold((0.0, 0.0), |(sx, sy), &(x, y)| (sx + x, sy + y));
+	(sx / n, sy / n)
+}
+
+fn nearest_point(points: &[(f64, f64)], kp: &KeyPoint) -> f64 {
+	let (x, y) = (kp.x as f64, kp.y as f64);
+	points.iter().map(|&(px, py)| (x - px).hypot(y - py)).fold(f64::INFINITY, f64::min)
+}
+
+/// The radius around every point: the one that holds `AREA_KEYPOINTS` keypoints, at least half the
+/// smallest spacing so a spread set's discs touch, at most `MAX_RADIUS`.
+fn area_radius(points: &[(f64, f64)], keypoints: &[KeyPoint]) -> f64 {
+	assert!(!points.is_empty());
+	let mut distances: Vec<f64> = keypoints.iter().map(|kp| nearest_point(points, kp)).collect();
+	distances.sort_by(f64::total_cmp);
+	let mut radius = match distances.len() {
+		0 => 0.0,
+		n => distances[n.min(AREA_KEYPOINTS) - 1],
+	};
+	let mut spacing = f64::INFINITY;
+	for (i, &(ax, ay)) in points.iter().enumerate() {
+		for &(bx, by) in &points[i + 1..] {
+			spacing = spacing.min((ax - bx).hypot(ay - by));
+		}
+	}
+	if spacing.is_finite() {
+		radius = radius.max(spacing / 2.0);
+	}
+	let radius = radius.min(MAX_RADIUS);
+	assert!(radius.is_finite() && radius >= 0.0);
+	radius
+}
+
+/// The features within `radius` of any point.
+fn features_near(features: &Features, points: &[(f64, f64)], radius: f64) -> Features {
+	let mut kept = Features::default();
+	for (kp, des) in features.keypoints.iter().zip(&features.descriptors) {
+		if nearest_point(points, kp) <= radius {
+			kept.keypoints.push(*kp);
+			kept.descriptors.push(*des);
+		}
+	}
+	kept
+}
+
+/// The area's width, which sets the RANSAC tolerance as the box width did: the points' spread plus a
+/// disc on each side.
+fn area_width(points: &[(f64, f64)], radius: f64) -> f64 {
+	let (x0, x1) =
+		points.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &(x, _)| (a.min(x), b.max(x)));
+	x1 - x0 + 2.0 * radius
+}
+
+fn apply(m: &Affine, (x, y): (f64, f64)) -> (f64, f64) {
+	(m[0][0] * x + m[0][1] * y + m[0][2], m[1][0] * x + m[1][1] * y + m[1][2])
 }
 
 /// Euclidean distance between two descriptors. OpenCV's are whole numbers, so the squared distance
@@ -340,21 +414,21 @@ fn plausible(m: &Affine) -> (bool, f64, f64) {
 	((1.0 / MAX_STEP_ZOOM..=MAX_STEP_ZOOM).contains(&step) && turn.abs() <= MAX_STEP_TURN, step, turn)
 }
 
-/// Per photo: anchor position, its scale relative to the first box, and how it was found. Photos are
-/// consumed one at a time, in order; `marks[i]` is the user's mark on photo i, and photo 0 needs a box.
+/// Per photo: anchor position, its scale relative to the first photo, and how it was found. Photos are
+/// consumed one at a time, in order; `marks[i]` is the user's mark on photo i, and photo 0 needs one.
 pub fn track(
 	photos: impl Iterator<Item = Photo>,
 	sizes: &[(u32, u32)],
 	k: f64,
 	marks: &[Option<Mark>],
 ) -> Vec<Hit> {
-	let first = marks[0].as_ref().expect("the first photo needs a box");
-	assert_eq!(first.0.len(), 4, "the first photo needs a box");
+	assert!(marks[0].is_some(), "the first photo needs a mark");
 	let mut path = Vec::with_capacity(sizes.len());
-	let (mut cx, mut cy) = (0.0, 0.0);
-	let (mut rw, mut rh) = (first.0[2] * k, first.0[3] * k);
+	// The point set and the radius around each point, on the downscaled photo.
+	let mut points: Vec<(f64, f64)> = Vec::new();
+	let mut radius = 0.0;
 	let mut scale = 1.0;
-	let mut boxed = Features::default();
+	let mut reference = Features::default();
 	// How far the reference moved in the last tracked step. It describes how the series was shot, so it
 	// carries across marks and lost photos; until the first step it is unknown and the search is whole.
 	let mut reach = None;
@@ -363,53 +437,60 @@ pub fn track(
 		count += 1;
 		let source;
 		let note;
-		if let Some(Mark(mark)) = &marks[i] {
-			let (px, py) = if mark.len() == 2 {
-				(mark[0], mark[1])
-			} else {
-				// The box is where to look; it says nothing about zoom unless a zoom is given.
-				(rw, rh) = (mark[2] * k, mark[3] * k);
-				(mark[0] + mark[2] / 2.0, mark[1] + mark[3] / 2.0)
-			};
-			if mark.len() == 5 {
-				scale = mark[4];
+		if let Some(mark) = &marks[i] {
+			assert!(!mark.points.is_empty(), "a mark needs a point");
+			points = mark.points.iter().map(|&(x, y)| (x * k, y * k)).collect();
+			radius = area_radius(&points, &photo.features.keypoints);
+			if let Some(zoom) = mark.zoom {
+				scale = zoom;
 			}
-			(cx, cy) = (px * k, py * k);
 			(source, note) = (Source::Mark, "your mark".to_string());
 		} else {
+			let tolerance = RANSAC_TOLERANCE * area_width(&points, radius);
 			let (m, agreed, fallback) = crate::profile::work(crate::profile::Work::Match, || {
-				find(&boxed, &photo.features, RANSAC_TOLERANCE * rw, reach)
+				find(&reference, &photo.features, tolerance, reach)
 			});
 			let whole = if fallback { ", whole photo" } else { "" };
+			let lost = |note: String| Hit { source: Source::Lost, note, ..hit(&points, scale, k) };
 			let Some(m) = m.filter(|_| agreed >= MIN_INLIERS) else {
-				let note = format!("LOST ({agreed} features{whole}), estimated");
-				path.push(Hit { x: cx / k, y: cy / k, scale, source: Source::Lost, note });
+				path.push(lost(format!("LOST ({agreed} features{whole}), estimated")));
 				continue;
 			};
 			let (ok, step, turn) = plausible(&m);
 			if !ok {
-				let note = format!("LOST (fit zooms {step:.2}x, turns {turn:+.0} deg{whole}), estimated");
-				path.push(Hit { x: cx / k, y: cy / k, scale, source: Source::Lost, note });
+				path.push(lost(format!(
+					"LOST (fit zooms {step:.2}x, turns {turn:+.0} deg{whole}), estimated"
+				)));
 				continue;
 			}
-			reach = Some(motion(&m, &boxed));
+			reach = Some(motion(&m, &reference));
 			scale *= step;
-			(rw, rh) = (rw * step, rh * step);
-			(cx, cy) = (m[0][0] * cx + m[0][1] * cy + m[0][2], m[1][0] * cx + m[1][1] * cy + m[1][2]);
+			radius *= step;
+			points = points.iter().map(|&p| apply(&m, p)).collect();
 			(source, note) = (Source::Tracked, format!("{agreed} features{whole}"));
 		}
-		path.push(Hit { x: cx / k, y: cy / k, scale, source, note });
+		path.push(Hit { source, note, ..hit(&points, scale, k) });
 		// Clouds deform, so features come from the latest find, never from a lost photo.
-		let fresh = features_in(&photo, cx, cy, rw, rh);
+		let fresh = features_near(&photo.features, &points, radius);
 		if i == 0 && fresh.keypoints.len() < MIN_INLIERS {
-			fail(&format!("only {} features in the first box; draw a bigger one", fresh.keypoints.len()));
+			fail(&format!(
+				"only {} features near the first points; mark a textured spot",
+				fresh.keypoints.len()
+			));
 		}
 		if fresh.keypoints.len() >= MIN_INLIERS {
-			boxed = fresh;
+			reference = fresh;
 		}
 	}
 	assert_eq!(count, sizes.len(), "every photo must be tracked");
 	path
+}
+
+/// A found photo's hit from the downscaled point set: the anchor is the points' mean.
+fn hit(points: &[(f64, f64)], scale: f64, k: f64) -> Hit {
+	let points: Vec<(f64, f64)> = points.iter().map(|&(x, y)| (x / k, y / k)).collect();
+	let (x, y) = mean(&points);
+	Hit { x, y, scale, source: Source::Tracked, note: String::new(), points }
 }
 
 /// `np.interp`: linear between the known points, flat beyond them.
@@ -440,11 +521,19 @@ pub fn fill_lost(path: Vec<Hit>, sizes: &[(u32, u32)]) -> Vec<Hit> {
 	path.iter()
 		.enumerate()
 		.zip(sizes)
-		.map(|((i, hit), &(fw, fh))| Hit {
-			x: interp(i as f64, &xs, &gx).clamp(0.0, fw as f64),
-			y: interp(i as f64, &xs, &gy).clamp(0.0, fh as f64),
-			scale: interp(i as f64, &xs, &gs),
-			..hit.clone()
+		.map(|((i, hit), &(fw, fh))| {
+			let x = interp(i as f64, &xs, &gx).clamp(0.0, fw as f64);
+			let y = interp(i as f64, &xs, &gy).clamp(0.0, fh as f64);
+			let scale = interp(i as f64, &xs, &gs);
+			if hit.source != Source::Lost {
+				return Hit { x, y, scale, ..hit.clone() };
+			}
+			// A lost hit holds the last found photo's points and scale: move them to the estimate.
+			let (cx, cy) = mean(&hit.points);
+			let grow = scale / hit.scale;
+			let points =
+				hit.points.iter().map(|&(px, py)| (x + (px - cx) * grow, y + (py - cy) * grow)).collect();
+			Hit { x, y, scale, points, ..hit.clone() }
 		})
 		.collect()
 }
@@ -591,16 +680,61 @@ mod tests {
 
 	#[test]
 	fn lost_photos_are_interpolated_and_stay_lost() {
-		let hit = |x, y, scale, source| Hit { x, y, scale, source, note: String::new() };
-		let path = vec![
-			hit(0.0, 0.0, 1.0, Source::Tracked),
-			hit(9.0, 9.0, 9.0, Source::Lost),
-			hit(20.0, 40.0, 2.0, Source::Mark),
-		];
+		let hit =
+			|x, y, scale, source| Hit { x, y, scale, source, note: String::new(), points: vec![(x, y)] };
+		// The lost photo holds the last found pattern, two points 2 px apart at scale 1.
+		let lost = Hit { points: vec![(-1.0, 0.0), (1.0, 0.0)], ..hit(0.0, 0.0, 1.0, Source::Lost) };
+		let path = vec![hit(0.0, 0.0, 1.0, Source::Tracked), lost, hit(20.0, 40.0, 2.0, Source::Mark)];
 		let filled = fill_lost(path, &[(100, 100); 3]);
 		assert_eq!(
 			(filled[1].x, filled[1].y, filled[1].scale, filled[1].source),
 			(10.0, 20.0, 1.5, Source::Lost)
 		);
+		assert_eq!(filled[1].points, vec![(8.5, 20.0), (11.5, 20.0)]);
+	}
+
+	/// `count` keypoints on a ring at `distance` around (cx, cy).
+	fn ring(count: usize, distance: f32, (cx, cy): (f32, f32)) -> Vec<KeyPoint> {
+		(0..count)
+			.map(|i| {
+				let t = i as f32 / count as f32 * std::f32::consts::TAU;
+				let (x, y) = (cx + distance * t.cos(), cy + distance * t.sin());
+				KeyPoint { x, y, size: 2.0, angle: 0.0, response: 1.0, octave: 0 }
+			})
+			.collect()
+	}
+
+	#[test]
+	fn the_area_holds_enough_keypoints_or_spans_the_points() {
+		let near = |r: f64, want: f64| (r - want).abs() < 1e-3;
+		let centre = (500.0, 400.0);
+		// Dense: 96 keypoints at 10 px and more at 50 px; the disc stops at the 96th.
+		let mut dense = ring(AREA_KEYPOINTS, 10.0, (500.0, 400.0));
+		dense.extend(ring(100, 50.0, (500.0, 400.0)));
+		assert!(near(area_radius(&[centre], &dense), 10.0));
+		// Sparse: 48 at 20 px and 48 at 150 px; the disc reaches the 96th, at 150.
+		let mut sparse = ring(AREA_KEYPOINTS / 2, 20.0, (500.0, 400.0));
+		sparse.extend(ring(AREA_KEYPOINTS / 2, 150.0, (500.0, 400.0)));
+		assert!(near(area_radius(&[centre], &sparse), 150.0));
+		// Fewer keypoints than the count: the disc takes them all.
+		assert!(near(area_radius(&[centre], &ring(10, 30.0, (500.0, 400.0))), 30.0));
+		// Spread points: the dense keypoints need 10 px, but the discs reach half the closest spacing.
+		let spread = [centre, (580.0, 400.0), (500.0, 700.0)];
+		assert!(near(area_radius(&spread, &dense), 40.0));
+		// Plain sky: the 96th keypoint is 900 px away, so the cap holds the disc at half the tracked size.
+		assert!(near(area_radius(&[centre], &ring(AREA_KEYPOINTS, 900.0, (500.0, 400.0))), MAX_RADIUS));
+		assert!(near(area_radius(&[(0.0, 0.0), (1024.0, 768.0)], &dense), MAX_RADIUS));
+	}
+
+	#[test]
+	fn features_near_keep_what_lies_in_any_disc() {
+		let mut features = Features::default();
+		for kp in ring(8, 10.0, (100.0, 100.0)).into_iter().chain(ring(8, 30.0, (300.0, 100.0))) {
+			features.keypoints.push(kp);
+			features.descriptors.push([0; DESCRIPTOR_LEN]);
+		}
+		assert_eq!(features_near(&features, &[(100.0, 100.0)], 10.5).keypoints.len(), 8);
+		assert_eq!(features_near(&features, &[(100.0, 100.0), (300.0, 100.0)], 30.5).keypoints.len(), 16);
+		assert_eq!(features_near(&features, &[(200.0, 100.0)], 50.0).keypoints.len(), 0);
 	}
 }

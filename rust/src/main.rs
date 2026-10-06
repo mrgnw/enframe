@@ -152,6 +152,19 @@ fn check_mark(name: &str, mark: &[f64], (fw, fh): (u32, u32)) -> Result<(), Stri
 	Ok(())
 }
 
+/// A checked mark as the tracker's point set: a point stays one point, a box becomes its four quarter
+/// centres, whose mean is the box centre, and a fifth number is the zoom.
+fn to_points(mark: &[f64]) -> Mark {
+	let points = match *mark {
+		[x, y] => vec![(x, y)],
+		[x, y, w, h, ..] => [(1.0, 1.0), (3.0, 1.0), (1.0, 3.0), (3.0, 3.0)]
+			.map(|(a, b)| (x + w * a / 4.0, y + h * b / 4.0))
+			.to_vec(),
+		_ => unreachable!("check_mark allows 2, 4 or 5 numbers"),
+	};
+	Mark { points, zoom: mark.get(4).copied() }
+}
+
 /// Orders photos by EXIF capture time, falling back to filename order when `--order name` was given or
 /// any photo lacks a capture time (a mix of cameras, or an export that stripped EXIF). Marks are matched
 /// to photos by file name (`read_marks`), so reordering here never loses track of which mark goes where.
@@ -212,8 +225,8 @@ fn read_marks(
 	if first.len() != 4 {
 		return Err("--box is x,y,w,h".into());
 	}
-	let mut marks: Vec<Option<Mark>> = vec![None; paths.len()];
-	marks[0] = Some(Mark(first));
+	let mut marks: Vec<Option<Vec<f64>>> = vec![None; paths.len()];
+	marks[0] = Some(first);
 	for at in ats {
 		let Some((name, value)) = at.split_once('=').filter(|(n, _)| names.iter().any(|m| m == n)) else {
 			return Err(format!("--at {at}: expected PHOTO=x,y with PHOTO one of the photo file names"));
@@ -223,14 +236,14 @@ fn read_marks(
 			let why = if i == 0 { "use --box for the first photo" } else { "marked twice" };
 			return Err(format!("--at {name}: {why}"));
 		}
-		marks[i] = Some(Mark(parse_numbers(&format!("--at {name}"), value)?));
+		marks[i] = Some(parse_numbers(&format!("--at {name}"), value)?);
 	}
 	for (i, mark) in marks.iter().enumerate() {
-		if let Some(Mark(m)) = mark {
+		if let Some(m) = mark {
 			check_mark(&names[i], m, sizes[i])?;
 		}
 	}
-	Ok(marks)
+	Ok(marks.iter().map(|m| m.as_deref().map(to_points)).collect())
 }
 
 fn parse_fill(value: &str) -> Result<Vec<u8>, String> {
@@ -587,8 +600,9 @@ fn write_rects(
 		.zip(sources)
 		.zip(path)
 		.map(|(((p, &(fw, fh)), &(x, y, w, h)), hit)| {
-			let (px, py) = (hit.x / fw as f64, hit.y / fh as f64);
-			assert!(px.is_finite() && py.is_finite(), "non-finite point for {}", file_name(p));
+			let points: Vec<[f64; 2]> =
+				hit.points.iter().map(|&(px, py)| [px / fw as f64, py / fh as f64]).collect();
+			assert!(points.iter().flatten().all(|v| v.is_finite()), "non-finite point for {}", file_name(p));
 			Row {
 				file: file_name(p),
 				x: x / fw as f64,
@@ -597,7 +611,7 @@ fn write_rects(
 				h: h / fh as f64,
 				scale: format!("{:.4}", hit.scale).parse().unwrap(),
 				source: hit.source.name(),
-				points: vec![[px, py]],
+				points,
 			}
 		})
 		.collect();
@@ -925,7 +939,10 @@ mod tests {
 			assert!(read_marks(Some("0,0,10,10"), &ats, &two, &[photo, photo]).is_err(), "{ats:?}");
 		}
 		let marks = read_marks(Some("0,0,10,10"), &["b.avif=5,5".into()], &two, &[photo, photo]).unwrap();
-		assert_eq!(marks[1], Some(Mark(vec![5.0, 5.0])));
+		assert_eq!(marks[1], Some(Mark { points: vec![(5.0, 5.0)], zoom: None }));
+		let quarters = vec![(2.5, 2.5), (7.5, 2.5), (2.5, 7.5), (7.5, 7.5)];
+		assert_eq!(marks[0], Some(Mark { points: quarters.clone(), zoom: None }));
+		assert_eq!(to_points(&[0.0, 0.0, 10.0, 10.0, 2.5]), Mark { points: quarters, zoom: Some(2.5) });
 	}
 
 	#[test]

@@ -121,6 +121,12 @@ def run_pinframe(photos: list[Path], marks: list[str], work: Path) -> list[dict]
 	return json.loads(out.read_text())['photos']
 
 
+def anchor_px(row: dict, fw: int, fh: int) -> tuple[float, float]:
+	"""The anchor, the mean of the photo's points, in photo pixels."""
+	xs, ys = zip(*row['points'], strict=True)
+	return sum(xs) / len(xs) * fw, sum(ys) / len(ys) * fh
+
+
 def oriented(path: Path) -> Image.Image:
 	with Image.open(path) as im:
 		return ImageOps.exif_transpose(im).convert('RGB')
@@ -191,7 +197,7 @@ def accuracy_sequence(name: str, tmp: Path) -> dict:
 	rows = run_pinframe(paths, ['--box', ','.join(f'{v:.3f}' for v in box)], work)
 	frames = []
 	for row, truth, zoom, (fw, fh) in zip(rows, truths, zooms, sizes, strict=True):
-		found = (row['points'][0][0] * fw, row['points'][0][1] * fh)
+		found = anchor_px(row, fw, fh)
 		frames.append(
 			{
 				'file': row['file'],
@@ -293,7 +299,7 @@ def girona_run(photos: list[Path], ext: str, work: Path) -> dict:
 		stem = Path(row['file']).stem
 		fw, fh = sizes[stem]
 		result[stem] = {
-			'point_px': [round(row['points'][0][0] * fw, 3), round(row['points'][0][1] * fh, 3)],
+			'point_px': [round(v, 3) for v in anchor_px(row, fw, fh)],
 			'scale': row['scale'],
 			'source': row['source'],
 			'rect': [row[k] for k in 'xywh'],

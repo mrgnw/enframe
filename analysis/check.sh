@@ -146,7 +146,9 @@ for file, row in rust.items():
 	assert scale_diff <= SCALE_TOLERANCE, f'{file}: scale differs from baseline by {scale_diff:.2e}'
 	worst_scale = max(worst_scale, scale_diff)
 	fw, fh = oriented_size(samples / file)
-	px, py = row['points'][0]
+	# The anchor is the mean of the photo's points.
+	px = sum(x for x, _ in row['points']) / len(row['points'])
+	py = sum(y for _, y in row['points']) / len(row['points'])
 	point_diff = max(abs(px * fw - base['point_px'][0]), abs(py * fh - base['point_px'][1]))
 	assert point_diff <= POINT_TOLERANCE_PX, f'{file}: point differs from baseline by {point_diff:.2e}px'
 	worst_point_px = max(worst_point_px, point_diff)
