@@ -20,11 +20,9 @@ use std::sync::mpsc::sync_channel;
 use track::{Hit, Mark, Photo, Rect};
 
 /// Threads and memory are planned at start from the cores, the free memory and these measured costs
-/// (`analysis/rust_task_memory.py`, M4 Pro, 2026-10-05: prepare 139, 174, 347 MB and render 38, 123,
-/// 480 MB at 3, 12 and 49 MP), rounded up. Re-measure them after changing libraries or TRACK_EDGE.
+/// (`analysis/rust_task_memory.py`, M4 Pro, 2026-10-05), rounded up. Re-measure them after changing
+/// libraries or TRACK_EDGE. PNG's measured working set is larger than AVIF and JPEG's.
 const PREPARE_FIXED_BYTES: usize = 130 << 20; // SIFT's pyramid at TRACK_EDGE, whatever the photo size
-const PREPARE_BYTES_PER_PIXEL: usize = 6; // decode buffers, RGB and gray at full size
-const RENDER_BYTES_PER_PIXEL: usize = 11; // RGB, the RGBA frame and its YUV
 const FEATURE_BYTES: usize = 1 << 20; // one photo's keypoints and byte descriptors; Girona's are under 1 MB
 /// Results queued per thread; they come back in order, so a slow photo must not idle the others.
 const QUEUE_DEPTH: usize = 3;
@@ -262,12 +260,11 @@ fn available_bytes() -> usize {
 	}
 }
 
-fn plan_resources(largest_pixels: usize, free_bytes: usize, cores: usize) -> Result<Resources, String> {
+fn plan_resources(largest_pixels: usize, prepare_decode_bytes: usize, render_decode_bytes: usize, free_bytes: usize, cores: usize) -> Result<Resources, String> {
 	let budget = (free_bytes as f64 * MEMORY_SHARE) as usize;
-	let prepare_cost =
-		PREPARE_FIXED_BYTES + PREPARE_BYTES_PER_PIXEL * largest_pixels + QUEUE_DEPTH * FEATURE_BYTES;
+	let prepare_cost = PREPARE_FIXED_BYTES + prepare_decode_bytes + QUEUE_DEPTH * FEATURE_BYTES;
 	// A queued clip frame is RGBA, and the clip is never larger than the photos it is cut from.
-	let render_cost = (RENDER_BYTES_PER_PIXEL + QUEUE_DEPTH * 4) * largest_pixels;
+	let render_cost = render_decode_bytes + QUEUE_DEPTH * 4 * largest_pixels;
 	let prepare_threads = cores.min(budget / prepare_cost);
 	let render_threads = cores.min(budget / render_cost);
 	if prepare_threads < 1 || render_threads < 1 {
@@ -548,7 +545,23 @@ fn main() {
 		let k = track::track_factor(&sizes);
 		let free = available_bytes();
 		let largest = sizes.iter().map(|&(w, h)| w as usize * h as usize).max().unwrap();
-		let resources = plan_resources(largest, free, cores()).unwrap_or_else(|e| fail(&e));
+		let (prepare_decode_bytes, render_decode_bytes) = paths
+			.iter()
+			.zip(&sizes)
+			.map(|(path, &(w, h))| {
+				let pixels = w as usize * h as usize;
+				decode::memory_cost(path)
+					.map(|(prepare, render)| (prepare * pixels, render * pixels))
+					.map_err(|e| format!("{}: {e}", path.display()))
+			})
+			.collect::<Result<Vec<_>, _>>()
+			.unwrap_or_else(|e| fail(&e))
+			.into_iter()
+			.fold((0, 0), |(prepare_max, render_max), (prepare, render)| {
+				(prepare_max.max(prepare), render_max.max(render))
+			});
+		let resources =
+			plan_resources(largest, prepare_decode_bytes, render_decode_bytes, free, cores()).unwrap_or_else(|e| fail(&e));
 		println!(
 			"{:.1} GB free: {} prepare threads, {} render threads, up to {:.1} GB of kept photos",
 			free as f64 / (1u64 << 30) as f64,
@@ -670,10 +683,13 @@ mod tests {
 	#[test]
 	fn resources_stop_at_cores_then_memory() {
 		let gb = 1usize << 30;
-		let girona = plan_resources(2048 * 1536, 4 * gb, 12).unwrap();
+		let girona = plan_resources(2048 * 1536, 6 * 2048 * 1536, 11 * 2048 * 1536, 4 * gb, 12).unwrap();
 		assert!(girona.prepare_threads == 12 && girona.render_threads == 12 && girona.keep_bytes > gb / 2);
-		let large = plan_resources(8064 * 6048, 4 * gb, 12).unwrap();
+		let large = plan_resources(8064 * 6048, 6 * 8064 * 6048, 11 * 8064 * 6048, 4 * gb, 12).unwrap();
 		assert!((1..12).contains(&large.prepare_threads) && large.render_threads >= 1);
-		assert!(plan_resources(8064 * 6048, gb / 2, 12).is_err(), "a 48 MP photo cannot fit in 0.5 GB");
+		assert!(
+			plan_resources(8064 * 6048, 6 * 8064 * 6048, 11 * 8064 * 6048, gb / 2, 12).is_err(),
+			"a 48 MP photo cannot fit in 0.5 GB"
+		);
 	}
 }

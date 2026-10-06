@@ -14,6 +14,14 @@ enum Format {
 	Png,
 }
 
+/// Conservative decode working-set costs measured by `analysis/rust_task_memory.py`.
+pub fn memory_cost(path: &Path) -> Result<(usize, usize), String> {
+	Ok(match format(path)? {
+		Format::Png => (8, 13),
+		Format::Avif | Format::Jpeg => (6, 11),
+	})
+}
+
 fn format_from_magic(bytes: &[u8]) -> Option<Format> {
 	if bytes.len() >= 12 && &bytes[4..8] == b"ftyp" && matches!(&bytes[8..12], b"avif" | b"avis") {
 		Some(Format::Avif)

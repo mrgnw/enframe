@@ -311,7 +311,7 @@ fn task_memory() {
 	let Ok(photo) = std::env::var("TASK_PHOTO") else { return };
 	let before = crate::profile::peak_rss();
 	let path = Path::new(&photo);
-	let rgb = avif::decode(path, 1).unwrap();
+	let rgb = crate::decode::decode(path).unwrap();
 	let (w, h) = (rgb.width, rgb.height);
 	if std::env::var("TASK").as_deref() == Ok("render") {
 		let frame = crate::render::place(
