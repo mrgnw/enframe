@@ -31,6 +31,21 @@ Before the Rust version can replace `anchor.py`:
 - **Choose the SIFT.** The Rust port in this prototype needs no extra dependencies but is not bit-exact with OpenCV: Girona rects differ by up to 3.0e-4 of the photo size (0.6 px) with the same LOST photos. OpenCV's own SIFT through the `opencv` crate matches `anchor.py` within 8.2e-8, but needs OpenCV 5 built for every platform enframe ships on.
 - **Port what the prototype skips:** drawing the first box (`--box` is required), and inputs other than AVIF (`anchor.py` reads anything Pillow reads, with EXIF orientation).
 
+## Search window
+
+On a warm cache a JSON-only re-run is almost all matching, and that re-run is what the marking UI waits on after each mark. The tracker therefore matches the reference features (today the box's, later A5's points) only against next-photo keypoints within a window: the reference features' bounds grown by `MOTION_MARGIN` (5) times the last tracked step's motion, the farthest any reference feature moved under that step's fit. The motion carries across marks and lost photos, since it describes how the series was shot; the first step after the first photo searches the whole photo.
+
+When the window gives too few inliers, an implausible fit, or a fit that moves the reference past the window's edge, the search adds the keypoints outside the window to the nearest-neighbour state it already has. Ties go to the lower index, so the fallback finds exactly what a whole-photo search finds and costs no more than one. On Girona the window links 23 of 33 searches; 9 fall back (3 of them lost photos) and 1 has no motion yet. In the synthetic sequences 20 link in the window, 1 falls back and 5 are first steps.
+
+Warm-cache Girona JSON-only re-run (`analysis/girona_all.sh` with `--cache`), 11 interleaved runs, M4 Pro:
+
+| | match work (`PINFRAME_PROFILE`), median | process wall, median |
+|-|-:|-:|
+| whole photo (before) | 100.6 ms | 118 ms |
+| window, factor 5 (after) | 47.7 ms | 65 ms |
+
+Smaller factors were 5–10% faster again (factor 3: 43 ms) but moved the synthetic `rotate` sequence's results by 0.001 px and 0.01% scale either way; at 5 every synthetic frame matches the whole-photo tracker exactly. See `docs/tracking.md` for the accuracy and stability before and after.
+
 ## Rust against Python
 
 Girona job (`analysis/girona_all.sh`: 57 AVIFs at 2048x1536, 24 marks, transparent padding, animated AVIF out), 9 interleaved runs each, through `/usr/bin/time -l`:
