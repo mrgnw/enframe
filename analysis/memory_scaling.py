@@ -19,7 +19,7 @@ def peak_mb(count: int) -> tuple[float, float]:
 	out = ROOT / 'out' / f'memory-{count}.avif'
 	cmd = [
 		'/usr/bin/time', '-l', 'rust/target/release/pinframe', *map(str, PHOTOS[:count]),
-		'--box', '1010,410,1030,400', '--pad', 'transparent', '--out', str(out),
+		'--points', '1267.5,510/1782.5,510/1267.5,710/1782.5,710', '--pad', 'transparent', '--out', str(out),
 	]  # fmt: skip
 	start = time.perf_counter()
 	run = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, check=True)

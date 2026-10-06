@@ -28,15 +28,22 @@ def upscaled(source: Path) -> Path:
 	return path
 
 
-def scaled(numbers: tuple[int, ...]) -> str:
-	return ','.join(str(round(n * SCALE)) for n in numbers)
+def box_points(x: int, y: int, w: int, h: int) -> str:
+	"""A box's four quarter centres, scaled, as a --points/--at point list (A5b)."""
+	corners = [
+		(x + w / 4, y + h / 4),
+		(x + 3 * w / 4, y + h / 4),
+		(x + w / 4, y + 3 * h / 4),
+		(x + 3 * w / 4, y + 3 * h / 4),
+	]
+	return '/'.join(f'{round(px * SCALE)},{round(py * SCALE)}' for px, py in corners)
 
 
 if __name__ == '__main__':
 	photos = [upscaled(s) for s in SOURCES]
 	cmd = [
 		'/usr/bin/time', '-l', *os.environ.get('BIN', 'rust/target/release/pinframe').split(), *map(str, photos),
-		'--box', scaled((840, 550, 400, 350)), '--at', f'IMG_4703.avif={scaled((746, 554, 400, 350))}',
+		'--points', box_points(840, 550, 400, 350), '--at', f'IMG_4703.avif={box_points(746, 554, 400, 350)}',
 		'--pad', 'transparent', '--out', str(WORK / 'clip.avif'),
 	]  # fmt: skip
 	done = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)

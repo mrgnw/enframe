@@ -56,7 +56,7 @@ Source: [vf_vidstabdetect.c](https://github.com/FFmpeg/FFmpeg/blob/master/libavf
 
 Source: [vf_deshake.c](https://github.com/FFmpeg/FFmpeg/blob/master/libavfilter/vf_deshake.c).
 
-- It **does** take a region: `x`, `y`, `w`, `h` = "rectangular search area", default -1 (whole frame). The format is top-left pixels, the same as pinframe's `--box`.
+- It **does** take a region: `x`, `y`, `w`, `h` = "rectangular search area", default -1 (whole frame). The format is top-left pixels, the same as pinframe's old `--box` (now `--points`, the box's four quarter centres; A5b).
 - But `rx`/`ry` (allowed shift) default to 16 and cap at `MAX_R 64` px. Photos where the cloud moves hundreds of pixels are out of reach. It has no scale model, so lens switches break it.
 - Borders: `edge=blank|original|clamp|mirror` (default `mirror`).
 
@@ -92,7 +92,7 @@ Source: [TrackerContextPrivate.h](https://github.com/NatronGitHub/Natron/blob/ma
 - `transformType`: `Transform` (translation, scale, rotation) or `CornerPin`.
 - `robustModel`: drop points that don't fit the model, like RANSAC.
 - `smooth`: "averaging this number of frames together" for t/r/s. `jitterPeriod`.
-- Each marker has a **pattern** (`patternTopLeft` … quad, the thing to track) and a separate **search window** (`searchWndBtmLeft`/`searchWndTopRight`, "relative to the center point"). pinframe has the same two concepts: `--box` is the pattern, and an `--at` box is a search window. Its flags don't name them that way.
+- Each marker has a **pattern** (`patternTopLeft` … quad, the thing to track) and a separate **search window** (`searchWndBtmLeft`/`searchWndTopRight`, "relative to the center point"). pinframe has the same two concepts: `--points` is the pattern, and an `--at` mark is a search window. Its flags don't name them that way.
 
 ### Siril `register` / `seqapplyreg`
 

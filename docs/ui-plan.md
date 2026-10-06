@@ -208,7 +208,7 @@ Alternatives rejected:
 
 ## Decisions (2026-10-06)
 
-1. **Points, not boxes** (questions 1 and 8). Done in the mockup (E5). The user marks a feature with one or more reference points; nothing on screen is a box. The UI shows every reference point in every photo. The tracker uses where the points were in the last photo as a hint for where to look in the next one. Still one feature per clip: several points on the same cloud, not several anchors. The sidecar gets `points` per photo, `[x, y]` pairs normalized 0–1 (card E1, one point today; card A5, several). Box semantics no longer matter for the UI; `--box` stays in the CLI until A5 replaces it.
+1. **Points, not boxes** (questions 1 and 8). Done in the mockup (E5). The user marks a feature with one or more reference points; nothing on screen is a box. The UI shows every reference point in every photo. The tracker uses where the points were in the last photo as a hint for where to look in the next one. Still one feature per clip: several points on the same cloud, not several anchors. The sidecar gets `points` per photo, `[x, y]` pairs normalized 0–1 (card E1, one point today; card A5, several). Box semantics no longer matter for the UI; the CLI's `--box` is gone too, replaced by `--points`/`--at` (A5b).
 2. **Zoom from the drag.** Moot: there is no box to drag. Zoom stays its own gesture.
 3. **Session file.** Yes, `<folder>.pin.json` beside the photos. The server turns it into CLI flags; no `--session` flag.
 4. **Lost-photo policy.** Not in the first UI. A later CLI flag if wanted.
