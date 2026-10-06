@@ -208,9 +208,17 @@ ImageIO makes AVIF roughly twice as fast here and consumes about one quarter of 
 
 A full-pipeline trial confirmed it. With AVIF routed through ImageIO, decoded pixels differ from libavif's by at most 2–3 levels (PSNR about 50 dB), yet the Girona rects moved by up to 1.60e-1 and the scale by 1.7e-1 at IMG_4689/4690, with 7 of 57 photos past 2e-2; the LOST set stayed the same. The whole run used about 3 CPU-seconds less but took longer: 2.37 / 2.45 s against 2.12 / 2.22 s (fastest / median, 9 interleaved rounds), so ImageIO does not scale across pinframe's decode threads the way its per-photo time suggests. AVIF therefore stays on libavif/dav1d on every platform. That such small pixel differences move a fit so far also shows the tracker is sensitive at some photos; see `todos/`.
 
-Colour profiles are not transformed. In particular, a Display P3 iPhone HEIC is treated as if its native RGB numbers were sRGB, so saturated colours can look wrong; tracking still sees the native decoded values. This is deliberate until colour-managed input is added.
-
 `jxl-oxide` is a portable pure-Rust alternative for JXL, but it would add a separate decoder and cannot use ImageIO's integration on this target. `djxl` is useful as an external reference, not an embeddable CLI dependency. `libheif` plus `libde265` would add LGPL components and a static-build/distribution obligation; it also gives up the system HEVC path. Linux and Windows builds need a feature-gated decoder (for example jxl-oxide for JXL and dynamically linked libheif, or platform-native APIs) instead of this macOS module. AVIF deliberately stays on libavif/dav1d for its existing bit-exact reference behavior.
+
+## Colour
+
+Decoders keep each photo's own pixel values, and the clip carries the photos' label (`rust/src/colour.rs`). Each photo's profile is read from its header before decoding: AVIF's ICC profile or nclx code points, the colour space ImageIO reports for HEIC and JPEG XL, the ICC profile in JPEG, and cICP, then iCCP, then sRGB in PNG. ICC profiles are identified by their colorants and tone curves, not their description: sRGB and Display P3 are accepted, and anything else (Adobe RGB, ProPhoto, BT.709 or BT.2020 transfer, an unknown ICC) is an error naming the photo. Unlabelled photos count as sRGB.
+
+The AVIF clip gets nclx primaries 1 (sRGB) or 12 (Display P3) with transfer 13 (sRGB). ffmpeg outputs get the same through `setparams` on the frames, after an explicit BT.709 limited-range RGB to YUV step; ffmpeg 9 ignores `-color_primaries` and friends when the frames carry their own. `--frames` PNGs get the sRGB chunk or Apple's Display P3 ICC profile from CoreGraphics.
+
+A set mixing sRGB and Display P3 photos becomes Display P3. The sRGB photos are linearized, multiplied by the fixed sRGB to Display P3 matrix (both D65), and re-encoded to 8 bits on the render threads, just before placing. Tracking and the feature cache see the decoded values as before, so neither changes.
+
+In Playwright's Chromium, a Girona photo cropped to its clip frame and the clip itself now differ by 1.07 levels on average over 16×16 blocks (99th percentile 2.9); the `bt709`-labelled clip from before differed by 4.19 (99th percentile 24.9, red the worst). Playwright's WebKit renders animated AVIF without colour management, so old and new clips look identical there and it cannot judge this. Re-run with `analysis/colour_screenshot.py`.
 
 ## Platforms
 
@@ -283,6 +291,7 @@ cd rust && cargo test --release -- --include-ignored --test-threads=1 --nocaptur
 
 - `rust/src/main.rs`: CLI (same flags as `anchor.py` except box drawing), input checks, resource planning, pipeline, outputs.
 - `rust/src/avif.rs`: libavif decode and encode, libyuv-exact YUV to RGB, RGB to YUV for the encoder.
+- `rust/src/colour.rs`: colour profiles from ICC and nclx, sRGB to Display P3.
 - `rust/src/pixels.rs`: orientation, OpenCV-exact gray and INTER_AREA.
 - `rust/src/sift.rs`: the SIFT port.
 - `rust/src/track.rs`: matching, the RANSAC replay, tracking, lost-photo fill, crop planning.

@@ -46,7 +46,11 @@ By default the crop shrinks until every photo fills it. `--pad` lets it overhang
 rust/target/release/pinframe "samples/girona clouds"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --box 400,940,540,180 --pad transparent --out out/portrait.avif
 ```
 
-The extension of `--out` picks the format. The default, `.avif`, is an animated AVIF that keeps transparency and plays in browsers as an image. On the 57-photo Girona clip it encodes as fast as ProRes, and the file is 9 MB instead of 109 MB. Through ffmpeg, `.mp4` writes H.264, `.mov` writes ProRes 4444 when transparent (for video editors), and `.webm` writes VP9. With `--out result.json`, pinframe writes the sidecar only: it tracks and plans rects but does not render, decode for rendering, or encode. Its `clip` field is `null`.
+The extension of `--out` picks the format. The default, `.avif`, is an animated AVIF that keeps transparency and plays in browsers as an image. On the 57-photo Girona clip it encodes as fast as ProRes, and the file is 9 MB instead of 109 MB. Through ffmpeg, `.mp4` writes H.264, `.mov` writes ProRes 4444 when transparent (for video editors), and `.webm` writes VP9.
+
+Colour stays as the photos have it. pinframe keeps their pixel values and labels the clip, the `--frames` PNGs and the ffmpeg outputs with their colour profile, so the Display P3 photos from an iPhone stay Display P3. A set mixing sRGB and Display P3 photos becomes Display P3: the sRGB photos are converted, which loses nothing, since Display P3 holds every sRGB colour. Unlabelled photos count as sRGB. A photo with any other profile, such as Adobe RGB, stops the run with its name.
+
+With `--out result.json`, pinframe writes the sidecar only: it tracks and plans rects but does not render, decode for rendering, or encode. Its `clip` field is `null`.
 
 SIFT features are cached under `~/Library/Caches/pinframe` by default, so a mark-and-retrack loop does not repeat SIFT. Use `--cache DIR` for a project-specific cache or `--no-cache` to bypass it:
 
