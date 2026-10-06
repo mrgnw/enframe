@@ -21,6 +21,15 @@ static ON: AtomicBool = AtomicBool::new(false);
 static STEPS: Mutex<Vec<(&str, Instant, Instant, f64)>> = Mutex::new(Vec::new());
 static SAMPLES: Mutex<Vec<(Instant, u64)>> = Mutex::new(Vec::new());
 
+/// The resident set from `/proc/self/statm`, in pages.
+#[cfg(not(target_os = "macos"))]
+pub fn resident_bytes() -> u64 {
+	let statm = std::fs::read_to_string("/proc/self/statm").unwrap_or_default();
+	let pages: u64 = statm.split_whitespace().nth(1).and_then(|v| v.parse().ok()).unwrap_or(0);
+	pages * unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as u64
+}
+
+#[cfg(target_os = "macos")]
 #[allow(deprecated)]
 pub fn resident_bytes() -> u64 {
 	unsafe {

@@ -5,7 +5,6 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-[[ -e samples ]] || ln -s /Users/user/dev/pinframe/samples samples
 OUT=out/check
 rm -rf "$OUT"
 mkdir -p "$OUT"
@@ -43,26 +42,76 @@ check 'README: .mp4 with --vf' $P "${TURBINES[@]}" "${MARKS[@]}" --vf deflicker,
 check 'README: --frames' $P "${TURBINES[@]}" "${MARKS[@]}" --frames $OUT/frames --out $OUT/frames.avif
 check 'train clouds, all 57 photos' env BIN="$P --no-cache" bash analysis/train_clouds_all.sh $OUT/all.avif
 
-# Each input format: the 8 turbine photos converted, with the same marks.
-for fmt in heic jpeg png jxl; do
+# Each input format: the 8 turbine photos converted, with the same marks. macOS converts with sips and cjxl.
+# Elsewhere Pillow writes the JPEG and PNG sets, and HEIC and JPEG XL, which decode through ImageIO, must be
+# refused with a clear message instead.
+cat > "$OUT/convert.py" <<'PY'
+"""convert.py SRC DST [--srgb]: SRC (AVIF) to the format DST's extension names, upright, keeping EXIF and the
+colour profile. --srgb converts Display P3 pixels to sRGB and labels the file sRGB, like sips -m."""
+
+import io
+import sys
+
+from PIL import Image, ImageCms, ImageOps
+
+src, dst = sys.argv[1], sys.argv[2]
+with Image.open(src) as im:
+	im.load()
+	icc = im.info.get('icc_profile')
+	image = ImageOps.exif_transpose(im)
+if '--srgb' in sys.argv[3:]:
+	srgb = ImageCms.createProfile('sRGB')
+	if icc:
+		image = ImageCms.profileToProfile(image, ImageCms.ImageCmsProfile(io.BytesIO(icc)), srgb, outputMode='RGB')
+	icc = ImageCms.ImageCmsProfile(srgb).tobytes()
+image.save(dst, exif=image.info.get('exif'), icc_profile=icc, quality=95)
+PY
+convert() {
+	# convert SRC DST [--srgb]: DST's extension names the format.
+	if [[ $(uname) == Darwin ]]; then
+		if [[ ${3-} == --srgb ]]; then
+			sips -s format jpeg -m "/System/Library/ColorSync/Profiles/sRGB Profile.icc" "$1" --out "$2" > /dev/null
+		else
+			sips -s format "${2##*.}" "$1" --out "$2" > /dev/null
+		fi
+	else
+		uv run "$OUT/convert.py" "$1" "$2" "${3-}"
+	fi
+}
+refused() {
+	# The command fails, naming the platform.
+	local output
+	output=$("$@" 2>&1) && return 1
+	grep -q 'needs macOS (ImageIO)' <<< "$output"
+}
+if [[ $(uname) == Darwin ]]; then
+	formats=(heic jpeg png jxl)
+else
+	formats=(jpeg png)
+fi
+for fmt in "${formats[@]}"; do
 	mkdir -p "$OUT/$fmt"
 	for f in "${TURBINES[@]}"; do
 		stem=$(basename "$f" .avif)
 		if [[ $fmt == jxl ]]; then
 			sips -s format png "$f" --out "$OUT/$fmt/$stem.png" > /dev/null
 			cjxl -q 90 "$OUT/$fmt/$stem.png" "$OUT/$fmt/$stem.jxl" > /dev/null 2>&1
-			rm "$OUT/$fmt/$stem.png"
+			rm "${OUT:?}/${fmt:?}/${stem:?}.png"
 		else
-			sips -s format "$fmt" "$f" --out "$OUT/$fmt/$stem.$fmt" > /dev/null
+			convert "$f" "$OUT/$fmt/$stem.$fmt"
 		fi
 	done
 	check "input: $fmt" $P "$OUT/$fmt"/*.$fmt --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at "IMG_4703.$fmt=846,641.5/1046,641.5/846,816.5/1046,816.5" --out "$OUT/input-$fmt.json"
 done
+if [[ $(uname) != Darwin ]]; then
+	check 'input: heic refused off macOS' refused $P rust/testdata/orientation-6.heic --points 1,1 --out "$OUT/heic.json"
+	check 'input: jxl refused off macOS' refused $P rust/testdata/orientation-6.jxl --points 1,1 --out "$OUT/jxl.json"
+fi
 
 # Colour: the conversions above keep Display P3. An sRGB set stays sRGB; a mixed set becomes Display P3.
 mkdir -p "$OUT/srgb" "$OUT/mixed"
 for f in "${TURBINES[@]}"; do
-	sips -s format jpeg -m "/System/Library/ColorSync/Profiles/sRGB Profile.icc" "$f" --out "$OUT/srgb/$(basename "$f" .avif).jpeg" > /dev/null
+	convert "$f" "$OUT/srgb/$(basename "$f" .avif).jpeg" --srgb
 done
 cp "$G"/IMG_{4698,4700,4702,4704}.avif "$OUT"/srgb/IMG_{4699,4701,4703,4705}.jpeg "$OUT/mixed/"
 check 'colour: sRGB set' $P "$OUT/srgb"/*.jpeg --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.jpeg=846,641.5/1046,641.5/846,816.5/1046,816.5 --out $OUT/srgb.avif

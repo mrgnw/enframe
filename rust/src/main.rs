@@ -8,6 +8,10 @@ mod cache;
 mod checks;
 mod colour;
 mod decode;
+#[cfg(target_os = "macos")]
+mod imageio;
+#[cfg(not(target_os = "macos"))]
+#[path = "imageio_unavailable.rs"]
 mod imageio;
 mod pixels;
 mod profile;
@@ -369,7 +373,20 @@ fn cores() -> usize {
 	std::thread::available_parallelism().map_or(1, |n| n.get())
 }
 
+/// Memory free now or reclaimable without swapping: the kernel's own estimate, `MemAvailable`.
+#[cfg(not(target_os = "macos"))]
+fn available_bytes() -> usize {
+	std::fs::read_to_string("/proc/meminfo")
+		.unwrap_or_default()
+		.lines()
+		.find_map(|line| line.strip_prefix("MemAvailable:"))
+		.and_then(|rest| rest.split_whitespace().next())
+		.and_then(|kb| kb.parse::<usize>().ok())
+		.map_or(0, |kb| kb * 1024)
+}
+
 /// Memory free now or reclaimable without swapping, as psutil's `available` counts it on macOS.
+#[cfg(target_os = "macos")]
 #[allow(deprecated)]
 fn available_bytes() -> usize {
 	unsafe {
@@ -537,7 +554,7 @@ fn save_png(path: &Path, frame: &pixels::Image, profile: Profile) -> Result<(), 
 	match profile {
 		Profile::Srgb => info.srgb = Some(png::SrgbRenderingIntent::Perceptual),
 		Profile::DisplayP3 => {
-			info.icc_profile = Some(P3_ICC.get_or_init(imageio::display_p3_icc).as_slice().into())
+			info.icc_profile = Some(P3_ICC.get_or_init(colour::display_p3_icc).as_slice().into())
 		}
 	}
 	let mut encoder =
@@ -679,7 +696,7 @@ fn write_rects(
 
 fn random_hex() -> String {
 	let mut bytes = [0u8; 16];
-	unsafe { libc::arc4random_buf(bytes.as_mut_ptr() as *mut _, bytes.len()) };
+	cache::random_bytes(&mut bytes);
 	bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -867,11 +884,14 @@ fn main() {
 	profile::finish();
 }
 
+/// `~/Library/Caches/pinframe` on macOS; `$XDG_CACHE_HOME/pinframe`, default `~/.cache/pinframe`, elsewhere.
 fn default_cache_dir() -> PathBuf {
-	std::env::var_os("HOME")
-		.map(PathBuf::from)
-		.unwrap_or_else(|| PathBuf::from("."))
-		.join("Library/Caches/pinframe")
+	let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+	if cfg!(target_os = "macos") {
+		home.join("Library/Caches/pinframe")
+	} else {
+		std::env::var_os("XDG_CACHE_HOME").map_or_else(|| home.join(".cache"), PathBuf::from).join("pinframe")
+	}
 }
 #[cfg(test)]
 mod tests {

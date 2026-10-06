@@ -50,13 +50,17 @@ fn main() {
 	println!("cargo:rerun-if-changed=build.rs");
 	println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
 	locked_versions(&["png", "zune-jpeg"]);
-	println!("cargo:rustc-link-lib=framework=ImageIO");
-	println!("cargo:rustc-link-lib=framework=CoreGraphics");
-	println!("cargo:rustc-link-lib=framework=CoreFoundation");
-	if std::env::var_os("MACOSX_DEPLOYMENT_TARGET").is_none() {
-		// rustc's default for aarch64-apple-darwin. Without it, cc and meson target the running macOS.
-		// SAFETY: the build script is single-threaded here.
-		unsafe { std::env::set_var("MACOSX_DEPLOYMENT_TARGET", "11.0") };
+	println!("cargo:rerun-if-env-changed=PINFRAME_SOURCES");
+	if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+		// HEIC and JPEG XL decode through ImageIO (`src/imageio.rs`), which only macOS has.
+		println!("cargo:rustc-link-lib=framework=ImageIO");
+		println!("cargo:rustc-link-lib=framework=CoreGraphics");
+		println!("cargo:rustc-link-lib=framework=CoreFoundation");
+		if std::env::var_os("MACOSX_DEPLOYMENT_TARGET").is_none() {
+			// rustc's default for aarch64-apple-darwin. Without it, cc and meson target the running macOS.
+			// SAFETY: the build script is single-threaded here.
+			unsafe { std::env::set_var("MACOSX_DEPLOYMENT_TARGET", "11.0") };
+		}
 	}
 	let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
 	let started = std::time::Instant::now();
@@ -94,20 +98,37 @@ fn locked_versions(crates: &[&str]) {
 }
 
 /// Shared cache directory for verified source tarballs, next to pinframe's feature cache
-/// (`~/Library/Caches/pinframe`), so every worktree on the same machine downloads each tarball once.
+/// (`~/Library/Caches/pinframe` on macOS, `$XDG_CACHE_HOME/pinframe` or `~/.cache/pinframe` elsewhere),
+/// so every worktree on the same machine downloads each tarball once.
 fn sources_cache_dir() -> PathBuf {
 	let home =
 		PathBuf::from(std::env::var_os("HOME").expect("HOME must be set to find the shared source cache"));
-	let dir = home.join("Library/Caches/pinframe-sources");
+	let dir = if cfg!(target_os = "macos") {
+		home.join("Library/Caches/pinframe-sources")
+	} else {
+		std::env::var_os("XDG_CACHE_HOME")
+			.map_or_else(|| home.join(".cache"), PathBuf::from)
+			.join("pinframe-sources")
+	};
 	std::fs::create_dir_all(&dir).unwrap();
 	dir
 }
 
-/// Downloads and unpacks a source tarball into OUT_DIR once, after checking its SHA-256.
+/// Downloads and unpacks a source tarball into OUT_DIR once, after checking its SHA-256. A machine that
+/// cannot reach a source host can set `PINFRAME_SOURCES` to a directory holding the unpacked sources under
+/// their names (`libavif-1.4.2/` etc.), for example from `git clone --branch v1.4.2`; those are used as
+/// they are, without a checksum.
 fn fetch(out: &Path, source: &Source) -> PathBuf {
 	let dir = out.join("src").join(source.name);
 	if dir.join(".unpacked").exists() {
 		return dir;
+	}
+	if let Some(sources) = std::env::var_os("PINFRAME_SOURCES") {
+		let local = PathBuf::from(sources).join(source.name);
+		if local.is_dir() {
+			eprintln!("pinframe: using {} from PINFRAME_SOURCES", source.name);
+			return local;
+		}
 	}
 	let tarball = cached_tarball(source);
 	std::fs::create_dir_all(&dir).unwrap();
@@ -192,8 +213,16 @@ fn sha256_matches(path: &Path, expected: &str) -> bool {
 }
 
 fn sha256_of(path: &Path) -> String {
-	let output = Command::new("shasum").args(["-a", "256"]).arg(path).output().expect("shasum");
-	let stdout = String::from_utf8(output.stdout).expect("shasum output is not utf8");
+	// `shasum` ships with macOS; `sha256sum` (coreutils) with every Linux.
+	let mut command = if cfg!(target_os = "macos") {
+		let mut c = Command::new("shasum");
+		c.args(["-a", "256"]);
+		c
+	} else {
+		Command::new("sha256sum")
+	};
+	let output = command.arg(path).output().unwrap_or_else(|e| panic!("{command:?}: {e}"));
+	let stdout = String::from_utf8(output.stdout).expect("sha256 output is not utf8");
 	stdout.split_whitespace().next().unwrap_or("").to_string()
 }
 

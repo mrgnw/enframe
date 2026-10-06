@@ -195,6 +195,83 @@ fn curve_error(data: &[u8]) -> Result<f64, String> {
 	Ok((0..=255).map(|i| i as f64 / 255.0).map(|x| (eval(x) - srgb_to_linear(x)).abs()).fold(0.0, f64::max))
 }
 
+/// Display P3 as an ICC profile, for labelling the `--frames` PNGs: Apple's own on macOS, and elsewhere a
+/// minimal v4 matrix/TRC profile with the same colorants and the sRGB parametric curve.
+pub fn display_p3_icc() -> Vec<u8> {
+	#[cfg(target_os = "macos")]
+	{
+		crate::imageio::display_p3_icc()
+	}
+	#[cfg(not(target_os = "macos"))]
+	{
+		minimal_p3_icc()
+	}
+}
+
+/// ICC v4 header and tag table (ICC.1:2010), then the tags: wtpt, rXYZ, gXYZ, bXYZ, rTRC, gTRC, bTRC,
+/// desc, cprt. The curve is `para` type 3 with sRGB's parameters, so `from_icc` reads it back as Display P3.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn minimal_p3_icc() -> Vec<u8> {
+	fn s15f16(v: f64) -> [u8; 4] {
+		((v * 65536.0).round() as i32).to_be_bytes()
+	}
+	fn xyz(v: [f64; 3]) -> Vec<u8> {
+		let mut tag = b"XYZ \0\0\0\0".to_vec();
+		tag.extend(v.iter().flat_map(|&c| s15f16(c)));
+		tag
+	}
+	fn mluc(text: &str) -> Vec<u8> {
+		let utf16: Vec<u8> = text.encode_utf16().flat_map(u16::to_be_bytes).collect();
+		let mut tag = b"mluc\0\0\0\0".to_vec();
+		tag.extend(1u32.to_be_bytes()); // one record
+		tag.extend(12u32.to_be_bytes()); // record size
+		tag.extend(b"enUS");
+		tag.extend((utf16.len() as u32).to_be_bytes());
+		tag.extend(28u32.to_be_bytes()); // the string follows the record
+		tag.extend(utf16);
+		tag
+	}
+	// sRGB's curve: y = (a x + b)^g above d, c x below.
+	let mut curve = b"para\0\0\0\0".to_vec();
+	curve.extend(3u16.to_be_bytes());
+	curve.extend([0, 0]);
+	curve.extend([2.4, 1.0 / 1.055, 0.055 / 1.055, 1.0 / 12.92, 0.04045].iter().flat_map(|&p| s15f16(p)));
+	let tags: [(&[u8; 4], Vec<u8>); 9] = [
+		(b"wtpt", xyz([0.9642, 1.0, 0.8249])),
+		(b"rXYZ", xyz(P3_COLORANTS[0])),
+		(b"gXYZ", xyz(P3_COLORANTS[1])),
+		(b"bXYZ", xyz(P3_COLORANTS[2])),
+		(b"rTRC", curve.clone()),
+		(b"gTRC", curve.clone()),
+		(b"bTRC", curve),
+		(b"desc", mluc("Display P3")),
+		(b"cprt", mluc("Public domain")),
+	];
+	let mut icc = vec![0u8; 128];
+	icc[8..12].copy_from_slice(&0x0430_0000u32.to_be_bytes()); // version 4.3
+	icc[12..16].copy_from_slice(b"mntr");
+	icc[16..20].copy_from_slice(b"RGB ");
+	icc[20..24].copy_from_slice(b"XYZ ");
+	icc[36..40].copy_from_slice(b"acsp");
+	icc[68..80].copy_from_slice(&xyz([0.9642, 1.0, 0.8249])[8..]); // the PCS illuminant, D50
+	icc.extend((tags.len() as u32).to_be_bytes());
+	let mut offset = 128 + 4 + 12 * tags.len();
+	let mut data = Vec::new();
+	for (signature, tag) in &tags {
+		icc.extend(*signature);
+		icc.extend((offset as u32).to_be_bytes());
+		icc.extend((tag.len() as u32).to_be_bytes());
+		data.extend(tag);
+		let padded = tag.len().next_multiple_of(4);
+		data.resize(data.len() + padded - tag.len(), 0);
+		offset += padded;
+	}
+	icc.extend(data);
+	let size = icc.len() as u32;
+	icc[..4].copy_from_slice(&size.to_be_bytes());
+	icc
+}
+
 /// Linear sRGB to linear Display P3: both have the D65 white, so no adaptation. Rows sum to 1, so greys stay.
 const SRGB_TO_P3: [[f64; 3]; 3] = [
 	[0.822_461_97, 0.177_538_03, 0.0],
@@ -255,7 +332,14 @@ mod tests {
 		assert!(from_cicp(1, 1).is_err(), "BT.709 transfer");
 	}
 
+	#[test]
+	fn display_p3_icc_is_recognised_as_display_p3() {
+		assert_eq!(from_icc(&display_p3_icc()), Ok(Profile::DisplayP3));
+		assert_eq!(from_icc(&minimal_p3_icc()), Ok(Profile::DisplayP3));
+	}
+
 	/// macOS's own profiles: sRGB and Display P3 are recognised, everything else is refused.
+	#[cfg(target_os = "macos")]
 	#[test]
 	fn system_icc_profiles() {
 		let dir = std::path::Path::new("/System/Library/ColorSync/Profiles");

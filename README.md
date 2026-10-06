@@ -10,7 +10,8 @@ Turn a series of photos into a short clip where one chosen feature, like a cloud
 Build the Rust CLI, `pinframe`:
 
 ```sh
-brew install cmake meson ninja
+brew install cmake meson ninja                                # macOS
+sudo apt install cmake meson ninja-build nasm libclang-dev    # Debian/Ubuntu
 ```
 
 ```sh
@@ -18,7 +19,7 @@ cd rust
 cargo build --release
 ```
 
-This needs Rust stable, cmake, meson and ninja, libclang for bindgen (Xcode or the Command Line Tools), and network access on the first build. The build downloads pinned releases of libavif, dav1d and libaom and links them in statically, so the binary runs without Homebrew. The first build takes about 40 s; later builds take a couple of seconds. See [docs/rust.md](docs/rust.md) for the full build notes and the licences that come with distributing it.
+This needs Rust stable, cmake, meson and ninja, libclang for bindgen (Xcode or the Command Line Tools on macOS, `libclang-dev` on Debian/Ubuntu), nasm on x86, and network access on the first build. The build downloads pinned releases of libavif, dav1d and libaom and links them in statically, so the binary runs without Homebrew. The first build takes about 40 s; later builds take a couple of seconds. See [docs/rust.md](docs/rust.md) for the full build notes and the licences that come with distributing it.
 
 ```sh
 rust/target/release/pinframe "samples/train clouds"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --out out/heart.avif
@@ -26,7 +27,7 @@ rust/target/release/pinframe "samples/train clouds"/IMG_479{1,2,3,4,5}.avif --po
 
 There's no point-drawing window: `--points x,y[/x,y]...` is required, in first-photo pixels, and gives the feature to hold still. A point is `x,y`; mark several with the same feature's spread, joined by `/` (`675,345/985,345/675,595/985,595` above, a cloud's four quarter points). The anchor that stays still in the clip is their mean.
 
-Input photos may be AVIF, HEIC/HEIF, JPEG XL, JPEG, or PNG. pinframe identifies them from their contents rather than their file extension; other formats are refused before decoding. HEIC and JPEG XL use macOS ImageIO, so those inputs require macOS. pinframe is built and tested on macOS only; the Linux build does not compile yet (see [docs/rust.md](docs/rust.md#platforms) and [todos/D1-linux-build.md](todos/D1-linux-build.md)).
+Input photos may be AVIF, HEIC/HEIF, JPEG XL, JPEG, or PNG. pinframe identifies them from their contents rather than their file extension; other formats are refused before decoding. HEIC and JPEG XL decode through macOS ImageIO, so on Linux those two are refused before decoding, with a message naming the platform. pinframe is built and tested on macOS and Linux; the two track the train clouds set identically (see [docs/rust.md](docs/rust.md#platforms)).
 
 Photos are ordered by EXIF capture time (`DateTimeOriginal`, with `SubSecTimeOriginal` breaking ties), falling back to filename order if any photo lacks one, such as a mix of cameras or an export that stripped EXIF. `--order name` always orders by filename. Either way, the run prints which order it used and why.
 
@@ -56,7 +57,7 @@ Colour stays as the photos have it. pinframe keeps their pixel values and labels
 
 With `--out result.json`, pinframe writes the sidecar only: it tracks and plans rects but does not render, decode for rendering, or encode. Its `clip` field is `null`.
 
-SIFT features are cached under `~/Library/Caches/pinframe` by default, so a mark-and-retrack loop does not repeat SIFT. Use `--cache DIR` for a project-specific cache or `--no-cache` to bypass it:
+SIFT features are cached under `~/Library/Caches/pinframe` on macOS and `~/.cache/pinframe` (or `$XDG_CACHE_HOME/pinframe`) on Linux by default, so a mark-and-retrack loop does not repeat SIFT. Use `--cache DIR` for a project-specific cache or `--no-cache` to bypass it:
 
 ```sh
 rust/target/release/pinframe "samples/train clouds"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --out out/track.json
