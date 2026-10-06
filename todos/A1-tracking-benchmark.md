@@ -1,7 +1,7 @@
 # A1 · Tracking accuracy and stability benchmark
 
 Depends on: E1 · Blocks: A2, A3, B4 · Model: Opus · Size: M
-Touches: `analysis/` (new script), `docs/` (new section). No changes to `rust/src` or `anchor.py`.
+Touches: `analysis/` (new script and baseline JSON), `docs/tracking.md` (new). No changes to `rust/src` or `anchor.py`.
 
 ## Goal
 

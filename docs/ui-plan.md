@@ -2,6 +2,8 @@
 
 Written 2026-10-05 against `anchor.py` at commit e030dd8. Mockups: `mockups/00-start.html`, `mockups/01-marking.html`, `mockups/02-preview.html`.
 
+The decisions of 2026-10-06 (end of this file) replace boxes with reference points and change the fix list. Sections below that still describe boxes are updated by card E5.
+
 ## Who it is for, and the one job
 
 One person, with a folder of photos shot from a moving viewpoint (a train window, a walk, a flight), who wants a short clip where one feature stays put. They already know which feature. They are not editing video; they are answering, photo by photo, the single question "where is the cloud in this one?"
@@ -221,15 +223,15 @@ Alternatives rejected:
 - **Pinch and hover on phones.** Pinch is left to the browser for inspecting the photo, not used to set the zoom. Feature counts and filenames that desktop shows on hover are not shown on a phone.
 - **Frame-style settings depth.** Frame's polish comes from its density of correct detail in one panel. Here the panel has five controls, and the polish goes into the marking loop.
 
-## Open questions
+## Decisions (2026-10-06)
 
-1. **Box semantics.** `--box` and the `--at` box both give a top-left corner. The prior-art survey proposes centre-based boxes so `--at P=1000,200` and `--at P=1000,200,300,300` agree on the anchor. The UI draws boxes around a centre regardless; should `anchor.py` change to match, or should the UI convert?
-2. **Zoom from the drag.** When the user drags a search box on a lens-switch photo, should its size relative to the first box set the zoom automatically, so the scroll gesture is rarely needed? It would save a step but conflates search area with feature size. Proposed: no; keep the ghost.
-3. **Session file.** Is `<folder>.pin.json` the right place, and should it be the CLI's input too (`anchor.py --session file.pin.json`), so the UI and the CLI are two front ends to one file?
-4. **Lost-photo policy.** Lost photos stay in the clip at an estimated position today. Should the UI offer "drop lost photos" as an export option (`--drop-lost` in the survey), or is that a later CLI flag?
-5. **Preview fidelity.** The browser draws the preview with bilinear resampling and ffmpeg with area or cubic. Is a visible difference acceptable in preview, or should preview fetch `--frames` PNGs from the server at reduced size?
-6. **EXIF zoom.** When photos carry focal length, should the UI pre-set the ghost zoom from it, or hide the zoom gesture entirely on those sets?
-7. **Where in enframe.** A route at `/pin` next to the framer at `/`, or a mode of the framer reached from a multi-select in the library?
-8. **Sidecar `anchor` field.** Is `[cx, cy, w, h]` per row, normalized to the photo, the right shape? Adding it to `anchor.py` removes the derivation and its soft-lock caveat.
-9. **Trail across scene changes.** Should the trail stop at a mark that starts a new scene, since positions from another scene are not comparable? The proposal is no: a long segment ending in a mark's ring already shows where the scene changes, and stopping would hide lens switches that happen at a mark, such as IMG_4698 at 2.5x. On IMG_4725 that segment crosses most of the photo; if that reads as noise in use, draw segments into a mark dotted instead of stopping.
-10. **Auto-advance delay.** Is 450 ms after a mark the right pause? A longer one shows the mark more clearly; a shorter one makes 24 marks faster. The undo toast covers mistakes either way.
+1. **Points, not boxes** (questions 1 and 8). The user marks a feature with one or more reference points; nothing on screen is a box. The UI shows every reference point in every photo. The tracker uses where the points were in the last photo as a hint for where to look in the next one. Still one feature per clip: several points on the same cloud, not several anchors. The sidecar gets `points` per photo, `[x, y]` pairs normalized 0–1 (card E1, one point today; card A5, several). Box semantics no longer matter for the UI; `--box` stays in the CLI until A5 replaces it.
+2. **Zoom from the drag.** Moot: there is no box to drag. Zoom stays its own gesture.
+3. **Session file.** Yes, `<folder>.pin.json` beside the photos. The server turns it into CLI flags; no `--session` flag.
+4. **Lost-photo policy.** Not in the first UI. A later CLI flag if wanted.
+5. **Preview fidelity.** A small difference between preview and export is accepted.
+6. **EXIF zoom.** Pre-set the zoom from focal length and keep the gesture for corrections. Confirm once B4 measures it.
+7. **Where in enframe.** A `/pin` route; the framer stays untouched.
+8. See 1.
+9. **Trail across scene changes.** Keep drawing through a mark that starts a new scene. Switch those segments to dotted if they read as noise.
+10. **After a mark.** Auto-advance stays (450 ms). Marking a photo does not remove it from the fix list, so `Tab` and the next arrow still visit it and it can be used as a reference. A "Clear fixed" button removes the marked photos from the list.

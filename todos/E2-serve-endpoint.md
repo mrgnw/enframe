@@ -1,11 +1,11 @@
 # E2 · enframe-serve endpoint that runs pinframe
 
-Depends on: E1, E0 · Blocks: E3 · Model: Opus · Size: M
+Depends on: E1 · Blocks: E3 · Model: Opus · Size: M
 Touches: the enframe repo (`/Users/user/dev/enframe`, its server), not pinframe
 
 ## Goal
 
-The server route the marking screen calls, as recommended in `docs/wasm.md` and `docs/ui-plan.md`. It takes a project's photos, box and marks, runs pinframe in JSON-only mode with the feature cache, and returns the sidecar. Export runs the full clip.
+The server route the marking screen calls, as recommended in `docs/wasm.md` and `docs/ui-plan.md`. It takes a project's photos and marks (from `<folder>.pin.json`), runs pinframe in JSON-only mode with the feature cache, and returns the sidecar. Export runs the full clip.
 
 ## Requirements
 
