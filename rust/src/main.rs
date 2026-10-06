@@ -274,9 +274,16 @@ fn available_bytes() -> usize {
 	}
 }
 
-fn plan_resources(largest_pixels: usize, prepare_decode_bytes: usize, render_decode_bytes: usize, free_bytes: usize, cores: usize) -> Result<Resources, String> {
+fn plan_resources(
+	largest_pixels: usize,
+	prepare_decode_bytes: usize,
+	render_decode_bytes: usize,
+	free_bytes: usize,
+	cores: usize,
+) -> Result<Resources, String> {
 	let budget = (free_bytes as f64 * MEMORY_SHARE) as usize;
-	let prepare_cost = PREPARE_FIXED_BYTES + prepare_decode_bytes + QUEUE_DEPTH * FEATURE_BYTES + CACHE_HASH_BYTES;
+	let prepare_cost =
+		PREPARE_FIXED_BYTES + prepare_decode_bytes + QUEUE_DEPTH * FEATURE_BYTES + CACHE_HASH_BYTES;
 	// A queued clip frame is RGBA, and the clip is never larger than the photos it is cut from.
 	let render_cost = render_decode_bytes + QUEUE_DEPTH * 4 * largest_pixels;
 	let prepare_threads = cores.min(budget / prepare_cost);
@@ -307,17 +314,14 @@ fn prepare(
 	cache: Option<&cache::FeatureCache>,
 ) -> Photo {
 	let small = ((size.0 as f64 * k).round() as usize, (size.1 as f64 * k).round() as usize);
-	let key =
-		cache.and_then(|cache| cache::key(path, k, small, track::TRACK_EDGE).ok().map(|key| (cache, key)));
-	if let Some((cache, key)) = key.as_ref() {
-		if let Some(cached) = cache.load(key) {
-			if let Some(keep) = keep {
-				let rgb = work(Work::Decode, || decode::decode(path))
-					.unwrap_or_else(|e| fail(&format!("{}: {e}", path.display())));
-				keep.offer(i, rgb);
-			}
-			return Photo { small: cached.small, features: cached.features };
+	let key = cache.zip(cache::key(path, k, small, track::TRACK_EDGE).ok());
+	if let Some(cached) = key.as_ref().and_then(|(cache, key)| cache.load(key)) {
+		if let Some(keep) = keep {
+			let rgb = work(Work::Decode, || decode::decode(path))
+				.unwrap_or_else(|e| fail(&format!("{}: {e}", path.display())));
+			keep.offer(i, rgb);
 		}
+		return Photo { small: cached.small, features: cached.features };
 	}
 	let rgb = work(Work::Decode, || decode::decode(path))
 		.unwrap_or_else(|e| fail(&format!("{}: {e}", path.display())));
