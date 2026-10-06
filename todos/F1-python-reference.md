@@ -1,6 +1,6 @@
 # F1 · Retire the Python reference
 
-Depends on: A1 · Blocks: A2, A3, A4, A5 (they change tracking on purpose) · Model: Sonnet · Size: S
+Depends on: — · Blocks: A2, A3, A4, A5 (they change tracking on purpose) · Model: Sonnet · Size: S
 Touches: `anchor.py`, `analysis/check.sh`, the analysis scripts that only run or compare `anchor.py`, README, `docs/`. Not `analysis/mockup_data.py` or `docs/ui-plan.md` (E5 owns them).
 
 ## Decision (2026-10-06)

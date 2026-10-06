@@ -1,6 +1,6 @@
 # A3 · Smaller tracking size, if accuracy holds
 
-Depends on: A1 · Model: Terra · Size: S
+Depends on: F1 · Model: Terra · Size: S
 Touches: `rust/src/track.rs` (`TRACK_EDGE`), `analysis/check.sh` expectations, docs
 
 ## Goal
