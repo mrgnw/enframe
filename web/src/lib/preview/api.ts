@@ -27,6 +27,8 @@ export interface ExportRequest {
 export interface Exported {
 	out: string;
 	sidecar: Sidecar;
+	/** The server is a Mac, so `revealClip` works. */
+	reveal: boolean;
 }
 
 /** Renders the clip. `onLine` sees each line pinframe prints; rejects with the server's message on failure. */
@@ -57,4 +59,20 @@ export async function exportClip(req: ExportRequest, onLine: (line: string) => v
 		}
 	}
 	throw new Error('the export ended without a result');
+}
+
+/** The clip's bytes, for the done state to show and download; `.json` is its sidecar. */
+export const clipUrl = (path: string) => `/api/clip?path=${encodeURIComponent(path)}`;
+
+/** Shows the clip in Finder on the machine the server runs on. */
+export async function revealClip(path: string): Promise<void> {
+	const resp = await fetch('/api/reveal', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ path })
+	});
+	if (!resp.ok) {
+		const body = await resp.json().catch(() => ({}));
+		throw new Error(body.error ?? resp.statusText);
+	}
 }

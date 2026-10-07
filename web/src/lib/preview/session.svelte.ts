@@ -35,10 +35,12 @@ export interface Exporting {
 	out: string;
 	clip: string;
 	seconds: number;
+	/** The server can show the clip in Finder. */
+	reveal: boolean;
 	error: string;
 }
 
-const idle = (): Exporting => ({ status: 'idle', progress: 0, text: '', out: '', clip: '', seconds: 0, error: '' });
+const idle = (): Exporting => ({ status: 'idle', progress: 0, text: '', out: '', clip: '', seconds: 0, reveal: false, error: '' });
 
 /** `IMG_4669.avif  2048x1536  anchor 1028,422  scale 1.00  37 features`: one per photo, once it is tracked. */
 const PHOTO_LINE = /^\S+\s+\d+x\d+\s+anchor /;
@@ -288,7 +290,8 @@ export class Preview {
 				progress: 1,
 				out: done.out,
 				clip: `${size.w}×${size.h}`,
-				seconds: (Date.now() - started) / 1000
+				seconds: (Date.now() - started) / 1000,
+				reveal: done.reveal
 			};
 		} catch (e) {
 			this.exp = { ...idle(), status: 'failed', error: (e as Error).message };

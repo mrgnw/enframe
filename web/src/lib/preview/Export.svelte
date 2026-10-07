@@ -1,6 +1,7 @@
 <script lang="ts">
 	// The export panel: format, PNG frames, where to save, and the run's progress and result.
 	import { formatBlocked, FORMATS, type Format } from './clip';
+	import Done from './Done.svelte';
 	import type { Preview } from './session.svelte';
 
 	let { session }: { session: Preview } = $props();
@@ -61,12 +62,7 @@
 		<div class="note warn">{lost} photo{lost === 1 ? ' is' : 's are'} still lost; the clip uses the tracker's estimate for {lost === 1 ? 'it' : 'them'}.</div>
 	{/if}
 	{#if session.exp.status === 'done'}
-		<div class="done" id="done">
-			<b>Wrote {session.exp.out.split('/').pop()}</b>
-			<span class="meta">{session.exp.clip} · {session.rows.length} frames · {session.fps} fps · {session.exp.seconds.toFixed(1)} s</span>
-			<span class="where">{session.exp.out}</span>
-			<button class="again" onclick={() => (session.exp.status = 'idle')}>Export again</button>
-		</div>
+		<Done {session} />
 	{:else if running}
 		<div class="progress" id="progress"><i style:width="{Math.round(session.exp.progress * 100)}%"></i></div>
 		<div class="note">{session.exp.text}</div>

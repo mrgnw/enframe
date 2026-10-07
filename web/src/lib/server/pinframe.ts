@@ -4,7 +4,7 @@
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path';
 
@@ -229,6 +229,46 @@ export const PHOTO_TYPES: Record<string, string> = {
 	'.jpeg': 'image/jpeg',
 	'.png': 'image/png'
 };
+
+/** What `/api/clip` serves: the formats an export writes, and the sidecar `.json` beside one. */
+export const CLIP_TYPES: Record<string, string> = {
+	'.avif': 'image/avif',
+	'.mp4': 'video/mp4',
+	'.mov': 'video/quicktime',
+	'.webm': 'video/webm',
+	'.json': 'application/json'
+};
+
+/**
+ * A clip named in a request: a path with a clip extension, or a `.json` that has a clip of that name
+ * beside it. The server may read any path (see the README), but a route that serves bytes back to a browser
+ * is held to what an export writes, so `/etc/passwd`, `package.json` and the `.pin.json` documents stay out.
+ */
+export async function resolveClip(raw: unknown): Promise<string> {
+	if (typeof raw !== 'string' || raw === '') {
+		throw new PinframeError('path must be a clip');
+	}
+	const path = isAbsolute(raw) ? raw : resolve(ROOT, raw);
+	const ext = extname(path).toLowerCase();
+	if (!(ext in CLIP_TYPES)) {
+		throw new PinframeError(`${raw}: not a clip (AVIF, MP4, MOV or WebM) or its sidecar`);
+	}
+	if (ext === '.json') {
+		const stem = path.slice(0, -ext.length);
+		const beside = await Promise.all(
+			Object.keys(CLIP_TYPES)
+				.filter((e) => e !== '.json')
+				.map((e) => stat(stem + e).then((i) => i.isFile(), () => false))
+		);
+		if (!beside.some(Boolean)) {
+			throw new PinframeError(`${raw}: not a clip's sidecar`);
+		}
+	}
+	return path;
+}
+
+/** Whether the server can show a file in Finder: only on the Mac. */
+export const CAN_REVEAL = process.platform === 'darwin';
 
 /** The last write queued per folder: writes chain on it, so two requests never interleave their `writeFile`s. */
 const saving = new Map<string, Promise<void>>();

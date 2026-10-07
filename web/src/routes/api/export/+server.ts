@@ -1,5 +1,6 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import {
+	CAN_REVEAL,
 	currentRun,
 	exportClip,
 	parseMarks,
@@ -11,7 +12,7 @@ import {
 
 /**
  * POST {folder, marks, out?, pad?, fps?, frames?, vf?}: renders the clip and streams server-sent events:
- * `progress` with each line pinframe prints, then `done` with {out, sidecar}, or `error` with {error}.
+ * `progress` with each line pinframe prints, then `done` with {out, sidecar, reveal} (`reveal`: the server can show the clip in Finder), or `error` with {error}.
  * A newer run for the same folder kills this one, which ends with `error` {superseded: true}.
  */
 export const POST: RequestHandler = async ({ request }) => {
@@ -79,7 +80,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				const result = await exportClip(folder, marks, options, (stream, line) =>
 					send('progress', { stream, line })
 				);
-				send('done', result);
+				send('done', { ...result, reveal: CAN_REVEAL });
 			} catch (e) {
 				if (e instanceof Superseded) {
 					send('error', { error: e.message, superseded: true });

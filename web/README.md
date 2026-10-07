@@ -25,4 +25,6 @@ curl -sN localhost:7341/api/export -H 'content-type: application/json' \
   -d '{"folder": "samples/train clouds", "marks": {"points": [[675,345],[985,345]]}, "out": "out/web.avif"}'
 ```
 
+The export's done state hands over the clip itself. `GET /api/clip?path=` streams a clip (`.avif`, `.mp4`, `.mov`, `.webm`) or the `.json` sidecar beside one, and nothing else: other extensions, and a `.json` with no clip of that name beside it, are refused, so this route cannot be used to read the rest of the disk. It answers byte ranges (206) for video and caches by size and mtime like the photos. The done state (`Done.svelte`) shows an AVIF as an `<img>` and MP4 and WebM as a looping muted `<video controls>`; a browser that cannot decode the clip, and every browser for MOV, gets the download link only. It also links the sidecar and, when the server is a Mac and the page is open on that Mac (`localhost`), offers "Reveal in Finder", which is `POST /api/reveal {path}` running `open -R`.
+
 The server reads any folder and writes any path it is given, by design for one person's machine on a tailnet; do not expose it beyond that.
