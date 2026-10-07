@@ -11,6 +11,11 @@ pnpm build && pnpm start   # the production server on the same port
 
 `PINFRAME_BIN` names another binary (default `rust/target/release/pinframe`), `PORT` another port. Paths in requests are absolute or relative to the repository root.
 
+The marking screen (M2, from `mockups/01-marking.html`) is at `/?folder=PATH`: a folder with no document opens on its first photo for the reference points, then Track; a folder with a saved document tracks at once and opens on the first lost photo. `?trail=flow` or `fade` picks another trail style. The screen's code is `src/lib/marking/`: `session.svelte.ts` holds the document, the sidecar and the mockup's rules, `trail.ts` draws the overlay, `Stage`, `Filmstrip` and `Marking` are the components. Thumbnails are made in the browser from the photos themselves. The routes it uses:
+
+- `GET /api/document?folder=`: the folder's photos by name and its saved document, or null.
+- `GET /api/photo?folder=&file=`: the photo's bytes, for the stage and the thumbnails.
+
 ```sh
 curl -s localhost:7341/api/track -H 'content-type: application/json' \
   -d '{"folder": "samples/train clouds", "marks": {"points": [[675,345],[985,345],[675,595],[985,595]]}}'

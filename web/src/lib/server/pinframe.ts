@@ -41,19 +41,41 @@ export interface ExportOptions {
 	vf?: string;
 }
 
+export interface SidecarPhoto {
+	file: string;
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	scale: number;
+	source: 'tracked' | 'mark' | 'lost' | 'skipped';
+	points: Point[];
+	/** Added from the run's log: the photo's oriented size and the tracker's note (`38 features`, `your mark`, ...). */
+	width?: number;
+	height?: number;
+	note?: string;
+}
+
 export interface Sidecar {
 	run: string;
 	clip: string | null;
-	photos: {
-		file: string;
-		x: number;
-		y: number;
-		w: number;
-		h: number;
-		scale: number;
-		source: 'tracked' | 'mark' | 'lost' | 'skipped';
-		points: Point[];
-	}[];
+	photos: SidecarPhoto[];
+}
+
+/** `IMG_4669.avif  2048x1536  anchor 1040,725  scale 2.50  38 features`: what the CLI prints per photo. */
+const PHOTO_LINE = /^(\S+)\s+(\d+)x(\d+)\s+anchor \S+\s+scale \S+\s+(.*)$/;
+
+/** Adds each photo's size and note from the run's output to the sidecar, which carries neither. */
+export function annotate(sidecar: Sidecar, stdout: string): Sidecar {
+	const rows = new Map<string, { width: number; height: number; note: string }>();
+	for (const line of stdout.split('\n')) {
+		const m = PHOTO_LINE.exec(line);
+		if (m) rows.set(m[1], { width: Number(m[2]), height: Number(m[3]), note: m[4] });
+	}
+	for (const photo of sidecar.photos) {
+		Object.assign(photo, rows.get(photo.file));
+	}
+	return sidecar;
 }
 
 export class PinframeError extends Error {
@@ -163,6 +185,38 @@ export function resolveFolder(raw: unknown): string {
 
 /** The document beside the folder: `samples/train clouds` keeps `samples/train clouds.pin.json`. */
 export const documentPath = (folder: string) => `${folder}.pin.json`;
+
+/** The saved document's marks, or null when the folder has none yet. */
+export async function loadDocument(folder: string): Promise<Marks | null> {
+	let text;
+	try {
+		text = await readFile(documentPath(folder), 'utf8');
+	} catch {
+		return null;
+	}
+	return parseMarks((JSON.parse(text) as { marks: unknown }).marks);
+}
+
+/** A photo named in a request: a bare file name inside the folder, never a path. */
+export function resolvePhoto(folder: string, file: unknown): string {
+	if (typeof file !== 'string' || file === '' || file !== basename(file) || file.startsWith('.')) {
+		throw new PinframeError('file must be a photo name in the folder');
+	}
+	if (!PHOTO_EXTENSIONS.has(extname(file).toLowerCase())) {
+		throw new PinframeError(`${file}: not a photo (AVIF, HEIC, JPEG XL, JPEG or PNG)`);
+	}
+	return join(folder, file);
+}
+
+export const PHOTO_TYPES: Record<string, string> = {
+	'.avif': 'image/avif',
+	'.heic': 'image/heic',
+	'.heif': 'image/heif',
+	'.jxl': 'image/jxl',
+	'.jpg': 'image/jpeg',
+	'.jpeg': 'image/jpeg',
+	'.png': 'image/png'
+};
 
 export async function saveDocument(folder: string, marks: Marks, photos: string[]): Promise<void> {
 	const doc = { version: 1, folder, marks, photos: photos.map((p) => basename(p)) };
@@ -277,7 +331,7 @@ export async function track(folder: string, marks: Marks): Promise<Sidecar> {
 	if (result.code !== 0) {
 		throw failure('track', result);
 	}
-	return JSON.parse(await readFile(out, 'utf8')) as Sidecar;
+	return annotate(JSON.parse(await readFile(out, 'utf8')) as Sidecar, result.stdout);
 }
 
 /** A photo's sidecar partner: `clip.avif` has `clip.json` beside it. */
@@ -318,6 +372,6 @@ export async function exportClip(
 	if (result.code !== 0) {
 		throw failure('export', result);
 	}
-	const sidecar = JSON.parse(await readFile(sidecarOf(out), 'utf8')) as Sidecar;
+	const sidecar = annotate(JSON.parse(await readFile(sidecarOf(out), 'utf8')) as Sidecar, result.stdout);
 	return { out, sidecar };
 }
