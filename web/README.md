@@ -16,6 +16,8 @@ The marking screen (M2, from `mockups/01-marking.html`) is at `/?folder=PATH`: a
 - `GET /api/document?folder=`: the folder's photos by name and its saved document, or null.
 - `GET /api/photo?folder=&file=`: the photo's bytes, for the stage and the thumbnails.
 
+The preview and export screen (M3, from `mockups/02-preview.html`) is at `/preview?folder=PATH`, which the marking screen's Preview button opens. It tracks the saved document, draws each photo at its sidecar crop rect into a frame the size of the clip (what the CLI's `place()` does), and loops the frames in the browser, so pad colour and fps change the picture at once; only switching pad between none and a colour re-tracks, because the rects overhang. Its code is `src/lib/preview/`. `POST /api/track` takes an optional `pad` (`transparent`, `black`, `white` or `#rrggbb`; absent is the CLI's default crop), and the export panel posts `/api/export` and reads its event stream.
+
 ```sh
 curl -s localhost:7341/api/track -H 'content-type: application/json' \
   -d '{"folder": "samples/train clouds", "marks": {"points": [[675,345],[985,345],[675,595],[985,595]]}}'

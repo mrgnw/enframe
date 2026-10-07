@@ -75,7 +75,7 @@
 				{:else}
 					<h1>Can't open <b>{session.name}</b></h1>
 					<p>{session.error}</p>
-					<a class="btn primary" href="/">Choose another folder</a>
+					<a class="btn primary" href={session.absFolder ? back : '/'}>{session.absFolder ? 'Back to the marks' : 'Choose another folder'}</a>
 				{/if}
 			</div>
 		</section>
