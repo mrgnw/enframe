@@ -1,6 +1,6 @@
 # M2 · Marking screen, live
 
-Depends on: M1 · Blocks: M3 · Model: Opus · Size: L (split if it grows)
+Depends on: M1 (done) · Blocks: M3 · Model: Opus · Size: L (split if it grows)
 Touches: `web/src/` , `mockups/01-marking.html` (read-only source)
 
 ## Goal
