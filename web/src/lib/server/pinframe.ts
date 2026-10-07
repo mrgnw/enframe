@@ -139,6 +139,15 @@ export function parseMarks(raw: unknown): Marks {
 	return marks;
 }
 
+/** A request's `pad`, the CLI's `--pad` value: transparent, black, white or #rrggbb. Absent means no padding. */
+export function parsePad(raw: unknown): string | undefined {
+	if (raw === undefined || raw === null || raw === 'none') return undefined;
+	if (typeof raw !== 'string' || !/^(transparent|black|white|#[0-9a-fA-F]{6})$/.test(raw)) {
+		throw new PinframeError('pad must be transparent, black, white or #rrggbb');
+	}
+	return raw;
+}
+
 const formatPoints = (list: Point[]) => list.map(([x, y]) => `${x},${y}`).join('/');
 
 /** The CLI flags for a document, without the photos and `--out`. */
@@ -321,12 +330,18 @@ async function trackOutput(folder: string): Promise<string> {
 	return join(dir, 'track.json');
 }
 
-/** Tracks a folder with the document's marks, JSON-only with the feature cache, and returns the sidecar. */
-export async function track(folder: string, marks: Marks): Promise<Sidecar> {
+/**
+ * Tracks a folder with the document's marks, JSON-only with the feature cache, and returns the sidecar.
+ * `pad` is `--pad`: the crop's rects depend on whether there is padding (they overhang the photos), not on
+ * its colour.
+ */
+export async function track(folder: string, marks: Marks, pad?: string): Promise<Sidecar> {
 	const photos = await listPhotos(folder);
 	await saveDocument(folder, marks, photos);
 	const out = await trackOutput(folder);
-	const { finished } = start(folder, 'track', [...photos, ...cliArgs(marks), '--out', out]);
+	const args = [...photos, ...cliArgs(marks), '--out', out];
+	if (pad) args.push('--pad', pad);
+	const { finished } = start(folder, 'track', args);
 	const result = await finished;
 	if (result.code !== 0) {
 		throw failure('track', result);
