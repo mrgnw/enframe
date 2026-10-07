@@ -2,8 +2,12 @@
 # The check every task runs before it merges: bash analysis/check.sh
 # Builds from scratch-safe state, lints, tests, runs every README command and each input format, checks the
 # outputs, and compares the train clouds job against the tracking baseline. Exits non-zero if anything fails.
+# --browser also runs the web app's Playwright tests (web/e2e, about 1.5 min more; needs the one-time
+# `cd web && pnpm exec playwright install chromium`). Without it the gate is unchanged.
 set -uo pipefail
 cd "$(dirname "$0")/.."
+browser=
+[[ ${1-} == --browser ]] && browser=1
 
 OUT=out/check
 rm -rf "$OUT"
@@ -142,6 +146,10 @@ web_round_trip() {
 }
 check 'web: pnpm install and build' bash -c 'cd web && pnpm install --frozen-lockfile && pnpm build'
 check 'web: /api/track round trip' web_round_trip
+if [[ $browser ]]; then
+	# Playwright starts the build above on its own port (17342), walks the app on a hard-linked copy of the samples.
+	check 'web: browser tests' bash -c 'cd web && pnpm exec playwright test > ../out/check/browser.log 2>&1; s=$?; tail -4 ../out/check/browser.log; exit $s'
+fi
 
 cat > "$OUT/verify.py" <<'PY'
 """The outputs are real, and the train clouds job still matches the committed tracking baseline."""

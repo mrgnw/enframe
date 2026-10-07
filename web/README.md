@@ -28,3 +28,14 @@ curl -sN localhost:7341/api/export -H 'content-type: application/json' \
 The export's done state hands over the clip itself. `GET /api/clip?path=` streams a clip (`.avif`, `.mp4`, `.mov`, `.webm`) or the `.json` sidecar beside one, and nothing else: other extensions, and a `.json` with no clip of that name beside it, are refused, so this route cannot be used to read the rest of the disk. It answers byte ranges (206) for video and caches by size and mtime like the photos. The done state (`Done.svelte`) shows an AVIF as an `<img>` and MP4 and WebM as a looping muted `<video controls>`; a browser that cannot decode the clip, and every browser for MOV, gets the download link only. It also links the sidecar and, when the server is a Mac and the page is open on that Mac (`localhost`), offers "Reveal in Finder", which is `POST /api/reveal {path}` running `open -R`.
 
 The server reads any folder and writes any path it is given, by design for one person's machine on a tailnet; do not expose it beyond that.
+
+## Browser tests
+
+`e2e/` holds the Playwright tests (`@playwright/test`, pinned to the version whose Chromium revision is the one installed). One-time setup on a machine: `cd web && pnpm install && pnpm exec playwright install chromium` (about 150 MB, kept in `~/Library/Caches/ms-playwright` on a Mac). Then:
+
+```sh
+cd rust && cargo build --release && cd ..   # the binary the app runs
+cd web && pnpm test:e2e                      # builds, starts the build on port 17342, runs the tests, stops it
+```
+
+The tests run headless, with no flags, on a throwaway folder of hard links to `samples/train clouds` under `out/`, so your own `samples/train clouds.pin.json` is never touched (the run fails if it changes). They walk the app (open, four points, Track, fix the 25 lost photos, Preview, Export) and compare the exported sidecar with a CLI run on the same marks, then compare an export of the marks in `analysis/train_clouds_all.sh` with that script's own run. Screenshots land in `out/e2e/shots/` as artifacts; they are not diffed against the mockups. `bash analysis/check.sh --browser` runs the same tests after the web checks. `PINFRAME_E2E_KEEP=1` keeps the work folder, `PINFRAME_E2E_PORT` changes the port.
