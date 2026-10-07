@@ -24,3 +24,5 @@ curl -s localhost:7341/api/track -H 'content-type: application/json' \
 curl -sN localhost:7341/api/export -H 'content-type: application/json' \
   -d '{"folder": "samples/train clouds", "marks": {"points": [[675,345],[985,345]]}, "out": "out/web.avif"}'
 ```
+
+The server reads any folder and writes any path it is given, by design for one person's machine on a tailnet; do not expose it beyond that.

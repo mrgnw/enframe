@@ -1,7 +1,7 @@
 // The preview screen's calls to the M1 routes. `/api/track` takes the pad now; `/api/export` answers with
 // server-sent events that are read here by hand, because EventSource cannot POST.
 
-import { loadFolder, photoUrl, Stale } from '#lib/marking/api.js';
+import { loadFolder, photoUrl, postTrack, Stale } from '#lib/marking/api.js';
 import type { Marks, Sidecar } from '#lib/marking/types.js';
 
 export { loadFolder, photoUrl, Stale };
@@ -9,17 +9,9 @@ export { loadFolder, photoUrl, Stale };
 let sequence = 0;
 
 /** Tracks with `marks` and `pad` (the CLI's `--pad`, none when absent); `Stale` when a newer call was made. */
-export async function trackPad(folder: string, marks: Marks, pad?: string): Promise<Sidecar> {
+export function trackPad(folder: string, marks: Marks, pad?: string): Promise<Sidecar> {
 	const mine = ++sequence;
-	const resp = await fetch('/api/track', {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ folder, marks, ...(pad && { pad }) })
-	});
-	if (mine !== sequence || resp.status === 409) throw new Stale();
-	const body = await resp.json();
-	if (!resp.ok) throw new Error(body.error ?? resp.statusText);
-	return body;
+	return postTrack({ folder, marks, ...(pad && { pad }) }, () => mine === sequence);
 }
 
 export interface ExportRequest {

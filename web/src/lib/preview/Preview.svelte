@@ -34,9 +34,12 @@
 	});
 
 	function keydown(e: KeyboardEvent) {
-		if (e.key === 'e' && (e.metaKey || e.ctrlKey)) {
-			e.preventDefault();
-			void session.export();
+		// With a modifier held only export is ours; ⌘← and the like keep their browser meaning.
+		if (e.metaKey || e.ctrlKey || e.altKey) {
+			if (e.key === 'e' && !e.altKey) {
+				e.preventDefault();
+				void session.export();
+			}
 			return;
 		}
 		if ((e.target as HTMLElement).closest('input, textarea') || !n) return;

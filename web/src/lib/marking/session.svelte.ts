@@ -60,6 +60,10 @@ export class Session {
 	marks: Marks = { points: [] };
 
 	private trailLast = TRAIL_DEFAULT;
+	/** The zoom was set by the user on this lost photo; otherwise a mark leaves `zoom` out and the CLI chooses. */
+	private zoomTouched = false;
+	/** The newest `retrack` call's id: only its end clears `busy`. */
+	private latestTrack = 0;
 	/** Auto-advance landed here before the re-track returned: if this photo links after all, move on again. */
 	private autoAdvanced = false;
 	private history: Snapshot[] = [];
@@ -112,7 +116,14 @@ export class Session {
 			feats: null
 		}));
 		if (loaded.marks) {
-			this.marks = loaded.marks;
+			// A photo deleted since the save would make the CLI reject the whole document: drop its entries.
+			const here = new Set(loaded.photos);
+			const { at, skip } = loaded.marks;
+			this.marks = {
+				...loaded.marks,
+				...(at && { at: Object.fromEntries(Object.entries(at).filter(([file]) => here.has(file))) }),
+				...(skip && { skip: skip.filter((file) => here.has(file)) })
+			};
 			this.stage = 'tracking';
 			await this.retrack();
 		} else {
@@ -140,7 +151,7 @@ export class Session {
 	async startTracking(): Promise<void> {
 		const first = this.photos[0];
 		if (this.stage !== 'points' || !first.pts.length || !first.w) return;
-		this.marks = { points: this.px(first, first.pts) };
+		this.marks = { ...this.marks, points: this.px(first, first.pts) };
 		this.stage = 'tracking';
 		await this.retrack();
 	}
@@ -188,7 +199,7 @@ export class Session {
 		if (p.source !== 'lost') return;
 		this.remember();
 		Object.assign(p, { source: 'mark', pts, scale: this.zoom, feats: null });
-		this.setMark(p, pts, this.zoom);
+		this.setMark(p, pts, this.zoomTouched ? this.zoom : undefined);
 		this.pop();
 		this.showToast(`Marked ${p.name}`);
 		void this.retrack();
@@ -217,6 +228,7 @@ export class Session {
 	editPoints(pts: Point[], text: string): void {
 		const p = this.photo;
 		if (p.source !== 'mark' || !pts.length) return;
+		clearTimeout(this.advanceTimer);
 		this.remember();
 		p.pts = pts;
 		this.setMark(p, pts, undefined);
@@ -227,11 +239,15 @@ export class Session {
 	clearMark(): void {
 		const p = this.photo;
 		if (!(p.source === 'mark' || p.source === 'skipped') || this.current === 0) return;
+		clearTimeout(this.advanceTimer);
 		this.remember();
 		this.showToast(`${p.source === 'mark' ? 'Cleared mark on' : 'Unskipped'} ${p.name}`);
 		Object.assign(p, { source: 'lost', feats: p.feats ?? 0 });
 		this.unmark(p);
 		this.fixList.add(p.file);
+		// Lost again: the zoom starts over from the reference, as when landing on a lost photo.
+		this.zoom = this.ref.scale;
+		this.zoomTouched = false;
 		void this.retrack();
 	}
 
@@ -257,15 +273,21 @@ export class Session {
 
 	/** Posts the document; the newest post wins, and the sidecar that comes back replaces every photo. */
 	async retrack(): Promise<void> {
+		const mine = ++this.latestTrack;
 		this.busy = true;
 		try {
 			this.apply(await track(this.folder, this.marks));
 		} catch (e) {
-			if (e instanceof Stale) return;
-			this.showToast(`Tracking failed: ${(e as Error).message}`, false);
-			if (this.stage === 'tracking') this.stage = 'points';
+			if (!(e instanceof Stale)) {
+				this.showToast(`Tracking failed: ${(e as Error).message}`, false);
+				// The first track failed: the marks are saved, so show why instead of asking for them again.
+				if (this.stage === 'tracking') {
+					this.stage = 'failed';
+					this.error = (e as Error).message;
+				}
+			}
 		}
-		this.busy = false;
+		if (mine === this.latestTrack) this.busy = false;
 	}
 
 	private apply(sidecar: Sidecar): void {
@@ -303,7 +325,10 @@ export class Session {
 		clearTimeout(this.advanceTimer);
 		this.autoAdvanced = false;
 		this.current = clamp(i, 0, this.photos.length - 1);
-		if (this.photo.source === 'lost') this.zoom = this.ref.scale;
+		if (this.photo.source === 'lost') {
+			this.zoom = this.ref.scale;
+			this.zoomTouched = false;
+		}
 		this.scroll = { serial: this.scroll.serial + 1, jump };
 	}
 
@@ -337,6 +362,7 @@ export class Session {
 	setZoom(z: number): void {
 		if (this.photo.source !== 'lost') return;
 		this.zoom = z;
+		this.zoomTouched = true;
 	}
 
 	stepZoom(dir: number): void {

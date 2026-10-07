@@ -28,16 +28,33 @@ export class Stale extends Error {
 
 let sequence = 0;
 
+/**
+ * Posts a track request and reads its sidecar. `newest` says whether no newer call has been made since: a
+ * 409 then means the server was beaten by something this page did not send (a request that overtook it),
+ * so it asks once more; otherwise, or when the answer is not the newest any more, it is `Stale`.
+ */
+export async function postTrack(body: object, newest: () => boolean): Promise<Sidecar> {
+	const payload = JSON.stringify(body);
+	for (let attempt = 0; ; attempt++) {
+		const resp = await fetch('/api/track', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: payload
+		});
+		if (!newest()) throw new Stale();
+		if (resp.status === 409) {
+			if (attempt === 0) continue;
+			throw new Stale();
+		}
+		const answer = await resp.json();
+		if (!newest()) throw new Stale();
+		if (!resp.ok) throw new Error(answer.error ?? resp.statusText);
+		return answer;
+	}
+}
+
 /** Tracks with `marks`; resolves with the sidecar, or rejects with `Stale` when a newer call was made. */
-export async function track(folder: string, marks: Marks): Promise<Sidecar> {
+export function track(folder: string, marks: Marks): Promise<Sidecar> {
 	const mine = ++sequence;
-	const resp = await fetch('/api/track', {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ folder, marks })
-	});
-	if (mine !== sequence || resp.status === 409) throw new Stale();
-	const body = await resp.json();
-	if (!resp.ok) throw new Error(body.error ?? resp.statusText);
-	return body;
+	return postTrack({ folder, marks }, () => mine === sequence);
 }

@@ -52,16 +52,21 @@
 
 	function keydown(e: KeyboardEvent) {
 		if ((e.target as HTMLElement).closest('input, textarea')) return;
+		// With a modifier held only undo is ours; ⌘S, ⌘L, ⌘[ and the rest keep their browser meaning.
+		if (e.metaKey || e.ctrlKey || e.altKey) {
+			if (e.key === 'z' && session.stage === 'fix' && !e.altKey) {
+				e.preventDefault();
+				session.undo();
+			}
+			return;
+		}
 		if (session.stage === 'points') {
 			if (e.key === 'Enter') void session.startTracking();
 			return;
 		}
 		if (session.stage !== 'fix') return;
 		const step = e.shiftKey ? 10 : 1;
-		if (e.key === 'z' && (e.metaKey || e.ctrlKey)) {
-			e.preventDefault();
-			session.undo();
-		} else if (e.key === 'ArrowRight') {
+		if (e.key === 'ArrowRight') {
 			e.preventDefault();
 			session.go(session.current + step);
 		} else if (e.key === 'ArrowLeft') {

@@ -1,5 +1,6 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import {
+	currentRun,
 	exportClip,
 	parseMarks,
 	PinframeError,
@@ -60,10 +61,19 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	const encoder = new TextEncoder();
+	// The client may leave mid-export: `cancel` stops the run, and `send` goes quiet, because enqueueing on a
+	// closed stream throws, and from the child's data listener that would be an uncaught exception.
+	let closed = false;
+	let settled = false;
 	const stream = new ReadableStream({
 		async start(controller) {
 			const send = (event: string, data: unknown) => {
-				controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+				if (closed) return;
+				try {
+					controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+				} catch {
+					closed = true;
+				}
 			};
 			try {
 				const result = await exportClip(folder, marks, options, (stream, line) =>
@@ -79,7 +89,18 @@ export const POST: RequestHandler = async ({ request }) => {
 					send('error', { error: (e as Error).message });
 				}
 			}
-			controller.close();
+			settled = true;
+			if (closed) return;
+			try {
+				controller.close();
+			} catch {
+				// cancelled in the meantime
+			}
+		},
+		cancel() {
+			closed = true;
+			// Once settled the folder's run belongs to a newer request, which is not this client's to kill.
+			if (!settled) currentRun(folder)?.child.kill('SIGTERM');
 		}
 	});
 	return new Response(stream, {

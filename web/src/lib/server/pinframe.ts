@@ -62,8 +62,11 @@ export interface Sidecar {
 	photos: SidecarPhoto[];
 }
 
-/** `IMG_4669.avif  2048x1536  anchor 1040,725  scale 2.50  38 features`: what the CLI prints per photo. */
-const PHOTO_LINE = /^(\S+)\s+(\d+)x(\d+)\s+anchor \S+\s+scale \S+\s+(.*)$/;
+/**
+ * `IMG_4669.avif  2048x1536  anchor 1040,725  scale 2.50  38 features`: what the CLI prints per photo. The
+ * columns are two spaces apart, so a name may hold single spaces (`Photo 1.jpg`).
+ */
+const PHOTO_LINE = /^(.+?)  (\d+)x(\d+)  anchor \S+\s+scale \S+\s+(.*)$/;
 
 /** Adds each photo's size and note from the run's output to the sidecar, which carries neither. */
 export function annotate(sidecar: Sidecar, stdout: string): Sidecar {
@@ -227,9 +230,21 @@ export const PHOTO_TYPES: Record<string, string> = {
 	'.png': 'image/png'
 };
 
-export async function saveDocument(folder: string, marks: Marks, photos: string[]): Promise<void> {
+/** The last write queued per folder: writes chain on it, so two requests never interleave their `writeFile`s. */
+const saving = new Map<string, Promise<void>>();
+
+export function saveDocument(folder: string, marks: Marks, photos: string[]): Promise<void> {
 	const doc = { version: 1, folder, marks, photos: photos.map((p) => basename(p)) };
-	await writeFile(documentPath(folder), JSON.stringify(doc, null, '\t') + '\n');
+	const text = JSON.stringify(doc, null, '\t') + '\n';
+	const write = (saving.get(folder) ?? Promise.resolve())
+		.catch(() => {})
+		.then(() => writeFile(documentPath(folder), text));
+	saving.set(folder, write);
+	const done = () => {
+		if (saving.get(folder) === write) saving.delete(folder);
+	};
+	write.then(done, done);
+	return write;
 }
 
 // ---- running pinframe ----
@@ -252,6 +267,23 @@ export class Superseded extends Error {
 	constructor() {
 		super('superseded by a newer run for this folder');
 	}
+}
+
+/**
+ * A folder's tickets: a request takes the next number the moment it arrives, before any await, so arrival
+ * order is settled before the awaits can reorder anything. Only the newest ticket may save or spawn.
+ */
+const tickets = new Map<string, number>();
+
+function claim(folder: string): number {
+	const ticket = (tickets.get(folder) ?? 0) + 1;
+	tickets.set(folder, ticket);
+	return ticket;
+}
+
+/** Throws `Superseded` when a newer request for the folder has arrived since `ticket` was claimed. */
+function ensureNewest(folder: string, ticket: number): void {
+	if (tickets.get(folder) !== ticket) throw new Superseded();
 }
 
 interface Finished {
@@ -336,9 +368,12 @@ async function trackOutput(folder: string): Promise<string> {
  * its colour.
  */
 export async function track(folder: string, marks: Marks, pad?: string): Promise<Sidecar> {
+	const ticket = claim(folder);
 	const photos = await listPhotos(folder);
+	ensureNewest(folder, ticket);
 	await saveDocument(folder, marks, photos);
 	const out = await trackOutput(folder);
+	ensureNewest(folder, ticket);
 	const args = [...photos, ...cliArgs(marks), '--out', out];
 	if (pad) args.push('--pad', pad);
 	const { finished } = start(folder, 'track', args);
@@ -346,11 +381,20 @@ export async function track(folder: string, marks: Marks, pad?: string): Promise
 	if (result.code !== 0) {
 		throw failure('track', result);
 	}
-	return annotate(JSON.parse(await readFile(out, 'utf8')) as Sidecar, result.stdout);
+	try {
+		return annotate(JSON.parse(await readFile(out, 'utf8')) as Sidecar, result.stdout);
+	} catch (e) {
+		// A newer run may be rewriting the shared sidecar file: this answer is stale either way.
+		ensureNewest(folder, ticket);
+		throw e;
+	}
 }
 
 /** A photo's sidecar partner: `clip.avif` has `clip.json` beside it. */
 const sidecarOf = (out: string) => out.replace(/\.[^./]+$/, '') + '.json';
+
+/** Same folder, compared without case: the Mac's file system ignores it. */
+const sameFolder = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 /** The clip path for an export, refused inside the folder itself: the next run would read it as a photo. */
 export function resolveOut(folder: string, out: unknown): string {
@@ -359,8 +403,17 @@ export function resolveOut(folder: string, out: unknown): string {
 		throw new PinframeError('out must be a path');
 	}
 	const path = isAbsolute(out) ? out : resolve(ROOT, out);
-	if (dirname(path) === folder) {
+	if (sameFolder(dirname(path), folder)) {
 		throw new PinframeError(`out ${out}: the clip cannot be written inside the photo folder`);
+	}
+	return path;
+}
+
+/** The `--frames` directory, refused as the folder itself for the same reason: its PNGs would become photos. */
+function resolveFrames(folder: string, frames: string): string {
+	const path = isAbsolute(frames) ? frames : resolve(ROOT, frames);
+	if (sameFolder(path, folder)) {
+		throw new PinframeError(`frames ${frames}: the frames cannot be written inside the photo folder`);
 	}
 	return path;
 }
@@ -374,13 +427,18 @@ export async function exportClip(
 	options: ExportOptions,
 	onLine: (stream: 'stdout' | 'stderr', line: string) => void
 ): Promise<{ out: string; sidecar: Sidecar }> {
-	const photos = await listPhotos(folder);
-	await saveDocument(folder, marks, photos);
+	// Refused paths answer before a ticket is taken, so a bad request never supersedes a good one.
 	const out = resolveOut(folder, options.out);
+	const frames = options.frames ? resolveFrames(folder, options.frames) : undefined;
+	const ticket = claim(folder);
+	const photos = await listPhotos(folder);
+	ensureNewest(folder, ticket);
+	await saveDocument(folder, marks, photos);
+	ensureNewest(folder, ticket);
 	const args = [...photos, ...cliArgs(marks), '--out', out];
 	if (options.pad) args.push('--pad', options.pad);
 	if (options.fps !== undefined) args.push('--fps', String(options.fps));
-	if (options.frames) args.push('--frames', isAbsolute(options.frames) ? options.frames : resolve(ROOT, options.frames));
+	if (frames) args.push('--frames', frames);
 	if (options.vf) args.push('--vf', options.vf);
 	const { finished } = start(folder, out, args, onLine);
 	const result = await finished;
