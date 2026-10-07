@@ -117,6 +117,32 @@ cp "$G"/IMG_{4698,4700,4702,4704}.avif "$OUT"/srgb/IMG_{4699,4701,4703,4705}.jpe
 check 'colour: sRGB set' $P "$OUT/srgb"/*.jpeg --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.jpeg=846,641.5/1046,641.5/846,816.5/1046,816.5 --out $OUT/srgb.avif
 check 'colour: mixed set' $P "$OUT/mixed"/* --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.jpeg=846,641.5/1046,641.5/846,816.5/1046,816.5 --out $OUT/mixed.avif
 
+# M1: the web app builds, starts, answers one /api/track round trip and stops. On its own port, so a dev
+# server on 7341 is left alone; the sidecar it returns is checked by verify.py below.
+web_round_trip() {
+	local port=17341 pid up= status=1
+	PORT=$port HOST=127.0.0.1 node web/build > "$OUT/web.log" 2>&1 &
+	pid=$!
+	for _ in $(seq 1 50); do
+		if curl -s -o /dev/null "http://127.0.0.1:$port/"; then
+			up=1
+			break
+		fi
+		sleep 0.2
+	done
+	if [[ $up ]]; then
+		curl -s "http://127.0.0.1:$port/api/track" -H 'content-type: application/json' \
+			-d '{"folder": "samples/train clouds", "marks": {"points": [[1267.5,510],[1782.5,510],[1267.5,710],[1782.5,710]], "at": {"IMG_4698.avif": {"points": [[940,637.5],[1140,637.5],[940,812.5],[1140,812.5]]}}}}' \
+			> "$OUT/web-track.json" && grep -q '"run"' "$OUT/web-track.json" && status=0
+	fi
+	kill "$pid" 2> /dev/null
+	wait "$pid" 2> /dev/null
+	cat "$OUT/web.log" "$OUT/web-track.json"
+	[[ $status -eq 0 ]]
+}
+check 'web: pnpm install and build' bash -c 'cd web && pnpm install --frozen-lockfile && pnpm build'
+check 'web: /api/track round trip' web_round_trip
+
 cat > "$OUT/verify.py" <<'PY'
 """The outputs are real, and the train clouds job still matches the committed tracking baseline."""
 
@@ -144,6 +170,8 @@ codec = subprocess.run(
 assert codec == 'h264', codec
 assert len(list((out / 'frames').glob('*.png'))) == 8
 assert json.loads((out / 'track.json').read_text())['clip'] is None
+web = json.loads((out / 'web-track.json').read_text())
+assert web['clip'] is None and len(web['photos']) == 57, 'the web app returned the sidecar of a JSON-only run'
 
 
 def colour(path):

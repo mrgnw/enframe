@@ -15,3 +15,8 @@ wheels/
 # Outputs
 out/
 *.mp4
+
+# Documents and clips the web app writes beside a photo folder
+*.pin.json
+samples/*.avif
+samples/*.json
