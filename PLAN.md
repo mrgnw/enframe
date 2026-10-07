@@ -42,12 +42,11 @@ One coordinating thread runs the plan; agents do the card work. The coordinator 
 
 | Card | What | Depends on | Touches | Model | Size |
 |-|-|-|-|-|-|
-| [M3](todos/M3-preview-export.md) | Preview and export screen, live | — | `web/src/` | Sonnet | M |
 | [E2](todos/E2-serve-endpoint.md) | enframe-serve endpoint that runs pinframe | enframe phase-2 | enframe repo | Opus | M |
 | [E3](todos/E3-marking-screen.md) | Marking screen in enframe | E2 | enframe repo | Opus | L |
 | [E4](todos/E4-preview-export.md) | Preview and export screen in enframe | E3 | enframe repo | Sonnet | M |
 
-Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md), [A1](todos/done/1006-A1-tracking-benchmark.md), [B1](todos/done/1006-B1-colour.md), [F1](todos/done/1006-F1-python-reference.md), [B2](todos/done/1006-B2-capture-time-order.md), [A4](todos/done/1006-A4-search-window.md), [A5a](todos/done/1006-A5a-points-tracker.md), [D2](todos/done/1006-D2-build-downloads.md), [A5b](todos/done/1006-A5b-points-syntax.md) (design: [A5](todos/done/1006-A5-reference-points.md)), [A2](todos/done/1006-A2-tracker-sensitivity.md), [A3](todos/done/1006-A3-track-edge.md) (kept 1024), [B4](todos/done/1006-B4-zoom-from-exif.md), [A6](todos/done/1006-A6-skip-photos.md), [B5](todos/done/1006-B5-exif-followups.md), [E5](todos/done/1006-E5-marking-mockup.md), [D1](todos/done/1006-D1-linux-build.md), [M1](todos/done/1007-M1-serve.md), [M2](todos/done/1007-M2-marking-live.md).
+Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md), [A1](todos/done/1006-A1-tracking-benchmark.md), [B1](todos/done/1006-B1-colour.md), [F1](todos/done/1006-F1-python-reference.md), [B2](todos/done/1006-B2-capture-time-order.md), [A4](todos/done/1006-A4-search-window.md), [A5a](todos/done/1006-A5a-points-tracker.md), [D2](todos/done/1006-D2-build-downloads.md), [A5b](todos/done/1006-A5b-points-syntax.md) (design: [A5](todos/done/1006-A5-reference-points.md)), [A2](todos/done/1006-A2-tracker-sensitivity.md), [A3](todos/done/1006-A3-track-edge.md) (kept 1024), [B4](todos/done/1006-B4-zoom-from-exif.md), [A6](todos/done/1006-A6-skip-photos.md), [B5](todos/done/1006-B5-exif-followups.md), [E5](todos/done/1006-E5-marking-mockup.md), [D1](todos/done/1006-D1-linux-build.md), [M1](todos/done/1007-M1-serve.md), [M2](todos/done/1007-M2-marking-live.md), [M3](todos/done/1007-M3-preview-export.md).
 
 Order is in [todos/_priority.md](todos/_priority.md). Running: none. E2 waits for enframe's `phase-2-remote-targets` branch, which rewrites `src-tauri/serve/src/main.rs`.
 
