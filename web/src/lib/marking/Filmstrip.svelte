@@ -108,6 +108,7 @@
 			class:failed={thumbs[p.file] === 'failed'}
 			data-i={i}
 			href="#{p.name}"
+			draggable="false"
 			onclick={(e) => e.preventDefault()}
 		>
 			{#if thumbs[p.file] && thumbs[p.file] !== 'failed'}
