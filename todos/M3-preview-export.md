@@ -1,6 +1,6 @@
 # M3 · Preview and export screen, live
 
-Depends on: M2 · Model: Sonnet · Size: M
+Depends on: M2 (done) · Model: Sonnet · Size: M
 Touches: `web/src/`
 
 ## Goal
