@@ -1,5 +1,6 @@
 <script lang="ts">
 import { page } from '$app/stores';
+import { goto } from '$app/navigation';
 import * as Command from '$lib/components/ui/command/index.js';
 import * as Dialog from '$lib/components/ui/dialog/index.js';
 import type { ExportFormat } from '$lib/framer/types';
@@ -61,6 +62,12 @@ function handleKeydown(e: KeyboardEvent) {
 		e.preventDefault();
 		open = !open;
 		if (open) searchValue = '';
+	} else if ((e.key === '1' || e.key === '2') && (e.metaKey || e.ctrlKey)) {
+		const el = document.activeElement;
+		const tag = el?.tagName.toLowerCase();
+		if (tag === 'input' || tag === 'textarea' || (el as HTMLElement)?.isContentEditable) return;
+		e.preventDefault();
+		void goto(e.key === '1' ? '/' : '/stabilize');
 	} else if (e.key === '?' && !e.metaKey && !e.ctrlKey) {
 		const el = document.activeElement;
 		const tag = el?.tagName.toLowerCase();
