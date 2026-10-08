@@ -6,7 +6,7 @@
 //!
 //! A [`Job`] holds the CLI's options, typed, and is checked in the CLI's order with its messages: an error
 //! is the message the CLI prints after `stabilize: `, naming its flags (`--at`, `--pad`). Progress lines,
-//! the ones the CLI prints, go to a `log` callback.
+//! the ones the CLI prints, go to a `log` callback. Setting [`Job::cancel`] stops a run at the next photo.
 
 mod avif;
 mod avif_sys;
@@ -33,6 +33,7 @@ use profile::{Work, step, work};
 use render::{Keep, ordered, place};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::sync::mpsc::sync_channel;
 use track::{Hit, Photo, Rect};
@@ -136,7 +137,7 @@ impl Default for Output {
 }
 
 /// One run: the photos, the marks and the options, as the CLI's flags give them.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default)]
 pub struct Job {
 	/// The photos, in any order; [`Job::order`] sorts them.
 	pub photos: Vec<PathBuf>,
@@ -154,6 +155,14 @@ pub struct Job {
 	/// What [`Tracked::write`] will write, checked before anything is decoded. `None` only tracks, like a
 	/// `.json` output that is never written.
 	pub output: Option<Output>,
+	/// Once set, [`track`] and [`Tracked::write`] stop before the next photo and write nothing.
+	pub cancel: Option<Arc<AtomicBool>>,
+}
+
+const CANCELLED: &str = "cancelled";
+
+fn cancelled(cancel: Option<&AtomicBool>) -> bool {
+	cancel.is_some_and(|cancel| cancel.load(Relaxed))
 }
 
 /// 1 to 32 points per mark (A5b's design): enough for any hand-marked feature, bounded so a typo (a
@@ -617,6 +626,7 @@ struct RenderJob<'a> {
 	profile: Profile,
 	/// Photos to convert from sRGB to the clip's Display P3 before placing.
 	convert: &'a [bool],
+	cancel: Option<&'a AtomicBool>,
 }
 
 /// A placed frame as the sink takes it: YUV for libavif, RGB(A) bytes for ffmpeg.
@@ -632,6 +642,9 @@ fn render(job: &RenderJob, sink: &mut Sink) -> Result<(), String> {
 	let place_one = |i: usize| -> Result<Frame, String> {
 		if stop.load(Relaxed) {
 			return Err(String::new());
+		}
+		if cancelled(job.cancel) {
+			return Err(CANCELLED.into());
 		}
 		let mut photo = match job.keep.and_then(|keep| keep.take(i)) {
 			Some(photo) => photo,
@@ -818,6 +831,7 @@ pub struct Tracked {
 	keep: Option<Keep>,
 	profiles: Vec<Profile>,
 	render_threads: usize,
+	cancel: Option<Arc<AtomicBool>>,
 }
 
 /// Checks the job, then decodes the photos, finds their features (or reads them from the feature cache),
@@ -904,10 +918,14 @@ pub fn track(job: &Job, log: &mut dyn FnMut(&str)) -> Result<Tracked, String> {
 		std::thread::scope(|scope| {
 			let (tx, rx) = sync_channel(1);
 			let (paths, sizes, keep, cache, stop) = (&paths, &sizes, keep.as_ref(), cache.as_ref(), &stop);
+			let cancel = job.cancel.as_deref();
 			scope.spawn(move || {
 				let prepare_one = |i: usize| {
 					if stop.load(Relaxed) {
 						return Err(String::new());
+					}
+					if cancelled(cancel) {
+						return Err(CANCELLED.into());
 					}
 					prepare(&paths[i], sizes[i], k, keep, i, cache)
 				};
@@ -940,7 +958,8 @@ pub fn track(job: &Job, log: &mut dyn FnMut(&str)) -> Result<Tracked, String> {
 	log(&format!("clip {}x{}", size.0, size.1));
 	let output = job.output.clone();
 	let render_threads = resources.render_threads;
-	Ok(Tracked { paths, sizes, path, sources, size, fill, output, keep, profiles, render_threads })
+	let cancel = job.cancel.clone();
+	Ok(Tracked { paths, sizes, path, sources, size, fill, output, keep, profiles, render_threads, cancel })
 }
 
 impl Tracked {
@@ -1019,6 +1038,7 @@ impl Tracked {
 					avif: suffix(&output.out) == "avif",
 					profile,
 					convert: &convert,
+					cancel: self.cancel.as_deref(),
 				};
 				if let Err(e) = render(&job, &mut sink) {
 					abandon_sink(sink);
@@ -1039,6 +1059,9 @@ impl Tracked {
 			} else {
 				vec![(rects_partial.as_path(), rects.as_path())]
 			};
+			if cancelled(self.cancel.as_deref()) {
+				return Err(CANCELLED.to_string());
+			}
 			publish(&pairs, &folder_of(&output.out))?;
 			Ok(sidecar)
 		})
@@ -1295,6 +1318,34 @@ mod tests {
 		assert!((d[0] * 240.0 - 92.0).abs() < 0.5 && (d[1] * 180.0 - 71.0).abs() < 0.5, "{d:?}");
 		assert!(sidecar.to_json().starts_with(b"{\n\t\"run\": \"run\",\n\t\"clip\": null,"));
 		assert_eq!(tracked.write(&mut |_| {}).unwrap_err(), "nothing to write: the job has no output");
+		std::fs::remove_dir_all(&dir).unwrap();
+	}
+
+	#[test]
+	fn a_cancelled_job_stops_and_writes_nothing() {
+		let dir = std::env::temp_dir().join(format!("stabilize-cancel-{}", std::process::id()));
+		std::fs::create_dir_all(&dir).unwrap();
+		let photos: Vec<PathBuf> = [(0, 0), (6, 3)]
+			.iter()
+			.zip(["a.png", "b.png"])
+			.map(|(&offset, name)| {
+				write_noise_png(&dir.join(name), offset, (240, 180));
+				dir.join(name)
+			})
+			.collect();
+		let cancel = Arc::new(AtomicBool::new(true));
+		let out = dir.join("clip.avif");
+		let output = Some(Output { out: out.clone(), ..Output::default() });
+		let marks = Marks::new(&[(110.0, 80.0)]);
+		let job =
+			Job { photos, marks, no_cache: true, output, cancel: Some(cancel.clone()), ..Job::default() };
+		assert_eq!(track(&job, &mut |_| {}).err().unwrap(), "cancelled");
+		cancel.store(false, Relaxed);
+		let tracked = track(&job, &mut |_| {}).unwrap();
+		cancel.store(true, Relaxed);
+		assert_eq!(tracked.write(&mut |_| {}).unwrap_err(), "cancelled");
+		let left: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name()).collect();
+		assert_eq!(left.len(), 2, "{left:?}");
 		std::fs::remove_dir_all(&dir).unwrap();
 	}
 
