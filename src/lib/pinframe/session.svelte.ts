@@ -1,9 +1,9 @@
-// The marking session: the document being edited, the sidecar being drawn, and the mockup's rules for
+// The marking session of one feature: its marks, the sidecar being drawn, and the mockup's rules for
 // marks, skips, the fix list, undo and auto-advance (docs/ui-plan.md, "Marking a lost photo"). Every change
 // edits the local photos at once, posts the document, and redraws from the sidecar that comes back.
 
 import { SvelteSet } from 'svelte/reactivity';
-import { type Folder, loadFolder, Stale, track } from './api';
+import { Stale, track } from './api';
 import { ghostOffsets, prevLinked } from './trail';
 import {
 	ADVANCE_MS,
@@ -18,7 +18,6 @@ import {
 	TRAIL_MIN,
 	ZOOMS,
 	type Feature,
-	FIRST_FEATURE,
 	type Marks,
 	type Photo,
 	type Point,
@@ -38,6 +37,8 @@ interface Snapshot {
 const copyPhotos = (photos: Photo[]) => photos.map((p) => ({ ...p, pts: p.pts.map((q) => [...q] as Point) }));
 const copyMarks = (m: Marks): Marks => JSON.parse(JSON.stringify(m));
 const round = (v: number) => Math.round(v * 100) / 100;
+/** The CLI's refusal when only the first photo holds the feature: a mark on another photo lets it run. */
+const UNFOUND = /found in fewer than two photos/;
 
 export class Session {
 	readonly folder: string;
@@ -59,9 +60,15 @@ export class Session {
 	scroll = $state({ serial: 0, jump: false });
 	/** The last sidecar's run ID, for anyone comparing results. */
 	run = $state('');
-	name = FIRST_FEATURE;
+	name = $state('');
+	/** The overlay's colour, as a turn of the hue from the first feature's. */
+	readonly hue: number;
 	/** This feature's marks, exactly what the CLI gets. */
 	marks: Marks = { points: [] };
+	/** The sidecar on screen answers the newest marks: switching to this feature need not re-track. */
+	tracked = false;
+	/** Every feature's marks, the document a track saves. */
+	private readonly document: () => Feature[];
 
 	private trailLast = TRAIL_DEFAULT;
 	/** The zoom was set by the user on this lost photo; otherwise a mark leaves `zoom` out and the CLI chooses. */
@@ -74,9 +81,12 @@ export class Session {
 	private advanceTimer: ReturnType<typeof setTimeout> | undefined;
 	private toastTimer: ReturnType<typeof setTimeout> | undefined;
 
-	constructor(folder: string, trailMode: TrailMode) {
+	constructor(folder: string, trailMode: TrailMode, name: string, hue: number, document: () => Feature[]) {
 		this.folder = folder;
 		this.trailMode = trailMode;
+		this.name = name;
+		this.hue = hue;
+		this.document = document;
 	}
 
 	get photo(): Photo {
@@ -100,16 +110,9 @@ export class Session {
 		return this.photo.source === 'lost' ? ghostOffsets(this.photo, this.ref, this.zoom) : [];
 	}
 
-	async load(): Promise<void> {
-		let loaded: Folder;
-		try {
-			loaded = await loadFolder(this.folder);
-		} catch (e) {
-			this.stage = 'failed';
-			this.error = (e as Error).message;
-			return;
-		}
-		this.photos = loaded.photos.map((file) => ({
+	/** The folder's photos and this feature's saved marks, if any; a saved feature tracks once it is shown. */
+	init(files: string[], saved: Marks | null): void {
+		this.photos = files.map((file) => ({
 			file,
 			name: file.replace(/\.[^.]+$/, ''),
 			w: 0,
@@ -120,25 +123,45 @@ export class Session {
 			pts: [],
 			feats: null
 		}));
-		const saved = loaded.features[0];
 		if (saved) {
-			this.name = saved.name;
 			// A photo deleted since the save would make the CLI reject the whole document: drop its entries.
-			const here = new Set(loaded.photos);
-			const { at, near, skip } = saved.marks;
+			const here = new Set(files);
+			const { at, near, skip } = saved;
 			const kept = (map: NonNullable<Marks['at']>) =>
 				Object.fromEntries(Object.entries(map).filter(([file]) => here.has(file)));
 			this.marks = {
-				...saved.marks,
+				...saved,
 				...(at && { at: kept(at) }),
 				...(near && { near: kept(near) }),
 				...(skip && { skip: skip.filter((file) => here.has(file)) })
 			};
 			this.stage = 'tracking';
-			await this.retrack();
 		} else {
 			this.stage = 'points';
 		}
+	}
+
+	/** On screen again: re-track only when the sidecar held here is not the newest marks' answer. */
+	show(): void {
+		if (!this.tracked && this.marks.points.length && this.stage !== 'failed') void this.retrack();
+	}
+
+	/**
+	 * Only the first photo holds the feature, so the CLI will not run: every other photo is lost at the first
+	 * photo's points until one is marked.
+	 */
+	private unfound(): void {
+		const [first, ...rest] = this.photos;
+		// ponytail: a reopened document has the points in pixels only, so this needs the first photo shown first.
+		if (!first.pts.length && first.w) first.pts = this.marks.points.map(([x, y]) => [x / first.w, y / first.h]);
+		Object.assign(first, { source: 'mark', feats: null });
+		for (const p of rest) {
+			Object.assign(p, { source: 'lost', pts: first.pts.map((q) => [...q] as Point), feats: 0 });
+			this.fixList.add(p.file);
+		}
+		this.tracked = true;
+		this.stage = 'fix';
+		this.go(1, true);
 	}
 
 	/** The first photo's oriented size, from the image itself, before the first track reports sizes. */
@@ -355,11 +378,13 @@ export class Session {
 	async retrack(): Promise<void> {
 		const mine = ++this.latestTrack;
 		this.busy = true;
+		this.tracked = false;
 		try {
-			const document: Feature[] = [{ name: this.name, marks: this.marks }];
-			this.apply(await track(this.folder, document, this.name));
+			this.apply(await track(this.folder, this.document(), this.name));
+			this.tracked = mine === this.latestTrack;
 		} catch (e) {
-			if (!(e instanceof Stale)) {
+			if (this.stage === 'tracking' && UNFOUND.test((e as Error).message)) this.unfound();
+			else if (!(e instanceof Stale)) {
 				this.showToast(`Tracking failed: ${(e as Error).message}`, false);
 				// The first track failed: the marks are saved, so show why instead of asking for them again.
 				if (this.stage === 'tracking') {

@@ -1,10 +1,12 @@
 <script lang="ts">
 // The marking screen: one photo at a time, the filmstrip below, controls floating over the photo
 // (mockups/01-marking.html). Stage `points` is the first photo's reference points (00-start.html's
-// "loaded" and "points" states); `fix` is the marking loop.
+// "loaded" and "points" states); `fix` is the marking loop. The features panel switches between the folder's
+// features, each with its own session.
 import { onMount } from 'svelte';
 import Filmstrip from './Filmstrip.svelte';
-import { Session } from './session.svelte';
+import Features from './Features.svelte';
+import { Sequence } from './sequence.svelte';
 import Stage from './Stage.svelte';
 import { patchLayout } from './trail';
 import { PATCH_PX, type TrailMode } from './types';
@@ -16,8 +18,9 @@ let { folder, trailMode = 'steps' }: { folder: string; trailMode?: TrailMode } =
 
 // The page re-creates this component when the folder changes (`{#key folder}`), so initial values are right.
 // svelte-ignore state_referenced_locally
-const session = new Session(folder, trailMode);
-onMount(() => void session.load());
+const sequence = new Sequence(folder, trailMode);
+onMount(() => void sequence.load());
+const session = $derived(sequence.session);
 
 let phone = $state(false);
 let patchEl: HTMLDivElement | undefined = $state();
@@ -61,6 +64,10 @@ function keydown(e: KeyboardEvent) {
 			e.preventDefault();
 			session.undo();
 		}
+		return;
+	}
+	if (e.key === '{' || e.key === '}') {
+		sequence.cycle(e.key === '}' ? 1 : -1);
 		return;
 	}
 	if (session.stage === 'points') {
@@ -125,7 +132,7 @@ function keydown(e: KeyboardEvent) {
 	</main>
 	<nav class="filmstrip empty"></nav>
 {:else}
-	<main class="stage" class:marking={session.stage === 'points'}>
+	<main class="stage" class:marking={session.stage === 'points'} class:tinted={session.hue !== 0} style:--hue="{session.hue}deg">
 		<div class="dock top">
 			<div class="island start">
 				<span class="wordmark desk">pin<b>frame</b></span>
@@ -161,7 +168,7 @@ function keydown(e: KeyboardEvent) {
 						</button>
 					{/if}
 					<span class="sep"></span>
-					<a class="btn primary" href="/pin/export?folder={encodeURIComponent(folder)}">Preview</a>
+					<a class="btn primary" href="/pin/export?folder={encodeURIComponent(folder)}&feature={encodeURIComponent(session.name)}">Preview</a>
 					<div class="bar"></div>
 				</div>
 			{:else}
@@ -176,18 +183,22 @@ function keydown(e: KeyboardEvent) {
 			{/if}
 		</div>
 
-		<Stage {session}>
-			{#if session.toast}
-				<div class="overlay-msg island toast">
-					<span>{session.toast.text}</span>
-					{#if session.toast.canUndo}
-						<button class="btn" onclick={() => session.undo()}>Undo <kbd class="desk">⌘Z</kbd></button>
-					{/if}
-				</div>
-			{:else if session.stage === 'points' || editable || skipped}
-				<div class="overlay-msg hint desk">{hint}</div>
-			{/if}
-		</Stage>
+		<Features {sequence} />
+
+		{#key session}
+			<Stage {session}>
+				{#if session.toast}
+					<div class="overlay-msg island toast">
+						<span>{session.toast.text}</span>
+						{#if session.toast.canUndo}
+							<button class="btn" onclick={() => session.undo()}>Undo <kbd class="desk">⌘Z</kbd></button>
+						{/if}
+					</div>
+				{:else if session.stage === 'points' || editable || skipped}
+					<div class="overlay-msg hint desk">{hint}</div>
+				{/if}
+			</Stage>
+		{/key}
 
 		{#if session.stage === 'fix'}
 			<div class="dock bottom">
@@ -250,5 +261,7 @@ function keydown(e: KeyboardEvent) {
 		{/if}
 	</main>
 
-	<Filmstrip {session} />
+	{#key session}
+		<Filmstrip {session} />
+	{/key}
 {/if}

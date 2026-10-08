@@ -429,3 +429,87 @@
 		stroke-dashoffset: calc(var(--o) - 30px);
 	}
 }
+
+/* features: the panel under the top dock, and each feature's colour as a turn of the overlay's hue */
+
+.pinframe {
+	.tinted .trail {
+		filter: hue-rotate(var(--hue));
+	}
+	.features {
+		position: absolute;
+		top: 62px;
+		left: 14px;
+		min-width: 168px;
+		padding: 8px;
+		gap: 6px;
+	}
+	.features ul {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.features li {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		height: 30px;
+		padding: 0 8px;
+		border-radius: 8px;
+	}
+	.features li.on {
+		background: rgba(255, 255, 255, 0.08);
+	}
+	.features .pick {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex: 1;
+		height: 100%;
+		padding: 0;
+		border: 0;
+		background: none;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.features li:not(.on) .pick {
+		color: var(--muted);
+	}
+	.features .swatch {
+		flex: none;
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		background: var(--accent);
+		filter: hue-rotate(var(--hue));
+	}
+	.features .name {
+		flex: 1;
+		min-width: 0;
+		height: 24px;
+		padding: 0 6px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: rgba(0, 0, 0, 0.3);
+		color: inherit;
+		font: inherit;
+	}
+	.features .note.warn {
+		color: var(--lost);
+		font-size: 12px;
+	}
+	.features .actions {
+		display: flex;
+		gap: 4px;
+	}
+	.features .actions .btn {
+		height: 28px;
+		padding: 0 8px;
+		font-size: 12px;
+	}
+}
