@@ -46,6 +46,7 @@ One coordinating thread runs the plan; agents do the card work. The coordinator 
 | [E2](todos/E2-serve-endpoint.md) | enframe-serve endpoint that runs pinframe | enframe phase-2 | enframe repo | Opus | M |
 | [E3](todos/E3-marking-screen.md) | Marking screen in enframe | E2 | enframe repo | Opus | L |
 | [E4](todos/E4-preview-export.md) | Preview and export screen in enframe | E3 | enframe repo | Sonnet | M |
+| [E6](todos/E6-multiple-features.md) | Several features per sequence, one clip each | E3 | enframe repo | Opus | L |
 
 Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md), [A1](todos/done/1006-A1-tracking-benchmark.md), [B1](todos/done/1006-B1-colour.md), [F1](todos/done/1006-F1-python-reference.md), [B2](todos/done/1006-B2-capture-time-order.md), [A4](todos/done/1006-A4-search-window.md), [A5a](todos/done/1006-A5a-points-tracker.md), [D2](todos/done/1006-D2-build-downloads.md), [A5b](todos/done/1006-A5b-points-syntax.md) (design: [A5](todos/done/1006-A5-reference-points.md)), [A2](todos/done/1006-A2-tracker-sensitivity.md), [A3](todos/done/1006-A3-track-edge.md) (kept 1024), [B4](todos/done/1006-B4-zoom-from-exif.md), [A6](todos/done/1006-A6-skip-photos.md), [B5](todos/done/1006-B5-exif-followups.md), [E5](todos/done/1006-E5-marking-mockup.md), [D1](todos/done/1006-D1-linux-build.md), [M1](todos/done/1007-M1-serve.md), [M2](todos/done/1007-M2-marking-live.md), [M3](todos/done/1007-M3-preview-export.md), spikes [W1](todos/done/1007-W1-browser-tests.md) (browser tests, opt-in) and [W2](todos/done/1007-W2-clip-done-state.md) (the clip in the done state).
 
@@ -63,6 +64,7 @@ Made on 2026-10-06:
 - **B4 lens:** a mark without `@zoom` follows the EXIF lens ratio; a typed `@zoom` wins.
 - **E5 trail style:** `steps` is the default, `flow` stays as an option, rebuilt in round 5 as a continuous glow. Mockup signed off 2026-10-06.
 - **E2 timing:** wait for enframe's `phase-2-remote-targets` to merge before starting E2.
+- **Several features per sequence (E6):** researched 2026-10-08 and placed after the enframe integration, because enframe's frame model (a frame per photo with its focal points) and its frame selection are the natural home; the tracker needs no change. Not in scope: several features held still in one clip, which needs per-photo warping.
 - **Browser tests (W1):** in the repository under `web/e2e/`, opt-in through `check.sh --browser`, run for cards that touch `web/`; not a default gate, since it adds half again to every card and needs Chromium on the Mac. Screenshots are artifacts, not diffed against the mockups.
 - **Clip in the done state (W2):** the export's done state shows the clip inline and offers Download and Sidecar links; "Reveal in Finder" only when the page is on localhost.
 - **D1 Linux:** un-deferred 2026-10-06 and done on a Linux host, so the MVP can be developed there too; the macOS build is unchanged.
