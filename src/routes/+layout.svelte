@@ -55,7 +55,8 @@ function suppressWebviewMenu(event: MouseEvent) {
 		position: fixed;
 		top: 12px;
 		left: 14px;
-		z-index: 40;
+		/* Above Standalone's `.corner` (z-index 50), which reserves this corner for the native traffic lights. */
+		z-index: 60;
 	}
 
 	/* The native window's traffic lights sit in this corner on the desktop shell. */
