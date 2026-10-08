@@ -107,7 +107,7 @@ export class Session {
 	}
 
 	get ghost(): Point[] {
-		return this.photo.source === 'lost' ? ghostOffsets(this.photo, this.ref, this.zoom) : [];
+		return this.photo.source === 'lost' && this.photo.w ? ghostOffsets(this.photo, this.ref, this.zoom) : [];
 	}
 
 	/** The folder's photos and this feature's saved marks, if any; a saved feature tracks once it is shown. */
@@ -236,7 +236,7 @@ export class Session {
 	mark(pts: Point[], soft = false): void {
 		const p = this.photo;
 		const i = this.current;
-		if (p.source !== 'lost') return;
+		if (p.source !== 'lost' || !pts.length) return;
 		if (!inBounds(pts)) {
 			this.showToast(`Part of the mark falls outside ${p.name}: not marked`, false);
 			return;
