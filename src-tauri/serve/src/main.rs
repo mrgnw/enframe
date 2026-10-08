@@ -1142,7 +1142,7 @@ mod tests {
             assert_eq!(status, expected, "{body}: {error}");
         }
         assert!(
-            !sandbox.base.join("inbox/series.pin.json").exists(),
+            !sandbox.base.join("inbox/series.stabilize.json").exists(),
             "a rejected request must not write the document"
         );
     }
@@ -1181,7 +1181,8 @@ mod tests {
         assert_eq!(sidecar["photos"][0]["width"], 10);
         assert_eq!(sidecar["photos"][0]["note"], "your mark");
 
-        let document = std::fs::read_to_string(sandbox.base.join("inbox/series.pin.json")).unwrap();
+        let document =
+            std::fs::read_to_string(sandbox.base.join("inbox/series.stabilize.json")).unwrap();
         let document: Value = serde_json::from_str(&document).unwrap();
         assert_eq!(
             document["features"][0]["marks"]["points"],
@@ -1208,7 +1209,8 @@ mod tests {
         let sidecar: Value = serde_json::from_str(&body).unwrap();
         assert_eq!(sidecar["run"], "5,6");
 
-        let document = std::fs::read_to_string(sandbox.base.join("inbox/series.pin.json")).unwrap();
+        let document =
+            std::fs::read_to_string(sandbox.base.join("inbox/series.stabilize.json")).unwrap();
         let document: Value = serde_json::from_str(&document).unwrap();
         assert_eq!(document["version"], 2);
         assert_eq!(document["features"][0]["name"], "cloud");

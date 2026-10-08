@@ -1,26 +1,26 @@
 <script lang="ts">
-// `/pin?folder=PATH` opens the marking screen on that folder; `?trail=steps|flow|fade` picks the trail
+// `/stabilize?folder=PATH` opens the marking screen on that folder; `?trail=steps|flow|fade` picks the trail
 // style. Without a folder: the picker of the connected instance.
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import { pickDirectory } from '$lib/bridge';
-import Marking from '$lib/pinframe/Marking.svelte';
-import { trailModeFrom } from '$lib/pinframe/trail';
+import Marking from '$lib/stabilize/Marking.svelte';
+import { trailModeFrom } from '$lib/stabilize/trail';
 
 const folder = $derived(page.url.searchParams.get('folder'));
 const trailMode = $derived(trailModeFrom(page.url.searchParams.get('trail')));
 
 async function choose() {
 	const picked = await pickDirectory('Folder of photos');
-	if (picked) await goto(`/pin?folder=${encodeURIComponent(picked)}`);
+	if (picked) await goto(`/stabilize?folder=${encodeURIComponent(picked)}`);
 }
 </script>
 
 <svelte:head>
-	<title>pinframe{folder ? ' · fix lost photos' : ''}</title>
+	<title>Stabilize{folder ? ' · fix lost photos' : ''}</title>
 </svelte:head>
 
-<div class="pinframe">
+<div class="stabilize">
 	{#if folder}
 		{#key folder}
 			<Marking {folder} {trailMode} />

@@ -1,4 +1,4 @@
-// The screen's calls to the connected instance's pinframe routes. Every change posts the whole document; the
+// The screen's calls to the connected instance's Stabilize routes. Every change posts the whole document; the
 // newest post wins, and an answer to an older one is dropped (the server kills the older run and answers 409,
 // but a slow network can still deliver old answers out of order, so the sequence number decides).
 
@@ -29,17 +29,23 @@ async function absent(document: string): Promise<boolean> {
 	return listing !== null && !listing.entries.some((e) => e.name === name);
 }
 
-// A document from before features, `{marks}`, reads as one feature; the next save writes it in the new shape.
-async function loadDocument(folder: string): Promise<Feature[]> {
-	const document = `${trimmed(folder)}.pin.json`;
-	if (await absent(document)) return [];
-	let text: string;
+async function readDocument(document: string): Promise<string | null> {
+	if (await absent(document)) return null;
 	try {
-		text = await readTextFile(document);
+		return await readTextFile(document);
 	} catch (e) {
-		if (MISSING.test((e as Error).message)) return [];
+		if (MISSING.test((e as Error).message)) return null;
 		throw e;
 	}
+}
+
+// A document saved as `<folder>.pin.json`, before the feature was Stabilize, is read when `<folder>.stabilize.json`
+// is absent, and one from before features, `{marks}`, reads as one feature; the next save writes the new name and
+// shape.
+async function loadDocument(folder: string): Promise<Feature[]> {
+	const text =
+		(await readDocument(`${trimmed(folder)}.stabilize.json`)) ?? (await readDocument(`${trimmed(folder)}.pin.json`));
+	if (text === null) return [];
 	const saved = JSON.parse(text) as { features?: Feature[]; marks?: Marks };
 	return saved.features ?? (saved.marks ? [{ name: FIRST_FEATURE, marks: saved.marks }] : []);
 }
@@ -127,7 +133,7 @@ export interface Exported {
 	sidecar: Sidecar;
 }
 
-/** Renders the clip. `onLine` sees each line pinframe prints; rejects with the server's message on failure. */
+/** Renders the clip. `onLine` sees each line the tracker reports; rejects with the server's message on failure. */
 export async function exportClip(req: ExportRequest, onLine: (line: string) => void): Promise<Exported> {
 	const resp = await fetch(`${currentConnection()}/api/stabilize/export`, {
 		method: 'POST',

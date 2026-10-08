@@ -1,12 +1,12 @@
-// pinframe's preview and export on enframe's /pin/export, against serve and the real pinframe binary: open the
+// Stabilize's preview and export on enframe's /stabilize/export, against serve and the real tracker: open the
 // preview of a folder marked with the train clouds job, change the padding, export the clip into the config's
 // throwaway work folder, and check its sidecar against the CLI's own run of the same document. Screenshots are
-// artifacts in captures/e4/. The document is removed afterwards, so the marking walkthrough starts fresh.
+// artifacts in captures/stabilize/e4/. The document is removed afterwards, so the marking walkthrough starts fresh.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, expect, type Page, test } from '@playwright/test';
-import { capture, count, settled } from './pin';
+import { capture, count, STABILIZE_BIN, settled } from './stabilize';
 
 type Point = [number, number];
 interface Marks {
@@ -24,20 +24,20 @@ interface Row {
 
 const FOLDER = process.env.ENFRAME_E2E_FOLDER ?? '';
 const WORK = process.env.ENFRAME_E2E_WORK ?? '';
-const PINFRAME_REPO = process.env.ENFRAME_E2E_PINFRAME_REPO ?? '';
-const PINFRAME_BIN = process.env.PINFRAME_BIN ?? join(PINFRAME_REPO, 'rust/target/release/pinframe');
-const DOCUMENT = `${FOLDER}.pin.json`;
+const DOCUMENT = `${FOLDER}.stabilize.json`;
+/** The name the document had before the feature was Stabilize, still read when the new one is absent. */
+const OLD_DOCUMENT = `${FOLDER}.pin.json`;
 const OUT = join(WORK, 'e4 clip');
 const REMOTE_OUT = join(WORK, 'r1 remote clip');
 const CLI_OUT = join(WORK, 'e4 cli.json');
-const SHOTS = 'captures/e4';
+const SHOTS = 'captures/stabilize/e4';
 
 const parsePoints = (text: string): Point[] => text.split('/').map((p) => p.split(',').map(Number) as Point);
 const formatPoints = (points: Point[]) => points.map(([x, y]) => `${x},${y}`).join('/');
 
-/** The marks of the train clouds job, from pinframe's analysis/train_clouds_all.sh. */
+/** The marks of the train clouds job, from analysis/stabilize/train_clouds_all.sh. */
 function scriptMarks(): Marks {
-	const script = readFileSync(join(PINFRAME_REPO, 'analysis', 'train_clouds_all.sh'), 'utf8');
+	const script = readFileSync(join('analysis', 'stabilize', 'train_clouds_all.sh'), 'utf8');
 	const points = /--points (\S+)/.exec(script)?.[1];
 	if (!points) throw new Error('no --points in analysis/train_clouds_all.sh');
 	const at: Marks['at'] = {};
@@ -67,6 +67,7 @@ async function drawn(page: Page) {
 
 test.afterAll(() => {
 	rmSync(DOCUMENT, { force: true });
+	rmSync(OLD_DOCUMENT, { force: true });
 });
 
 test('export: preview a marked folder, change the padding, export, match the CLI', async ({ page }) => {
@@ -74,7 +75,7 @@ test('export: preview a marked folder, change the padding, export, match the CLI
 	expect(FOLDER).not.toBe('');
 	mkdirSync(SHOTS, { recursive: true });
 	const marks = scriptMarks();
-	writeFileSync(DOCUMENT, JSON.stringify({ version: 1, folder: FOLDER, marks }, null, '\t'));
+	writeFileSync(OLD_DOCUMENT, JSON.stringify({ version: 1, folder: FOLDER, marks }, null, '\t'));
 	const errors: string[] = [];
 	page.on('pageerror', (e) => errors.push(e.message));
 	page.on('console', (m) => {
@@ -85,7 +86,7 @@ test('export: preview a marked folder, change the padding, export, match the CLI
 		if (r.url().endsWith('/api/stabilize/track')) tracks.push(JSON.parse(r.postData() ?? '{}').pad ?? 'none');
 	});
 
-	await page.goto(`/pin/export?folder=${encodeURIComponent(FOLDER)}`);
+	await page.goto(`/stabilize/export?folder=${encodeURIComponent(FOLDER)}`);
 	await expect(page.locator('.clip canvas')).toBeVisible({ timeout: 120_000 });
 	await drawn(page);
 	await expect(page.locator('#play')).toContainText('❚');
@@ -129,7 +130,7 @@ test('export: preview a marked folder, change the padding, export, match the CLI
 		.filter((f) => f.endsWith('.avif') && !f.startsWith('.'))
 		.sort()
 		.map((f) => join(FOLDER, f));
-	execFileSync(PINFRAME_BIN, [...photos, ...cliArgs(marks), '--pad', 'transparent', '--out', CLI_OUT], {
+	execFileSync(STABILIZE_BIN, [...photos, ...cliArgs(marks), '--pad', 'transparent', '--out', CLI_OUT], {
 		stdio: 'ignore'
 	});
 	const cli: { photos: Row[] } = JSON.parse(readFileSync(CLI_OUT, 'utf8'));
@@ -144,7 +145,7 @@ test('export: preview a marked folder, change the padding, export, match the CLI
 	expect(await count(page)).toBe(`${lost} to fix`);
 	await page.setViewportSize({ width: 390, height: 844 });
 	await capture(page, '6-fix-phone');
-	await page.goto(`/pin/export?folder=${encodeURIComponent(FOLDER)}`);
+	await page.goto(`/stabilize/export?folder=${encodeURIComponent(FOLDER)}`);
 	await expect(page.locator('#play')).toContainText('❚', { timeout: 120_000 });
 	await capture(page, '7-preview-phone');
 	expect(errors).toEqual([]);
@@ -156,7 +157,7 @@ test('export: Reveal in Finder is offered only on a local instance', async ({ ba
 	const browser = await chromium.launch({ args: [`--host-resolver-rules=MAP ${remote.hostname} 127.0.0.1`] });
 	try {
 		const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-		await page.goto(new URL(`/pin/export?folder=${encodeURIComponent(FOLDER)}`, remote).href);
+		await page.goto(new URL(`/stabilize/export?folder=${encodeURIComponent(FOLDER)}`, remote).href);
 		await expect(page.locator('.clip canvas')).toBeVisible({ timeout: 120_000 });
 		await drawn(page);
 		await page.fill('.export .field .path', REMOTE_OUT);

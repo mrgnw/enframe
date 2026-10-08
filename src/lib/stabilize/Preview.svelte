@@ -7,7 +7,7 @@ import Export from './Export.svelte';
 import { FPS_PRESETS, type PadChoice } from './clip';
 import { Preview } from './preview-session.svelte';
 import Strip from './PreviewStrip.svelte';
-import './pin.css';
+import './stabilize.css';
 import './marking.css';
 import './preview.css';
 
@@ -21,7 +21,7 @@ onMount(() => {
 	return () => session.dispose();
 });
 
-const back = $derived(`/pin?folder=${encodeURIComponent(folder)}`);
+const back = $derived(`/stabilize?folder=${encodeURIComponent(folder)}`);
 const n = $derived(session.rows.length);
 const PADS: { v: PadChoice; title: string }[] = [
 	{ v: 'none', title: 'No padding: the crop shrinks until every photo fills it' },
@@ -81,7 +81,7 @@ function keydown(e: KeyboardEvent) {
 				{:else}
 					<h1>Can't open <b>{session.name}</b></h1>
 					<p>{session.error}</p>
-					<a class="btn primary" href={session.absFolder ? back : '/pin'}>{session.absFolder ? 'Back to the marks' : 'Choose another folder'}</a>
+					<a class="btn primary" href={session.absFolder ? back : '/stabilize'}>{session.absFolder ? 'Back to the marks' : 'Choose another folder'}</a>
 				{/if}
 			</div>
 		</section>

@@ -1,6 +1,6 @@
-/* The preview and export screen's own styles, from mockups/02-preview.html, on top of pin.css. */
+/* The preview and export screen's own styles, from mockups/02-preview.html, on top of stabilize.css. */
 
-.pinframe {
+.stabilize {
 	.stage.preview {
 		grid-template-rows: none;
 		place-items: center;
@@ -368,7 +368,7 @@
 
 /* several features: the picker's names, Export all beside Export, and every exported clip */
 
-.pinframe {
+.stabilize {
 	.export #feature {
 		flex-wrap: wrap;
 		justify-content: flex-end;

@@ -258,8 +258,8 @@ const shortcuts = [
 							<Command.LinkItem href="/" onSelect={() => (open = false)}>
 								<span>Open Single Image&hellip;</span>
 							</Command.LinkItem>
-							<Command.LinkItem href="/pin" onSelect={() => (open = false)}>
-								<span>Track a Series with pinframe&hellip;</span>
+							<Command.LinkItem href="/stabilize" onSelect={() => (open = false)}>
+								<span>Stabilize a Series&hellip;</span>
 							</Command.LinkItem>
 						</Command.Group>
 					{/if}

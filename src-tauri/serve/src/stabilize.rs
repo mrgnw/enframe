@@ -61,7 +61,7 @@ impl Drop for CancelOnDrop {
 type Point = [f64; 2];
 
 // One feature's marks. The document the marking UI edits is a list of named features,
-// saved beside the folder as `<folder>.pin.json`; each feature is one tracker run. The
+// saved beside the folder as `<folder>.stabilize.json`; each feature is one tracker run. The
 // marks' fields are the tracker's: `points` is the first photo's, `at` and `near` map a
 // photo to its mark and soft mark, `skip` lists hidden photos, `order` is the order.
 #[derive(Deserialize, Serialize)]
@@ -433,7 +433,7 @@ fn parse_args(body: Value) -> ApiResult<(RunArgs, usize)> {
 // The folder must be readable and the document beside it writable.
 fn confine_folder(state: &AppState, folder: &str) -> ApiResult<(PathBuf, PathBuf)> {
     let folder = state.roots.check_read(folder).map_err(denied)?;
-    let document = format!("{}.pin.json", folder.display());
+    let document = format!("{}.stabilize.json", folder.display());
     let document = state.roots.check_write(&document).map_err(denied)?;
     Ok((folder, document))
 }

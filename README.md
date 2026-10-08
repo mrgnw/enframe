@@ -187,19 +187,23 @@ ability to connect to an instance on another machine — that app is an off-loop
 too, so the address test would have let it browse a library and then refused it every
 export. Widen the roots and you widen what any caller can reach.
 
-#### Tracking a series with pinframe
+#### Stabilize
 
-Two routes run [pinframe](https://github.com/mrgnw/pinframe), which holds one feature
-still across a photo series. Serve calls it as a library, on a blocking thread.
+Stabilize holds one feature still across a photo series: mark it on the first photo,
+Track, fix the photos it lost, then export a clip. It is the `stabilize` crate in
+`src-tauri/stabilize/`, a library serve calls in-process and a CLI for scripts; see
+[docs/stabilize/README.md](docs/stabilize/README.md). It was developed as
+[pinframe](https://github.com/mrgnw/pinframe), now archived. Open it from the command bar
+("Stabilize a Series…") or at `/stabilize?folder=PATH`.
 
 - `POST /api/stabilize/track` `{folder, features, feature, pad?}` saves the document,
-  `features` (`[{name, marks}]`, one pinframe run each), beside the folder as
-  `<folder>.pin.json`, tracks the feature named `feature` without rendering, using
-  pinframe's feature cache, and answers with the sidecar: each photo's crop, plus its size
-  and the tracker's note. One run per folder: a newer request stops the one in flight.
+  `features` (`[{name, marks}]`, one tracker run each), beside the folder as
+  `<folder>.stabilize.json` (a `<folder>.pin.json` is still read when that is absent),
+  tracks the feature named `feature` without rendering, using the feature cache, and
+  answers with the sidecar: each photo's crop, plus its size and the tracker's note. One run per folder: a newer request stops the one in flight.
 - `POST /api/stabilize/export` `{folder, features, feature, out?, pad?, fps?, frames?, vf?}`
   renders the feature's clip, `<folder>-<feature>.avif` by default, and answers with server-sent events: `progress`
-  `{line}` for each line pinframe prints, then `done` `{out, sidecar}` or `error`
+  `{line}` for each line the tracker reports, then `done` `{out, sidecar}` or `error`
   `{error, superseded?}`. A bad request still answers 400 or 403 before anything runs.
   Closing the connection stops the run.
 - `POST /api/stabilize/reveal` `{path}` shows a file inside a read root in Finder

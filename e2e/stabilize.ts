@@ -1,4 +1,4 @@
-// What the pinframe walkthroughs share: the config's throwaway folder, the train clouds job's known marks, and
+// What the Stabilize walkthroughs share: the config's throwaway folder, the train clouds job's known marks, and
 // the moves on the marking screen (read the photo on screen, click a point given in photo pixels, fix the lost
 // photos one by one).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -19,14 +19,14 @@ export interface Feature {
 
 export const FOLDER = process.env.ENFRAME_E2E_FOLDER ?? '';
 export const WORK = process.env.ENFRAME_E2E_WORK ?? '';
-export const PINFRAME_REPO = process.env.ENFRAME_E2E_PINFRAME_REPO ?? '';
-export const DOCUMENT = `${FOLDER}.pin.json`;
+export const STABILIZE_BIN = process.env.STABILIZE_BIN ?? 'src-tauri/target/release/stabilize';
+export const DOCUMENT = `${FOLDER}.stabilize.json`;
 
 const parsePoints = (text: string): Point[] => text.split('/').map((p) => p.split(',').map(Number) as Point);
 
-/** The known marks of the train clouds job, from pinframe's analysis/train_clouds_all.sh. */
+/** The known marks of the train clouds job, from analysis/stabilize/train_clouds_all.sh. */
 export function scriptMarks(): Required<Pick<Marks, 'points' | 'at'>> {
-	const script = readFileSync(join(PINFRAME_REPO, 'analysis', 'train_clouds_all.sh'), 'utf8');
+	const script = readFileSync(join('analysis', 'stabilize', 'train_clouds_all.sh'), 'utf8');
 	const points = /--points (\S+)/.exec(script)?.[1];
 	if (!points) throw new Error('no --points in analysis/train_clouds_all.sh');
 	const at: NonNullable<Marks['at']> = {};
@@ -44,10 +44,10 @@ export const readFeatures = (): Feature[] => JSON.parse(readFileSync(DOCUMENT, '
 export const plantDocument = (marks: Marks) =>
 	writeFileSync(DOCUMENT, `${JSON.stringify({ version: 2, features: [{ name: 'Feature 1', marks }] }, null, '\t')}\n`);
 
-/** A screenshot of a state the R1 parity tests added, in captures/r1/. */
+/** A screenshot of a state the R1 parity tests added, in captures/stabilize/r1/. */
 export async function capture(page: Page, name: string) {
-	mkdirSync('captures/r1', { recursive: true });
-	await page.screenshot({ path: `captures/r1/${name}.png` });
+	mkdirSync('captures/stabilize/r1', { recursive: true });
+	await page.screenshot({ path: `captures/stabilize/r1/${name}.png` });
 }
 
 export const count = async (page: Page) => ((await page.locator('.count').textContent()) ?? '').trim();

@@ -1,6 +1,6 @@
-/* The marking screen's own styles, from mockups/01-marking.html and 00-start.html, on top of pin.css. */
+/* The marking screen's own styles, from mockups/01-marking.html and 00-start.html, on top of stabilize.css. */
 
-.pinframe {
+.stabilize {
 	--before: #b49cff;
 	--after: #3fd8c4;
 
@@ -432,7 +432,7 @@
 
 /* features: the panel under the top dock, and each feature's colour as a turn of the overlay's hue */
 
-.pinframe {
+.stabilize {
 	.tinted .trail {
 		filter: hue-rotate(var(--hue));
 	}

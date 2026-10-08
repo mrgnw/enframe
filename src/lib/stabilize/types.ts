@@ -14,7 +14,7 @@ export interface Marks {
 	order?: 'time' | 'name';
 }
 
-/** One thing held still, and one CLI run; the document saved as `<folder>.pin.json` is a list of them. */
+/** One thing held still, and one CLI run; the document saved as `<folder>.stabilize.json` is a list of them. */
 export interface Feature {
 	name: string;
 	marks: Marks;

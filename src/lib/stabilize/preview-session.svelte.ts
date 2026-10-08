@@ -31,7 +31,7 @@ export interface View {
 
 export interface Exporting {
 	status: 'idle' | 'running' | 'done' | 'failed';
-	/** 0–1, from the lines pinframe prints. */
+	/** 0–1, from the lines the tracker reports. */
 	progress: number;
 	text: string;
 	out: string;
@@ -334,7 +334,7 @@ export class Preview {
 		const out = this.outOf(i);
 		const started = Date.now();
 		const total = this.view.rows.length;
-		// pinframe prints its lines in bursts: nothing while it tracks, every photo's line when tracking ends,
+		// The tracker reports its lines in bursts: nothing while it tracks, every photo's line when tracking ends,
 		// then the clip's size when encoding starts. So the bar creeps toward the end of the phase it is in.
 		let cap = 0.45;
 		this.exps[i] = { ...idle(), status: 'running', progress: 0.03, text: `Tracking ${total} photos…` };

@@ -33,6 +33,6 @@ scripts/lr_backup/
 /.ruff_cache/
 .claude/settings.local.json
 
-# Stabilize: the train clouds samples (a symlink to pinframe's), check.sh outputs
+# Stabilize: the train clouds samples (a local symlink) and check.sh's outputs
 /samples
 /out/

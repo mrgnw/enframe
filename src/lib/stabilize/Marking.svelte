@@ -11,7 +11,7 @@ import Stage from './Stage.svelte';
 import { patchLayout } from './trail';
 import { PATCH_PX, type TrailMode } from './types';
 import { photoUrl } from './api';
-import './pin.css';
+import './stabilize.css';
 import './marking.css';
 
 let { folder, trailMode = 'steps' }: { folder: string; trailMode?: TrailMode } = $props();
@@ -125,7 +125,7 @@ function keydown(e: KeyboardEvent) {
 						{/if}
 					</div>
 				{:else}
-					<a class="btn primary" href="/pin">Choose another folder</a>
+					<a class="btn primary" href="/stabilize">Choose another folder</a>
 				{/if}
 			</div>
 		</section>
@@ -168,7 +168,7 @@ function keydown(e: KeyboardEvent) {
 						</button>
 					{/if}
 					<span class="sep"></span>
-					<a class="btn primary" href="/pin/export?folder={encodeURIComponent(folder)}&feature={encodeURIComponent(session.name)}">Preview</a>
+					<a class="btn primary" href="/stabilize/export?folder={encodeURIComponent(folder)}&feature={encodeURIComponent(session.name)}">Preview</a>
 					<div class="bar"></div>
 				</div>
 			{:else}

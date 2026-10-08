@@ -1,8 +1,8 @@
-// Two features in one folder, on enframe's /pin and /pin/export against serve and the real pinframe binary: the
+// Two features in one folder, on enframe's /stabilize and /stabilize/export against serve and the real tracker: the
 // clouds marked as the marking walkthrough does, then a second feature on the mountain ridge, which the tracker
 // cannot follow from the first photo alone, so it is marked on IMG_4698 and every photo it loses is skipped.
 // Switching keeps both, a reload reads both back, and "Export all" writes two clips whose sidecars match the
-// CLI's own runs of each feature. Screenshots are artifacts in captures/e6/.
+// CLI's own runs of each feature. Screenshots are artifacts in captures/stabilize/e6/.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -14,13 +14,13 @@ import {
 	FOLDER,
 	fixLost,
 	type Marks,
-	PINFRAME_REPO,
 	photoReady,
 	readFeatures,
 	scriptMarks,
+	STABILIZE_BIN,
 	settled,
 	WORK
-} from './pin';
+} from './stabilize';
 
 interface Row {
 	file: string;
@@ -31,8 +31,7 @@ interface Row {
 	source: string;
 }
 
-const PINFRAME_BIN = process.env.PINFRAME_BIN ?? join(PINFRAME_REPO, 'rust/target/release/pinframe');
-const SHOTS = 'captures/e6';
+const SHOTS = 'captures/stabilize/e6';
 const EDGE = 250;
 /** Textured stretches of the ridge: on the first photo, and on IMG_4698 beside the wind turbine. */
 const RIDGE_POINTS: [number, number][] = [
@@ -96,7 +95,7 @@ test('features: mark two features, switch, reload, export all, match the CLI', a
 	});
 
 	// The first feature, as the marking walkthrough marks it.
-	await page.goto(`/pin?folder=${encodeURIComponent(FOLDER)}`);
+	await page.goto(`/stabilize?folder=${encodeURIComponent(FOLDER)}`);
 	await expect.poll(() => names(page)).toEqual(['Feature 1']);
 	await photoReady(page, 'IMG_4667.avif');
 	for (const [x, y] of known.points) await clickPhoto(page, x, y);
@@ -202,7 +201,7 @@ test('features: mark two features, switch, reload, export all, match the CLI', a
 		expect(response.ok()).toBe(true);
 		const exported: { photos: Row[] } = await response.json();
 		const cliOut = join(WORK, `e6 cli ${feature.name}.json`);
-		execFileSync(PINFRAME_BIN, [...photos, ...cliArgs(feature.marks), '--out', cliOut], { stdio: 'ignore' });
+		execFileSync(STABILIZE_BIN, [...photos, ...cliArgs(feature.marks), '--out', cliOut], { stdio: 'ignore' });
 		const cli: { photos: Row[] } = JSON.parse(readFileSync(cliOut, 'utf8'));
 		expect(exported.photos).toHaveLength(57);
 		expect(rects(exported.photos), feature.name).toEqual(rects(cli.photos));

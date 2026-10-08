@@ -249,7 +249,7 @@ In Playwright's Chromium, a Girona photo cropped to its clip frame and the clip 
 
 What differs by platform, all behind `cfg(target_os = "macos")` so the macOS build is unchanged ([D1](../todos/done/1006-D1-linux-build.md)):
 
-- `rust/src/imageio.rs` and the ImageIO, CoreGraphics and CoreFoundation frameworks are macOS-only. Elsewhere `rust/src/imageio_unavailable.rs` stands in with the same signatures, and `decode::format` refuses HEIC and JPEG XL before any entry point reaches them, so `oriented_size`, `profile`, `exif`, `decoder_id`, `memory_cost` and `decode` all fail with the same message. Later, `jxl-oxide` could decode JPEG XL and libheif + libde265 HEIC on Linux.
+- `src-tauri/stabilize/src/imageio.rs` and the ImageIO, CoreGraphics and CoreFoundation frameworks are macOS-only. Elsewhere `rust/src/imageio_unavailable.rs` stands in with the same signatures, and `decode::format` refuses HEIC and JPEG XL before any entry point reaches them, so `oriented_size`, `profile`, `exif`, `decoder_id`, `memory_cost` and `decode` all fail with the same message. Later, `jxl-oxide` could decode JPEG XL and libheif + libde265 HEIC on Linux.
 - Free memory comes from `MemAvailable` in `/proc/meminfo` instead of Mach's `host_statistics64`; the profiler's resident set from `/proc/self/statm`; run IDs from `getrandom(2)` instead of `arc4random_buf`.
 - The Display P3 ICC profile that labels `--frames` PNGs is Apple's on macOS and, elsewhere, a minimal v4 matrix/TRC profile built in `colour::minimal_p3_icc` with the same colorants and the sRGB parametric curve; `colour::from_icc` reads both back as Display P3.
 - Tests that need ImageIO fixtures or ColorSync's profiles run on macOS only; a Linux-only test checks the refusal. `analysis/check.sh` converts the format and colour sets with sips and cjxl on macOS and with Pillow elsewhere, where the HEIC and JPEG XL runs become refusal checks, so it is 19 checks on both.
@@ -316,25 +316,26 @@ cd rust && cargo test --release -- --include-ignored --test-threads=1 --nocaptur
 
 ## Library
 
-The crate is a library plus the `pinframe` CLI over it, so `enframe-serve` can track in-process (`cargo doc --open` in `rust/` has the details):
+The crate is a library plus the `stabilize` CLI over it, so `enframe-serve` tracks in-process (`cargo doc --open -p stabilize` in `src-tauri/` has the details):
 
-- `pinframe::track(&job, &mut log)` checks a `Job` (the photos, their `Marks` and the CLI's other options, typed), tracks and plans the crop, and returns a `Tracked`. A job with no `output` only tracks: nothing is written but feature cache entries.
+- `stabilize::track(&job, &mut log)` checks a `Job` (the photos, their `Marks` and the CLI's other options, typed), tracks and plans the crop, and returns a `Tracked`. A job with no `output` only tracks: nothing is written but feature cache entries.
 - `Tracked::sidecar(run, clip)` gives the `.json` sidecar's data; `Sidecar::to_json()` its bytes. `Tracked::write(&mut log)` renders and publishes the job's clip and sidecar, as the CLI does.
 - Errors are the CLI's messages, as `String`s; nothing exits the process. Progress lines go to `log`, which the CLI prints.
+- `Job::cancel`, an `Arc<AtomicBool>`, stops a run: once set, `track` and `Tracked::write` end with `cancelled` before the next photo, and nothing is published. serve sets it when a newer run supersedes one.
 - Marks are kept in the CLI's text form so they are checked in the same order with the same messages; `Marks::new(points).with_at(photo, &mark).with_near(photo, &mark).with_skip(photo)` builds them from points, and the text reads back to the same `f64`s.
 
 Measured on a 4-core Linux container (2026-10-08): an in-process re-track of the 57 train clouds photos with a warm feature cache takes 1.05 s, 1.02 s of it matching; the same CLI run takes 1.1 to 1.3 s. The 145 ms above is the M4 Pro's track and plan from features in memory (`retrack_bench` in `rust/src/checks.rs`).
 
 ## Files
 
-- `rust/src/lib.rs`: the library: input checks, resource planning, pipeline, outputs.
-- `rust/src/main.rs`: the CLI (same flags as `anchor.py` except box drawing), a thin layer over the library.
-- `rust/src/avif.rs`: libavif decode and encode, libyuv-exact YUV to RGB, RGB to YUV for the encoder.
-- `rust/src/colour.rs`: colour profiles from ICC and nclx, sRGB to Display P3.
-- `rust/src/pixels.rs`: orientation, OpenCV-exact gray and INTER_AREA.
-- `rust/src/sift.rs`: the SIFT port.
-- `rust/src/track.rs`: matching, the RANSAC replay, tracking, lost-photo fill, crop planning.
-- `rust/src/render.rs`: the ordered thread pool, kept photos, frame placement.
-- `rust/src/profile.rs`: per-step wall, CPU and peak memory when `PINFRAME_PROFILE` names a file.
-- `rust/src/checks.rs`: comparisons with Python's dumps and benchmarks, run with `--ignored`.
+- `src-tauri/stabilize/src/lib.rs`: the library: input checks, resource planning, pipeline, outputs.
+- `src-tauri/stabilize/src/main.rs`: the CLI (same flags as `anchor.py` except box drawing), a thin layer over the library.
+- `src-tauri/stabilize/src/avif.rs`: libavif decode and encode, libyuv-exact YUV to RGB, RGB to YUV for the encoder.
+- `src-tauri/stabilize/src/colour.rs`: colour profiles from ICC and nclx, sRGB to Display P3.
+- `src-tauri/stabilize/src/pixels.rs`: orientation, OpenCV-exact gray and INTER_AREA.
+- `src-tauri/stabilize/src/sift.rs`: the SIFT port.
+- `src-tauri/stabilize/src/track.rs`: matching, the RANSAC replay, tracking, lost-photo fill, crop planning.
+- `src-tauri/stabilize/src/render.rs`: the ordered thread pool, kept photos, frame placement.
+- `src-tauri/stabilize/src/profile.rs`: per-step wall, CPU and peak memory when `PINFRAME_PROFILE` names a file.
+- `src-tauri/stabilize/src/checks.rs`: comparisons with Python's dumps and benchmarks, run with `--ignored`.
 - `analysis/bench_rust.py`, `rust_builds.sh`, `rust_task_memory.py`, `rect_diff.py`, `clip_psnr.py`, `frames_psnr.py`, `dump_*.py`, `solve_probe.py`: the measurements above.

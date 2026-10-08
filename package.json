@@ -46,7 +46,7 @@
 		"serve": "cargo run --release --manifest-path src-tauri/Cargo.toml -p enframe-serve --",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"test:e2e": "bun run sveltekit:build && bun run sidecar && playwright test",
+		"test:e2e": "bun run sveltekit:build && bun run sidecar && cargo build --release --manifest-path src-tauri/Cargo.toml -p stabilize && playwright test",
 		"screenshots": "bash scripts/screenshots.sh"
 	},
 	"dependencies": {

@@ -1,20 +1,20 @@
 <script lang="ts">
-// `/pin/export?folder=PATH&feature=NAME`: the feature's clip playing from the folder's saved document (the first
+// `/stabilize/export?folder=PATH&feature=NAME`: the feature's clip playing from the folder's saved document (the first
 // feature without a name), and the export panel.
 import { page } from '$app/state';
-import Preview from '$lib/pinframe/Preview.svelte';
-import '$lib/pinframe/pin.css';
-import '$lib/pinframe/marking.css';
+import Preview from '$lib/stabilize/Preview.svelte';
+import '$lib/stabilize/stabilize.css';
+import '$lib/stabilize/marking.css';
 
 const folder = $derived(page.url.searchParams.get('folder'));
 const feature = $derived(page.url.searchParams.get('feature'));
 </script>
 
 <svelte:head>
-	<title>pinframe{folder ? ' · preview and export' : ''}</title>
+	<title>Stabilize{folder ? ' · preview and export' : ''}</title>
 </svelte:head>
 
-<div class="pinframe">
+<div class="stabilize">
 	{#if folder}
 		{#key folder}
 			<Preview {folder} {feature} />
@@ -25,7 +25,7 @@ const feature = $derived(page.url.searchParams.get('feature'));
 				<div>
 					<h1>Which <b>folder</b>?</h1>
 					<p>The preview plays a folder's clip once its points are marked.</p>
-					<a class="btn primary" href="/pin">Choose a folder</a>
+					<a class="btn primary" href="/stabilize">Choose a folder</a>
 				</div>
 			</section>
 		</main>

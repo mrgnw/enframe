@@ -1,7 +1,7 @@
-// pinframe's MVP walkthrough on enframe's /pin, against serve and the real pinframe binary: place the four
+// Stabilize's MVP walkthrough on enframe's /stabilize, against serve and the real tracker: place the four
 // reference points, Track, fix the lost photos (click the ones with a visible cloud, skip the ones where it
 // is out of frame), reach "All 57 linked", then clear the fix list. The folder is the config's throwaway
-// copy of the sample. Screenshots are artifacts in captures/e3/, not compared with anything.
+// copy of the sample. Screenshots are artifacts in captures/stabilize/e3/, not compared with anything.
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -14,7 +14,6 @@ import {
 	FOLDER,
 	fixLost,
 	type Marks,
-	PINFRAME_REPO,
 	photoReady,
 	photoSize,
 	plantDocument,
@@ -22,10 +21,10 @@ import {
 	scriptMarks,
 	settled,
 	WORK
-} from './pin';
+} from './stabilize';
 
-const SAMPLE_DOC = join(PINFRAME_REPO, 'samples', 'train clouds.pin.json');
-const SHOTS = 'captures/e3';
+const SAMPLE_DOC = join('samples', 'train clouds.stabilize.json');
+const SHOTS = 'captures/stabilize/e3';
 
 /** The photos a person would skip: the script's mark lies within this many px of the photo's edge. */
 const EDGE = 250;
@@ -92,7 +91,7 @@ test('marking: points, track, fix the lost photos, clear the fix list', async ({
 		if (r.url().endsWith('/api/stabilize/track') && r.ok()) sidecar = await r.json();
 	});
 
-	await page.goto(`/pin?folder=${encodeURIComponent(FOLDER)}`);
+	await page.goto(`/stabilize?folder=${encodeURIComponent(FOLDER)}`);
 	const img = page.locator('.stage.marking .photo img');
 	await expect(img).toBeVisible();
 	await page.waitForFunction(() => (document.querySelector('.stage.marking .photo img') as HTMLImageElement)?.complete);
@@ -168,7 +167,7 @@ test('a saved mark outside its photo opens to Clear, Soft mark and Skip', async 
 	const plant = () =>
 		plantDocument({ ...known, at: { ...known.at, [bad]: { points: [[-346, 200], ...known.at[bad].points] } } });
 	const open = async (named: string) => {
-		await page.goto(`/pin?folder=${encodeURIComponent(FOLDER)}`);
+		await page.goto(`/stabilize?folder=${encodeURIComponent(FOLDER)}`);
 		await expect(page.locator('.drop p')).toContainText(`${named}: point -346,200 is outside`, { timeout: 120_000 });
 	};
 	const retracked = async () => {
@@ -234,7 +233,7 @@ test('a soft mark on a lost photo is placed, cleared and kept across a reload', 
 
 	// A document with the script's marks opens already tracked, on the first photo it leaves lost.
 	const opened = page.waitForResponse((r) => r.url().endsWith('/api/stabilize/track') && r.ok());
-	await page.goto(`/pin?folder=${encodeURIComponent(FOLDER)}`);
+	await page.goto(`/stabilize?folder=${encodeURIComponent(FOLDER)}`);
 	const lost = ((await (await opened).json()) as Sidecar).photos.filter((r) => r.source === 'lost').map((r) => r.file);
 	expect(lost.length).toBeGreaterThan(0);
 	await expect(page.locator('.count')).toHaveText(`${lost.length} to fix`);

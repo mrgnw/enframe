@@ -1,4 +1,4 @@
-# pinframe
+# Stabilize
 
 Turn a series of photos into a short clip where one chosen feature, like a cloud seen from a train window, stays in the same place in frame while everything else changes.
 
@@ -7,7 +7,7 @@ Turn a series of photos into a short clip where one chosen feature, like a cloud
 
 ## Usage
 
-Build the Rust CLI, `pinframe`:
+Build the Rust CLI, `stabilize`, from the enframe root:
 
 ```sh
 brew install cmake meson ninja                                # macOS
@@ -15,19 +15,18 @@ sudo apt install cmake meson ninja-build nasm libclang-dev    # Debian/Ubuntu
 ```
 
 ```sh
-cd rust
-cargo build --release
+cargo build --release --manifest-path src-tauri/Cargo.toml -p stabilize
 ```
 
-This needs Rust stable, cmake, meson and ninja, libclang for bindgen (Xcode or the Command Line Tools on macOS, `libclang-dev` on Debian/Ubuntu), nasm on x86, and network access on the first build. The build downloads pinned releases of libavif, dav1d and libaom and links them in statically, so the binary runs without Homebrew. The first build takes about 40 s; later builds take a couple of seconds. See [docs/rust.md](docs/rust.md) for the full build notes and the licences that come with distributing it.
+This needs Rust stable, cmake, meson and ninja, libclang for bindgen (Xcode or the Command Line Tools on macOS, `libclang-dev` on Debian/Ubuntu), nasm on x86, and network access on the first build. The build downloads pinned releases of libavif, dav1d and libaom and links them in statically, so the binary runs without Homebrew. The first build takes about 40 s; later builds take a couple of seconds. See [docs/rust.md](rust.md) for the full build notes and the licences that come with distributing it.
 
 ```sh
-rust/target/release/pinframe "samples/train clouds"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --out out/heart.avif
+src-tauri/target/release/stabilize "samples/train clouds"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --out out/heart.avif
 ```
 
 There's no point-drawing window: `--points x,y[/x,y]...` is required, in first-photo pixels, and gives the feature to hold still. A point is `x,y`; mark several with the same feature's spread, joined by `/` (`675,345/985,345/675,595/985,595` above, a cloud's four quarter points). The anchor that stays still in the clip is their mean.
 
-Input photos may be AVIF, HEIC/HEIF, JPEG XL, JPEG, or PNG. pinframe identifies them from their contents rather than their file extension; other formats are refused before decoding. HEIC and JPEG XL decode through macOS ImageIO, so on Linux those two are refused before decoding, with a message naming the platform. pinframe is built and tested on macOS and Linux; the two track the train clouds set identically (see [docs/rust.md](docs/rust.md#platforms)).
+Input photos may be AVIF, HEIC/HEIF, JPEG XL, JPEG, or PNG. Stabilize identifies them from their contents rather than their file extension; other formats are refused before decoding. HEIC and JPEG XL decode through macOS ImageIO, so on Linux those two are refused before decoding, with a message naming the platform. Stabilize is built and tested on macOS and Linux; the two track the train clouds set identically (see [docs/rust.md](rust.md#platforms)).
 
 Photos are ordered by EXIF capture time (`DateTimeOriginal`, with `SubSecTimeOriginal` breaking ties), falling back to filename order if any photo lacks one, such as a mix of cameras or an export that stripped EXIF. `--order name` always orders by filename. Either way, the run prints which order it used and why.
 
@@ -44,26 +43,26 @@ If a building or trees hide the feature entirely rather than just losing the tra
 When the feature is visible but too hazy or half-hidden to place precisely, `--near PHOTO=x,y/x,y...@zoom` soft-marks it instead. The photo is placed at those points and zoom, like `--at`, but tracking carries on from the last tracked or marked photo as if this one were lost, so a rough position never becomes the reference for the photos after it. It takes the same points, zoom and checks as `--at`, and cannot share a photo with `--at` or `--skip`.
 
 ```sh
-rust/target/release/pinframe "samples/train clouds"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.avif=846,641.5/1046,641.5/846,816.5/1046,816.5 --out out/turbines.avif
+src-tauri/target/release/stabilize "samples/train clouds"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.avif=846,641.5/1046,641.5/846,816.5/1046,816.5 --out out/turbines.avif
 ```
 
 By default the crop shrinks until every photo fills it. `--pad` lets it overhang photos instead, filled with `black`, `white`, a `#rrggbb` colour, or `transparent`:
 
 ```sh
-rust/target/release/pinframe "samples/train clouds"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --points 535,985/805,985/535,1075/805,1075 --pad transparent --out out/portrait.avif
+src-tauri/target/release/stabilize "samples/train clouds"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --points 535,985/805,985/535,1075/805,1075 --pad transparent --out out/portrait.avif
 ```
 
 The extension of `--out` picks the format. The default, `.avif`, is an animated AVIF that keeps transparency and plays in browsers as an image. On the 57-photo train clouds clip it encodes as fast as ProRes, and the file is 9 MB instead of 109 MB. Through ffmpeg, `.mp4` writes H.264, `.mov` writes ProRes 4444 when transparent (for video editors), and `.webm` writes VP9.
 
-Colour stays as the photos have it. pinframe keeps their pixel values and labels the clip, the `--frames` PNGs and the ffmpeg outputs with their colour profile, so the Display P3 photos from an iPhone stay Display P3. A set mixing sRGB and Display P3 photos becomes Display P3: the sRGB photos are converted, which loses nothing, since Display P3 holds every sRGB colour. Unlabelled photos count as sRGB. A photo with any other profile, such as Adobe RGB, stops the run with its name.
+Colour stays as the photos have it. Stabilize keeps their pixel values and labels the clip, the `--frames` PNGs and the ffmpeg outputs with their colour profile, so the Display P3 photos from an iPhone stay Display P3. A set mixing sRGB and Display P3 photos becomes Display P3: the sRGB photos are converted, which loses nothing, since Display P3 holds every sRGB colour. Unlabelled photos count as sRGB. A photo with any other profile, such as Adobe RGB, stops the run with its name.
 
-With `--out result.json`, pinframe writes the sidecar only: it tracks and plans rects but does not render, decode for rendering, or encode. Its `clip` field is `null`.
+With `--out result.json`, the CLI writes the sidecar only: it tracks and plans rects but does not render, decode for rendering, or encode. Its `clip` field is `null`.
 
 SIFT features are cached under `~/Library/Caches/pinframe` on macOS and `~/.cache/pinframe` (or `$XDG_CACHE_HOME/pinframe`) on Linux by default, so a mark-and-retrack loop does not repeat SIFT. Use `--cache DIR` for a project-specific cache or `--no-cache` to bypass it:
 
 ```sh
-rust/target/release/pinframe "samples/train clouds"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --out out/track.json
-rust/target/release/pinframe "samples/train clouds"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --cache /tmp/pinframe-cache --out out/track.json
+src-tauri/target/release/stabilize "samples/train clouds"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --out out/track.json
+src-tauri/target/release/stabilize "samples/train clouds"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --cache /tmp/stabilize-cache --out out/track.json
 ```
 
 Writes the clip and a `.json` beside it: `{"run": ..., "clip": ..., "photos": [...]}`. Each entry in `photos` has the photo's crop rect, normalized to 0–1 like enframe's coordinates. With padding, rects can extend past 0 and 1. Each entry also has the photo's `scale` relative to the first photo and its `source`: `tracked`, `mark` (placed by `--points` or `--at`), `lost` (position estimated from neighbours, the photos to mark next), `soft` (placed by `--near`), or `skipped` (position estimated the same way, for a photo marked `--skip`). `points` lists every point of that photo, `[[x, y], ...]` normalized the same way as the crop rect, in the order given (or carried forward by tracking); the anchor that stays still in the clip is their mean.
@@ -75,21 +74,21 @@ Both files are written under names unique to the run, then renamed into place to
 `--vf` passes ffmpeg filters to a `.mp4`, `.mov` or `.webm` clip (not to `--frames`). `deflicker` evens exposure jumps between shots, `minterpolate=fps=24:mi_mode=blend` blends between photos instead of cutting, and `tpad=stop_mode=clone:stop_duration=2` holds the last photo for 2 seconds:
 
 ```sh
-rust/target/release/pinframe "samples/train clouds"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.avif=846,641.5/1046,641.5/846,816.5/1046,816.5 --vf deflicker,tpad=stop_mode=clone:stop_duration=2 --out out/turbines.mp4
+src-tauri/target/release/stabilize "samples/train clouds"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.avif=846,641.5/1046,641.5/846,816.5/1046,816.5 --vf deflicker,tpad=stop_mode=clone:stop_duration=2 --out out/turbines.mp4
 ```
 
 The whole sample folder, with every mark, is one script:
 
 ```sh
-BIN=rust/target/release/pinframe bash analysis/train_clouds_all.sh out/all.avif
+BIN=src-tauri/target/release/stabilize bash analysis/stabilize/train_clouds_all.sh out/all.avif
 ```
 
-The marking UI lives in [enframe](https://github.com/mrgnw/enframe), at `/pin`; its `bun run test:e2e` covers the walkthrough.
+The marking UI is enframe's `/stabilize`; enframe's `bun run test:e2e` covers the walkthrough.
 
 Run the test suite as the self-check:
 
 ```sh
-cd rust && cargo test --release
+cargo test --release --manifest-path src-tauri/Cargo.toml -p stabilize
 ```
 
 ## How it works
@@ -102,7 +101,7 @@ cd rust && cargo test --release
 6. Each photo is scaled so the anchor is the same size in all of them. The crop then keeps the anchor at one fixed spot in every photo. Portrait, landscape, 1x, 2x and 3x photos mix freely.
 7. The clip is sized at the median photo's zoom, so a single zoomed-out photo doesn't shrink the rest. ffmpeg assembles the crops at `--fps` (default 4).
 
-`docs/rust.md` has how the Rust SIFT and AVIF handling differed from the retired Python reference, by a few parts in ten thousand.
+[rust.md](rust.md) has how the Rust SIFT and AVIF handling differed from the retired Python reference, by a few parts in ten thousand.
 
 ## Results on the train clouds samples
 
@@ -124,17 +123,17 @@ Across scene changes, "the same cloud" is a judgement call. Where the shots allo
 
 ## Next steps, in order
 
-- **Point picking in a UI, not the terminal.** [docs/ui-plan.md](docs/ui-plan.md) and the mockups in `mockups/` sketch a phone-first flow: draw a box on the first photo, then mark any photo flagged `LOST`. The mockups are previewable at [00-start.html](https://mox.xcc.es/pinframe/00-start.html), [01-marking.html](https://mox.xcc.es/pinframe/01-marking.html) and [02-preview.html](https://mox.xcc.es/pinframe/02-preview.html). Marking 24 photos by typing coordinates is the slow part today.
+- **Point picking in a UI, not the terminal.** [docs/ui-plan.md](ui-plan.md) and the mockups in `mockups/stabilize/` sketch a phone-first flow: draw a box on the first photo, then mark any photo flagged `LOST`. The mockups are previewable at [00-start.html](https://mox.xcc.es/pinframe/00-start.html), [01-marking.html](https://mox.xcc.es/pinframe/01-marking.html) and [02-preview.html](https://mox.xcc.es/pinframe/02-preview.html). Marking 24 photos by typing coordinates is the slow part today.
 - **A choice between same-size and full-frame.** Keeping the cloud the same size shrinks zoomed photos. An option to keep each photo's own zoom would fill the frame instead, with the cloud changing size at lens switches.
 - **Soft lock.** Today the anchor is pinned exactly. Letting it drift a little along a smoothed path may look more natural.
 
 ## Research
 
-- [docs/prior-art.md](docs/prior-art.md) — tools that keep one feature fixed across a sequence, and how they name their options.
-- [docs/wasm.md](docs/wasm.md) — can this run in the browser? Pyodide matches a pair correctly but 12x slower than native, SIFT is missing from opencv.js, and browsers can't encode transparent video. Recommendation: track on the server behind enframe-serve, mark in the browser. The proof of concept is in `wasm/`.
-- [docs/rust.md](docs/rust.md) — the Rust port: why it exists, how it compares to `anchor.py` on speed, memory and correctness, and what it means for packaging pinframe into enframe.
-- [docs/performance.md](docs/performance.md) — `anchor.py`'s own performance measurements that the Rust comparison builds on.
-- [docs/ui-plan.md](docs/ui-plan.md) — the marking UI plan behind the `mockups/` sketches.
+- [docs/prior-art.md](prior-art.md) — tools that keep one feature fixed across a sequence, and how they name their options.
+- [docs/wasm.md](wasm.md) — can this run in the browser? Pyodide matches a pair correctly but 12x slower than native, SIFT is missing from opencv.js, and browsers can't encode transparent video. Recommendation: track on the server behind enframe-serve, mark in the browser. The proof of concept is in the archived pinframe repository, `wasm/`.
+- [docs/rust.md](rust.md) — the Rust port: why it exists, how it compares to `anchor.py` on speed, memory and correctness, and what it meant for moving the tracker into enframe.
+- [docs/performance.md](performance.md) — `anchor.py`'s own performance measurements that the Rust comparison builds on.
+- [docs/ui-plan.md](ui-plan.md) — the marking UI plan behind the `mockups/stabilize/` sketches.
 
 ## No-code alternative
 
@@ -144,6 +143,6 @@ The one-click stabilizers (ffmpeg `vidstab`, Warp Stabilizer, Resolve's automati
 
 ## License
 
-This project is licensed under [MIT](LICENSE).
+This project is licensed under [MIT](../../LICENSE).
 
-The Rust CLI depends on the crates and C libraries listed in [docs/rust.md](docs/rust.md#crates-and-licenses), plus [FFmpeg](https://ffmpeg.org) (LGPL/GPL depending on the build; video encoding, run as an external program, not bundled).
+The Rust CLI depends on the crates and C libraries listed in [docs/rust.md](rust.md#crates-and-licenses), plus [FFmpeg](https://ffmpeg.org) (LGPL/GPL depending on the build; video encoding, run as an external program, not bundled).
