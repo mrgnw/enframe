@@ -61,18 +61,30 @@ test('walkthrough: mark, track, fix 25 lost photos, preview, export', async ({ p
 	expect(await count(page)).toBe(`${LOST_AT_FIRST} to fix`);
 	await shot(page, '3-tracked-first-lost');
 
-	// Fix loop. Each round lands on the first lost photo the way a person would (Clear fixed, Home, Tab) once
-	// the last re-track is in, never on the photo auto-advance moved to while that re-track was still running:
-	// the screen sizes the mark's patch from the previous linked photo's scale, and auto-advance reads that
-	// from the old sidecar. Then click the script's mark centre, or skip when it is near the photo's edge.
+	// At zoom 3 a click in the corner would put the ghost's points outside the photo: refused, cursor shows it.
+	const edge = await current(page);
+	await photoReady(page, edge);
+	await page.keyboard.press('1');
+	for (let i = 0; i < 4; i++) await page.keyboard.press(']');
+	await expect(page.locator('.tools .val').last()).toHaveText('3×');
+	await clickPhoto(page, 2, 2);
+	await expect(page.locator('.photo')).toHaveClass(/blocked/);
+	await expect(page.locator('.toast')).toContainText('outside');
+	expect(edge in (readDoc(box.doc).marks.at ?? {})).toBe(false);
+	await expect(page.locator('.looking .label', { hasText: 'Looking for' })).toBeVisible();
+	// Leaving and coming back resets the zoom to the reference's, untouched, for the loop below.
+	await page.keyboard.press('ArrowRight');
+	await page.keyboard.press('ArrowLeft');
+
+	// Fix loop: wait for the last re-track to land, then act on whichever photo auto-advance put on screen,
+	// the way a person would. Its patch and ghost size from the sidecar's confirmed scale, not a locally
+	// set one, so this is safe even right after advancing. Click the script's mark centre, or skip when it
+	// is near the photo's edge.
 	const clicked: string[] = [];
 	const skipped: string[] = [];
-	for (let round = 0; round < 40 && (await count(page)).includes('to fix'); round++) {
+	for (let round = 0; round < 40; round++) {
 		await settled(page);
-		const clear = page.locator('.clear-fixed');
-		if (await clear.count()) await clear.click();
-		await page.keyboard.press('Home');
-		await page.keyboard.press('Tab');
+		if (!(await count(page)).includes('to fix')) break;
 		const file = await current(page);
 		await photoReady(page, file);
 		await expect(page.locator('.looking .label', { hasText: 'Looking for' })).toBeVisible();
@@ -98,6 +110,10 @@ test('walkthrough: mark, track, fix 25 lost photos, preview, export', async ({ p
 					return false; // caught mid-write: the server rewrites the file in place
 				}
 			})
+			.toBe(true);
+		// Auto-advance moves on 450 ms after the action, possibly after the re-track is already in.
+		await expect
+			.poll(async () => !(await count(page)).includes('to fix') || (await current(page)) !== file)
 			.toBe(true);
 	}
 	await settled(page);
@@ -144,6 +160,42 @@ test('walkthrough: mark, track, fix 25 lost photos, preview, export', async ({ p
 	console.log(`exported sidecar vs CLI: max difference ${worst}`);
 	lap('compared');
 	expect(errors).toEqual([]);
+});
+
+test('a saved mark outside its photo opens to Clear and Skip', async ({ page }) => {
+	const other = await sandbox();
+	try {
+		const known = scriptMarks();
+		const photos = readdirSync(other.folder).filter((f) => f.endsWith('.avif')).sort();
+		const bad = Object.keys(known.at)[0];
+		const plant = () => {
+			const at = { ...known.at, [bad]: { points: [[-346, 200], ...known.at[bad].points] as [number, number][] } };
+			writeFileSync(other.doc, JSON.stringify({ version: 1, folder: other.folder, marks: { ...known, at }, photos }, null, '\t') + '\n');
+		};
+		const open = async () => {
+			await page.goto(`/?folder=${encodeURIComponent(other.folder)}`);
+			await expect(page.locator('.drop p')).toContainText(`${bad}: point -346,200 is outside`, { timeout: 120_000 });
+		};
+		plant();
+		await open();
+		await expect(page.locator('.drop .actions button')).toHaveText(['Clear mark', 'Skip photo']);
+		await shot(page, '10-bad-mark');
+		await page.click('button:text("Clear mark")');
+		await expect(page.locator('.count')).toBeVisible({ timeout: 120_000 });
+		await settled(page);
+		expect(bad in (readDoc(other.doc).marks.at ?? {})).toBe(false);
+
+		plant();
+		await open();
+		await page.click('button:text("Skip photo")');
+		await expect(page.locator('.count')).toBeVisible({ timeout: 120_000 });
+		await settled(page);
+		const marks = readDoc(other.doc).marks;
+		expect(bad in (marks.at ?? {})).toBe(false);
+		expect(marks.skip).toContain(bad);
+	} finally {
+		await other.dispose();
+	}
 });
 
 test('baseline marks: the app agrees with analysis/train_clouds_all.sh', async ({ page }) => {
