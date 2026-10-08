@@ -54,11 +54,18 @@ fn format_from_magic(bytes: &[u8]) -> Option<Format> {
 	}
 }
 
+/// The photo's format from its first bytes. Off macOS, HEIC and JPEG XL are refused here, before any
+/// decoding, since they decode through ImageIO (`imageio.rs`).
 fn format(path: &Path) -> Result<Format, String> {
 	let mut bytes = [0; 32];
 	let count = File::open(path).map_err(|e| e.to_string())?.read(&mut bytes).map_err(|e| e.to_string())?;
-	format_from_magic(&bytes[..count])
-		.ok_or_else(|| "unsupported format (supported: AVIF, HEIC, JPEG XL, JPEG, PNG)".into())
+	let format = format_from_magic(&bytes[..count])
+		.ok_or_else(|| "unsupported format (supported: AVIF, HEIC, JPEG XL, JPEG, PNG)".to_string())?;
+	if !cfg!(target_os = "macos") && matches!(format, Format::Heic | Format::Jxl) {
+		let name = if format == Format::Heic { "HEIC" } else { "JPEG XL" };
+		return Err(format!("{name} input needs macOS (ImageIO); not supported on this platform yet"));
+	}
+	Ok(format)
 }
 
 /// The decoder and version that produce this photo's pixels, for the feature cache key. Read once per run.
@@ -329,6 +336,7 @@ mod tests {
 		std::fs::remove_file(path).unwrap();
 	}
 
+	#[cfg(target_os = "macos")]
 	#[test]
 	fn imageio_orientation_fixtures_are_applied() {
 		for (name, reference) in [
@@ -351,13 +359,32 @@ mod tests {
 		}
 	}
 
+	/// Off macOS, HEIC and JPEG XL are refused by every entry point, with the same message, before decoding.
+	#[cfg(not(target_os = "macos"))]
+	#[test]
+	fn heic_and_jxl_are_refused_off_macos() {
+		for (name, expected) in [
+			("orientation-6.heic", "HEIC input needs macOS (ImageIO); not supported on this platform yet"),
+			("orientation-6.jxl", "JPEG XL input needs macOS (ImageIO); not supported on this platform yet"),
+		] {
+			let path = Path::new("testdata").join(name);
+			assert_eq!(oriented_size(&path), Err(expected.into()), "{name}");
+			assert_eq!(profile(&path), Err(expected.into()), "{name}");
+			assert_eq!(exif(&path), Err(expected.into()), "{name}");
+			assert_eq!(decoder_id(&path), Err(expected.into()), "{name}");
+			assert_eq!(memory_cost(&path), Err(expected.into()), "{name}");
+			assert_eq!(decode(&path).map(|i| i.width), Err(expected.into()), "{name}");
+		}
+	}
+
+	#[cfg(target_os = "macos")]
 	#[test]
 	fn profiles_from_fixtures_and_png_labels() {
 		for name in ["orientation-6.heic", "orientation-6.jxl", "orientation-6.png"] {
 			assert_eq!(profile(&Path::new("testdata").join(name)), Ok(Profile::Srgb), "{name}");
 		}
 		let path = std::env::temp_dir().join(format!("pinframe-profile-{}.png", std::process::id()));
-		let p3_icc = crate::imageio::display_p3_icc();
+		let p3_icc = colour::display_p3_icc();
 		let adobe_icc = std::fs::read("/System/Library/ColorSync/Profiles/AdobeRGB1998.icc").unwrap();
 		let write = |icc: Option<&[u8]>, cicp: Option<[u8; 4]>| {
 			let mut info = png::Info::with_size(1, 1);

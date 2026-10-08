@@ -190,8 +190,22 @@ fn default_cap(path: &Path) -> Result<u64, String> {
 
 fn random_hex() -> String {
 	let mut bytes = [0u8; 8];
-	unsafe { libc::arc4random_buf(bytes.as_mut_ptr() as *mut _, bytes.len()) };
+	random_bytes(&mut bytes);
 	bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Fills `bytes` from the system's random source.
+#[cfg(target_os = "macos")]
+pub fn random_bytes(bytes: &mut [u8]) {
+	unsafe { libc::arc4random_buf(bytes.as_mut_ptr() as *mut _, bytes.len()) };
+}
+
+/// Fills `bytes` from the system's random source: `getrandom(2)`, which waits only for the kernel's pool to
+/// be seeded after boot.
+#[cfg(not(target_os = "macos"))]
+pub fn random_bytes(bytes: &mut [u8]) {
+	let got = unsafe { libc::getrandom(bytes.as_mut_ptr() as *mut _, bytes.len(), 0) };
+	assert!(got == bytes.len() as isize, "getrandom failed");
 }
 
 #[cfg(test)]
@@ -288,12 +302,15 @@ mod tests {
 		let root = temp("warm");
 		let cache = FeatureCache { root: root.clone(), cap: u64::MAX };
 		let sample = sample();
-		for (photo, decoder) in [
+		let mut photos = vec![
 			("../samples/train clouds/IMG_4667.avif", "dav1d [dec]:"),
-			("testdata/orientation-6.heic", "ImageIO macOS "),
-			("testdata/orientation-6.jxl", "ImageIO macOS "),
 			("testdata/orientation-6.png", "png 0."),
-		] {
+		];
+		if cfg!(target_os = "macos") {
+			photos.push(("testdata/orientation-6.heic", "ImageIO macOS "));
+			photos.push(("testdata/orientation-6.jxl", "ImageIO macOS "));
+		}
+		for (photo, decoder) in photos {
 			let photo = Path::new(photo);
 			let id = crate::decode::decoder_id(photo).unwrap();
 			assert!(id.contains(decoder), "{id}");

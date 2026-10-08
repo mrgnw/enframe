@@ -1,6 +1,7 @@
 # E3 · Marking screen in enframe
 
 Depends on: E2, E5, A5 · Blocks: E4 · Model: Opus · Size: L (split it if it grows)
+Issue: https://github.com/mrgnw/enframe/issues/7
 Touches: the enframe repo
 
 ## Goal

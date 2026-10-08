@@ -1,0 +1,41 @@
+# pinframe web
+
+The MVP's SvelteKit app (Svelte 5, adapter-node): server routes that wrap the pinframe binary, and from M2 on, the marking and export screens. See `todos/M1-serve.md` and `docs/ui-plan.md`.
+
+```sh
+cd rust && cargo build --release && cd ..   # the binary the routes run
+cd web && pnpm install
+pnpm dev      # http://localhost:7341/, on every interface
+pnpm build && pnpm start   # the production server on the same port
+```
+
+`PINFRAME_BIN` names another binary (default `rust/target/release/pinframe`), `PORT` another port. Paths in requests are absolute or relative to the repository root.
+
+The marking screen (M2, from `mockups/01-marking.html`) is at `/?folder=PATH`: a folder with no document opens on its first photo for the reference points, then Track; a folder with a saved document tracks at once and opens on the first lost photo. `?trail=flow` or `fade` picks another trail style. The screen's code is `src/lib/marking/`: `session.svelte.ts` holds the document, the sidecar and the mockup's rules, `trail.ts` draws the overlay, `Stage`, `Filmstrip` and `Marking` are the components. Thumbnails are made in the browser from the photos themselves. The routes it uses:
+
+- `GET /api/document?folder=`: the folder's photos by name and its saved document, or null.
+- `GET /api/photo?folder=&file=`: the photo's bytes, for the stage and the thumbnails.
+
+The preview and export screen (M3, from `mockups/02-preview.html`) is at `/preview?folder=PATH`, which the marking screen's Preview button opens. It tracks the saved document, draws each photo at its sidecar crop rect into a frame the size of the clip (what the CLI's `place()` does), and loops the frames in the browser, so pad colour and fps change the picture at once; only switching pad between none and a colour re-tracks, because the rects overhang. Its code is `src/lib/preview/`. `POST /api/track` takes an optional `pad` (`transparent`, `black`, `white` or `#rrggbb`; absent is the CLI's default crop), and the export panel posts `/api/export` and reads its event stream.
+
+```sh
+curl -s localhost:7341/api/track -H 'content-type: application/json' \
+  -d '{"folder": "samples/train clouds", "marks": {"points": [[675,345],[985,345],[675,595],[985,595]]}}'
+curl -sN localhost:7341/api/export -H 'content-type: application/json' \
+  -d '{"folder": "samples/train clouds", "marks": {"points": [[675,345],[985,345]]}, "out": "out/web.avif"}'
+```
+
+The export's done state hands over the clip itself. `GET /api/clip?path=` streams a clip (`.avif`, `.mp4`, `.mov`, `.webm`) or the `.json` sidecar beside one, and nothing else: other extensions, and a `.json` with no clip of that name beside it, are refused, so this route cannot be used to read the rest of the disk. It answers byte ranges (206) for video and caches by size and mtime like the photos. The done state (`Done.svelte`) shows an AVIF as an `<img>` and MP4 and WebM as a looping muted `<video controls>`; a browser that cannot decode the clip, and every browser for MOV, gets the download link only. It also links the sidecar and, when the server is a Mac and the page is open on that Mac (`localhost`), offers "Reveal in Finder", which is `POST /api/reveal {path}` running `open -R`.
+
+The server reads any folder and writes any path it is given, by design for one person's machine on a tailnet; do not expose it beyond that.
+
+## Browser tests
+
+`e2e/` holds the Playwright tests (`@playwright/test`, pinned to the version whose Chromium revision is the one installed). One-time setup on a machine: `cd web && pnpm install && pnpm exec playwright install chromium` (about 150 MB, kept in `~/Library/Caches/ms-playwright` on a Mac). Then:
+
+```sh
+cd rust && cargo build --release && cd ..   # the binary the app runs
+cd web && pnpm test:e2e                      # builds, starts the build on port 17342, runs the tests, stops it
+```
+
+The tests run headless, with no flags, on a throwaway folder of hard links to `samples/train clouds` under `out/`, so your own `samples/train clouds.pin.json` is never touched (the run fails if it changes). They walk the app (open, four points, Track, fix the 25 lost photos, Preview, Export) and compare the exported sidecar with a CLI run on the same marks, then compare an export of the marks in `analysis/train_clouds_all.sh` with that script's own run. Screenshots land in `out/e2e/shots/` as artifacts; they are not diffed against the mockups. `bash analysis/check.sh --browser` runs the same tests after the web checks. `PINFRAME_E2E_KEEP=1` keeps the work folder, `PINFRAME_E2E_PORT` changes the port.

@@ -2,10 +2,13 @@
 # The check every task runs before it merges: bash analysis/check.sh
 # Builds from scratch-safe state, lints, tests, runs every README command and each input format, checks the
 # outputs, and compares the train clouds job against the tracking baseline. Exits non-zero if anything fails.
+# --browser also runs the web app's Playwright tests (web/e2e, about 1.5 min more; needs the one-time
+# `cd web && pnpm exec playwright install chromium`). Without it the gate is unchanged.
 set -uo pipefail
 cd "$(dirname "$0")/.."
+browser=
+[[ ${1-} == --browser ]] && browser=1
 
-[[ -e samples ]] || ln -s /Users/user/dev/pinframe/samples samples
 OUT=out/check
 rm -rf "$OUT"
 mkdir -p "$OUT"
@@ -43,30 +46,110 @@ check 'README: .mp4 with --vf' $P "${TURBINES[@]}" "${MARKS[@]}" --vf deflicker,
 check 'README: --frames' $P "${TURBINES[@]}" "${MARKS[@]}" --frames $OUT/frames --out $OUT/frames.avif
 check 'train clouds, all 57 photos' env BIN="$P --no-cache" bash analysis/train_clouds_all.sh $OUT/all.avif
 
-# Each input format: the 8 turbine photos converted, with the same marks.
-for fmt in heic jpeg png jxl; do
+# Each input format: the 8 turbine photos converted, with the same marks. macOS converts with sips and cjxl.
+# Elsewhere Pillow writes the JPEG and PNG sets, and HEIC and JPEG XL, which decode through ImageIO, must be
+# refused with a clear message instead.
+cat > "$OUT/convert.py" <<'PY'
+"""convert.py SRC DST [--srgb]: SRC (AVIF) to the format DST's extension names, upright, keeping EXIF and the
+colour profile. --srgb converts Display P3 pixels to sRGB and labels the file sRGB, like sips -m."""
+
+import io
+import sys
+
+from PIL import Image, ImageCms, ImageOps
+
+src, dst = sys.argv[1], sys.argv[2]
+with Image.open(src) as im:
+	im.load()
+	icc = im.info.get('icc_profile')
+	image = ImageOps.exif_transpose(im)
+if '--srgb' in sys.argv[3:]:
+	srgb = ImageCms.createProfile('sRGB')
+	if icc:
+		image = ImageCms.profileToProfile(image, ImageCms.ImageCmsProfile(io.BytesIO(icc)), srgb, outputMode='RGB')
+	icc = ImageCms.ImageCmsProfile(srgb).tobytes()
+image.save(dst, exif=image.info.get('exif'), icc_profile=icc, quality=95)
+PY
+convert() {
+	# convert SRC DST [--srgb]: DST's extension names the format.
+	if [[ $(uname) == Darwin ]]; then
+		if [[ ${3-} == --srgb ]]; then
+			sips -s format jpeg -m "/System/Library/ColorSync/Profiles/sRGB Profile.icc" "$1" --out "$2" > /dev/null
+		else
+			sips -s format "${2##*.}" "$1" --out "$2" > /dev/null
+		fi
+	else
+		uv run "$OUT/convert.py" "$1" "$2" "${3-}"
+	fi
+}
+refused() {
+	# The command fails, naming the platform.
+	local output
+	output=$("$@" 2>&1) && return 1
+	grep -q 'needs macOS (ImageIO)' <<< "$output"
+}
+if [[ $(uname) == Darwin ]]; then
+	formats=(heic jpeg png jxl)
+else
+	formats=(jpeg png)
+fi
+for fmt in "${formats[@]}"; do
 	mkdir -p "$OUT/$fmt"
 	for f in "${TURBINES[@]}"; do
 		stem=$(basename "$f" .avif)
 		if [[ $fmt == jxl ]]; then
 			sips -s format png "$f" --out "$OUT/$fmt/$stem.png" > /dev/null
 			cjxl -q 90 "$OUT/$fmt/$stem.png" "$OUT/$fmt/$stem.jxl" > /dev/null 2>&1
-			rm "$OUT/$fmt/$stem.png"
+			rm "${OUT:?}/${fmt:?}/${stem:?}.png"
 		else
-			sips -s format "$fmt" "$f" --out "$OUT/$fmt/$stem.$fmt" > /dev/null
+			convert "$f" "$OUT/$fmt/$stem.$fmt"
 		fi
 	done
 	check "input: $fmt" $P "$OUT/$fmt"/*.$fmt --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at "IMG_4703.$fmt=846,641.5/1046,641.5/846,816.5/1046,816.5" --out "$OUT/input-$fmt.json"
 done
+if [[ $(uname) != Darwin ]]; then
+	check 'input: heic refused off macOS' refused $P rust/testdata/orientation-6.heic --points 1,1 --out "$OUT/heic.json"
+	check 'input: jxl refused off macOS' refused $P rust/testdata/orientation-6.jxl --points 1,1 --out "$OUT/jxl.json"
+fi
 
 # Colour: the conversions above keep Display P3. An sRGB set stays sRGB; a mixed set becomes Display P3.
 mkdir -p "$OUT/srgb" "$OUT/mixed"
 for f in "${TURBINES[@]}"; do
-	sips -s format jpeg -m "/System/Library/ColorSync/Profiles/sRGB Profile.icc" "$f" --out "$OUT/srgb/$(basename "$f" .avif).jpeg" > /dev/null
+	convert "$f" "$OUT/srgb/$(basename "$f" .avif).jpeg" --srgb
 done
 cp "$G"/IMG_{4698,4700,4702,4704}.avif "$OUT"/srgb/IMG_{4699,4701,4703,4705}.jpeg "$OUT/mixed/"
 check 'colour: sRGB set' $P "$OUT/srgb"/*.jpeg --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.jpeg=846,641.5/1046,641.5/846,816.5/1046,816.5 --out $OUT/srgb.avif
 check 'colour: mixed set' $P "$OUT/mixed"/* --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.jpeg=846,641.5/1046,641.5/846,816.5/1046,816.5 --out $OUT/mixed.avif
+
+# M1: the web app builds, starts, answers one /api/track round trip and stops. On its own port, so a dev
+# server on 7341 is left alone; the sidecar it returns is checked by verify.py below.
+web_round_trip() {
+	local port=17341 pid up= status=1
+	PORT=$port HOST=127.0.0.1 node web/build > "$OUT/web.log" 2>&1 &
+	pid=$!
+	for _ in $(seq 1 50); do
+		if curl -s -o /dev/null "http://127.0.0.1:$port/"; then
+			up=1
+			break
+		fi
+		sleep 0.2
+	done
+	if [[ $up ]]; then
+		curl -s "http://127.0.0.1:$port/api/track" -H 'content-type: application/json' \
+			-d '{"folder": "samples/train clouds", "marks": {"points": [[1267.5,510],[1782.5,510],[1267.5,710],[1782.5,710]], "at": {"IMG_4698.avif": {"points": [[940,637.5],[1140,637.5],[940,812.5],[1140,812.5]]}}}}' \
+			> "$OUT/web-track.json" && grep -q '"run"' "$OUT/web-track.json" && status=0
+	fi
+	kill "$pid" 2> /dev/null
+	wait "$pid" 2> /dev/null
+	cat "$OUT/web.log" "$OUT/web-track.json"
+	[[ $status -eq 0 ]]
+}
+check 'web: pnpm install and build' bash -c 'cd web && pnpm install --frozen-lockfile && pnpm build'
+check 'web: /api/track round trip' web_round_trip
+if [[ $browser ]]; then
+	# Playwright starts the build above on its own port (17342), walks the app on a hard-linked copy of the samples.
+	check 'web: browser tests' bash -c 'cd web && pnpm exec playwright test > ../out/check/browser.log 2>&1; s=$?; tail -4 ../out/check/browser.log; exit $s'
+fi
 
 cat > "$OUT/verify.py" <<'PY'
 """The outputs are real, and the train clouds job still matches the committed tracking baseline."""
@@ -95,6 +178,8 @@ codec = subprocess.run(
 assert codec == 'h264', codec
 assert len(list((out / 'frames').glob('*.png'))) == 8
 assert json.loads((out / 'track.json').read_text())['clip'] is None
+web = json.loads((out / 'web-track.json').read_text())
+assert web['clip'] is None and len(web['photos']) == 57, 'the web app returned the sidecar of a JSON-only run'
 
 
 def colour(path):

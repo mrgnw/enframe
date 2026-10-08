@@ -370,12 +370,14 @@ fn retrack_bench() {
 	let mut best = std::time::Duration::MAX;
 	for _ in 0..5 {
 		let started = std::time::Instant::now();
-		let photos = features.iter().zip(&sizes).map(|(f, &(w, h))| crate::track::Photo {
-			small: ((w as f64 * k).round() as usize, (h as f64 * k).round() as usize),
-			features: crate::sift::Features {
-				keypoints: f.keypoints.clone(),
-				descriptors: f.descriptors.clone(),
-			},
+		let photos = features.iter().zip(&sizes).map(|(f, &(w, h))| {
+			Ok(crate::track::Photo {
+				small: ((w as f64 * k).round() as usize, (h as f64 * k).round() as usize),
+				features: crate::sift::Features {
+					keypoints: f.keypoints.clone(),
+					descriptors: f.descriptors.clone(),
+				},
+			})
 		});
 		let path = crate::track::fill_lost(
 			crate::track::track(
@@ -385,10 +387,12 @@ fn retrack_bench() {
 				&marks,
 				&vec![None; sizes.len()],
 				&vec![false; sizes.len()],
-			),
+			)
+			.unwrap(),
 			&sizes,
-		);
-		std::hint::black_box(crate::track::plan(&path, &sizes, true));
+		)
+		.unwrap();
+		std::hint::black_box(crate::track::plan(&path, &sizes, true).unwrap());
 		best = best.min(started.elapsed());
 	}
 	println!("retrack_bench: track + plan of {} photos from features in memory: {best:?}", paths.len());

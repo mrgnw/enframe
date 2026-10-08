@@ -1,6 +1,5 @@
 //! Follows the anchor from photo to photo and plans one crop per photo, as `anchor.py` does.
 
-use crate::fail;
 use crate::sift::{DESCRIPTOR_LEN, Features, KeyPoint};
 
 pub const MIN_INLIERS: usize = 8;
@@ -49,7 +48,9 @@ const ZOOM_SPREAD: f64 = 1.1;
 /// the lens change when both photos have a focal length.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mark {
+	/// The points, `(x, y)` in photo pixels.
 	pub points: Vec<(f64, f64)>,
+	/// The feature's size relative to the first photo's.
 	pub zoom: Option<f64>,
 }
 
@@ -491,18 +492,19 @@ fn lens_scale(focal_35mm: Option<f64>, (w, h): (u32, u32)) -> Option<f64> {
 }
 
 /// Per photo: anchor position, its scale relative to the first photo, and how it was found. Photos are
-/// consumed one at a time, in order; `marks[i]` is the user's mark on photo i, and photo 0 needs one.
+/// consumed one at a time, in order, and the first error among them stops tracking; `marks[i]` is the
+/// user's mark on photo i, and photo 0 needs one.
 /// `focals[i]` is photo i's 35 mm focal length, when its EXIF has one. `skips[i]` marks a photo whose
 /// feature is hidden: it is never matched, and stays at an estimated position like a lost photo, but the
 /// next photo is still matched against the last found photo, as after a lost photo.
 pub fn track(
-	photos: impl Iterator<Item = Photo>,
+	photos: impl Iterator<Item = Result<Photo, String>>,
 	sizes: &[(u32, u32)],
 	k: f64,
 	marks: &[Option<Mark>],
 	focals: &[Option<f64>],
 	skips: &[bool],
-) -> Vec<Hit> {
+) -> Result<Vec<Hit>, String> {
 	assert!(marks[0].is_some(), "the first photo needs a mark");
 	assert!(!skips[0], "the first photo cannot be skipped");
 	assert!(marks.len() == sizes.len() && focals.len() == sizes.len() && skips.len() == sizes.len());
@@ -519,6 +521,7 @@ pub fn track(
 	let mut last_lens = None;
 	let mut count = 0;
 	for (i, photo) in photos.enumerate() {
+		let photo = photo?;
 		count += 1;
 		if skips[i] {
 			assert!(marks[i].is_none(), "a skipped photo must not have a mark");
@@ -570,7 +573,7 @@ pub fn track(
 		// Clouds deform, so features come from the latest find, never from a lost photo.
 		let fresh = features_near(&photo.features, &points, radius);
 		if i == 0 && fresh.keypoints.len() < MIN_INLIERS {
-			fail(&format!(
+			return Err(format!(
 				"only {} features near the first points; mark a textured spot",
 				fresh.keypoints.len()
 			));
@@ -580,7 +583,7 @@ pub fn track(
 		}
 	}
 	assert_eq!(count, sizes.len(), "every photo must be tracked");
-	path
+	Ok(path)
 }
 
 /// A found photo's hit from the downscaled point set: the anchor is the points' mean.
@@ -607,16 +610,17 @@ fn interp(at: f64, xs: &[f64], ys: &[f64]) -> f64 {
 }
 
 /// Estimate hidden anchors from the nearest photos where it was found.
-pub fn fill_lost(path: Vec<Hit>, sizes: &[(u32, u32)]) -> Vec<Hit> {
+pub fn fill_lost(path: Vec<Hit>, sizes: &[(u32, u32)]) -> Result<Vec<Hit>, String> {
 	let good: Vec<usize> =
 		(0..path.len()).filter(|&i| !matches!(path[i].source, Source::Lost | Source::Skipped)).collect();
 	if good.len() < 2 {
-		fail("the anchor was found in fewer than two photos; mark more of them with --at");
+		return Err("the anchor was found in fewer than two photos; mark more of them with --at".into());
 	}
 	let xs: Vec<f64> = good.iter().map(|&i| i as f64).collect();
 	let column = |f: fn(&Hit) -> f64| good.iter().map(|&i| f(&path[i])).collect::<Vec<f64>>();
 	let (gx, gy, gs) = (column(|h| h.x), column(|h| h.y), column(|h| h.scale));
-	path.iter()
+	Ok(path
+		.iter()
 		.enumerate()
 		.zip(sizes)
 		.map(|((i, hit), &(fw, fh))| {
@@ -633,7 +637,7 @@ pub fn fill_lost(path: Vec<Hit>, sizes: &[(u32, u32)]) -> Vec<Hit> {
 				hit.points.iter().map(|&(px, py)| (x + (px - cx) * grow, y + (py - cy) * grow)).collect();
 			Hit { x, y, scale, points, ..hit.clone() }
 		})
-		.collect()
+		.collect())
 }
 
 fn median(values: &[f64]) -> f64 {
@@ -647,7 +651,7 @@ pub type Rect = (f64, f64, f64, f64);
 
 /// Same-size crop holding every anchor at one spot, in first-photo scale. Unpadded, the largest crop
 /// every photo fills; padded, each side takes the median margin.
-fn crop_rects(sizes: &[(f64, f64)], anchors: &[(f64, f64)], pad: bool) -> Vec<Rect> {
+fn crop_rects(sizes: &[(f64, f64)], anchors: &[(f64, f64)], pad: bool) -> Result<Vec<Rect>, String> {
 	let pick = |values: Vec<f64>| {
 		if pad { median(&values) } else { values.into_iter().fold(f64::INFINITY, f64::min) }
 	};
@@ -659,7 +663,7 @@ fn crop_rects(sizes: &[(f64, f64)], anchors: &[(f64, f64)], pad: bool) -> Vec<Re
 	let cw = (left + right) as i64 / 2 * 2;
 	let ch = (top + bottom) as i64 / 2 * 2;
 	if cw < MIN_CROP || ch < MIN_CROP {
-		fail(&format!(
+		return Err(format!(
 			"the anchor wanders too far: only a {cw}x{ch} crop fits every photo; mark lost photos or use --pad"
 		));
 	}
@@ -669,15 +673,15 @@ fn crop_rects(sizes: &[(f64, f64)], anchors: &[(f64, f64)], pad: bool) -> Vec<Re
 			assert!(-1e-6 <= rx && -1e-6 <= ry && rx + rw <= fw + 1e-6 && ry + rh <= fh + 1e-6);
 		}
 	}
-	rects
+	Ok(rects)
 }
 
 /// The crop of each photo in its own pixels, and the clip size.
-pub fn plan(path: &[Hit], sizes: &[(u32, u32)], pad: bool) -> (Vec<Rect>, (u32, u32)) {
+pub fn plan(path: &[Hit], sizes: &[(u32, u32)], pad: bool) -> Result<(Vec<Rect>, (u32, u32)), String> {
 	let scaled_sizes: Vec<(f64, f64)> =
 		sizes.iter().zip(path).map(|(&(w, h), hit)| (w as f64 / hit.scale, h as f64 / hit.scale)).collect();
 	let anchors: Vec<(f64, f64)> = path.iter().map(|hit| (hit.x / hit.scale, hit.y / hit.scale)).collect();
-	let rects = crop_rects(&scaled_sizes, &anchors, pad);
+	let rects = crop_rects(&scaled_sizes, &anchors, pad)?;
 	let sources = rects
 		.iter()
 		.zip(path)
@@ -687,7 +691,7 @@ pub fn plan(path: &[Hit], sizes: &[(u32, u32)], pad: bool) -> (Vec<Rect>, (u32, 
 	let typical = median(&path.iter().map(|h| h.scale).collect::<Vec<_>>());
 	let (cw, ch) = (rects[0].2, rects[0].3);
 	let even = |v: f64| ((v * typical / 2.0).round_ties_even() * 2.0) as u32;
-	(sources, (even(cw), even(ch)))
+	Ok((sources, (even(cw), even(ch))))
 }
 
 #[cfg(test)]
@@ -827,8 +831,8 @@ mod tests {
 	fn run(features: Vec<Features>, marks: &[Option<Mark>], focals: &[Option<f64>]) -> Vec<Hit> {
 		let sizes = vec![(1024, 768); features.len()];
 		let skips = vec![false; features.len()];
-		let photos = features.into_iter().map(|features| Photo { small: (1024, 768), features });
-		track(photos, &sizes, 1.0, marks, focals, &skips)
+		let photos = features.into_iter().map(|features| Ok(Photo { small: (1024, 768), features }));
+		track(photos, &sizes, 1.0, marks, focals, &skips).unwrap()
 	}
 
 	#[test]
@@ -867,8 +871,8 @@ mod tests {
 		let after = scattered(40, 6.0, 2.0);
 		let photos = vec![scattered(40, 0.0, 0.0), hidden, after]
 			.into_iter()
-			.map(|features| Photo { small: (1024, 768), features });
-		let path = track(photos, &sizes, 1.0, &marks, &[None; 3], &skips);
+			.map(|features| Ok(Photo { small: (1024, 768), features }));
+		let path = track(photos, &sizes, 1.0, &marks, &[None; 3], &skips).unwrap();
 		assert_eq!(path[1].source, Source::Skipped);
 		assert_eq!(path[2].source, Source::Tracked, "tracks from IMG_4720's features, not the skipped one");
 		assert!((path[2].x - 406.0).abs() < 1e-3 && (path[2].y - 377.0).abs() < 1e-3);
@@ -881,7 +885,7 @@ mod tests {
 		// The lost photo holds the last found pattern, two points 2 px apart at scale 1.
 		let lost = Hit { points: vec![(-1.0, 0.0), (1.0, 0.0)], ..hit(0.0, 0.0, 1.0, Source::Lost) };
 		let path = vec![hit(0.0, 0.0, 1.0, Source::Tracked), lost, hit(20.0, 40.0, 2.0, Source::Mark)];
-		let filled = fill_lost(path, &[(100, 100); 3]);
+		let filled = fill_lost(path, &[(100, 100); 3]).unwrap();
 		assert_eq!(
 			(filled[1].x, filled[1].y, filled[1].scale, filled[1].source),
 			(10.0, 20.0, 1.5, Source::Lost)

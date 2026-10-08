@@ -12,7 +12,7 @@ Superseded 2026-10-06 ([F1](../todos/done/1006-F1-python-reference.md)): the Rus
 
 ## Persistent feature cache and sidecar-only tracking
 
-The Rust CLI caches each photo's SIFT result under `~/Library/Caches/pinframe`. `--cache DIR` selects another root and `--no-cache` disables reads and writes. An entry is content addressed with BLAKE3: photo bytes, the decoder and its version, the global downscale factor and resulting size, `TRACK_EDGE`, the SIFT implementation identifier, and the cache format version are all inputs. The decoder version is libavif's and dav1d's for AVIF, the macOS build (`kern.osversion`) for HEIC and JPEG XL through ImageIO, and the locked zune-jpeg or png crate version for JPEG and PNG; each is read once per run, so an OS update or a decoder bump starts a fresh cache. BLAKE3 is fast enough that hashing AVIF/JPEG/PNG files is normally I/O-bound, while a content key cannot return stale features after a file replacement; path, size, and mtime are intentionally not trusted as cache identity.
+The Rust CLI caches each photo's SIFT result under `~/Library/Caches/pinframe` on macOS and `$XDG_CACHE_HOME/pinframe`, default `~/.cache/pinframe`, elsewhere. `--cache DIR` selects another root and `--no-cache` disables reads and writes. An entry is content addressed with BLAKE3: photo bytes, the decoder and its version, the global downscale factor and resulting size, `TRACK_EDGE`, the SIFT implementation identifier, and the cache format version are all inputs. The decoder version is libavif's and dav1d's for AVIF, the macOS build (`kern.osversion`) for HEIC and JPEG XL through ImageIO, and the locked zune-jpeg or png crate version for JPEG and PNG; each is read once per run, so an OS update or a decoder bump starts a fresh cache. BLAKE3 is fast enough that hashing AVIF/JPEG/PNG files is normally I/O-bound, while a content key cannot return stale features after a file replacement; path, size, and mtime are intentionally not trusted as cache identity.
 
 Entries hold the downscaled dimensions, packed 24-byte keypoints, and the existing lossless 128-byte SIFT descriptors. The descriptor values are already integer 0--255 in this port, so this is byte-for-byte equivalent to the live representation and warm tracking produces identical rects. Each entry has a BLAKE3 checksum and exact-length validation. A malformed or truncated file is treated as a miss and atomically replaced. Writers use a unique temporary file and rename; concurrent producers may race but write identical bytes, leaving one valid entry. A power loss before the filesystem persists a rename can leave a bad entry, which the next reader validates and recomputes.
 
@@ -241,12 +241,20 @@ In Playwright's Chromium, a Girona photo cropped to its clip frame and the clip 
 
 | | macOS | Linux |
 |-|-|-|
-| status | built and tested (M4 Pro, macOS 27) | **does not build yet, untested** |
-| AVIF | libavif + dav1d (bit-exact with Python) | libavif + dav1d |
-| HEIC/HEIF, JPEG XL | ImageIO | not available |
+| status | built and tested (M4 Pro, macOS 27) | built and tested (x86_64, Ubuntu 24.04, 4 cores) |
+| AVIF | libavif + dav1d (bit-exact with Python) | libavif + dav1d (rects identical to macOS) |
+| HEIC/HEIF, JPEG XL | ImageIO | refused before decoding: `HEIC input needs macOS (ImageIO); not supported on this platform yet` |
 | JPEG, PNG | zune-jpeg, png | zune-jpeg, png |
+| feature cache | `~/Library/Caches/pinframe` | `$XDG_CACHE_HOME/pinframe`, default `~/.cache/pinframe` |
 
-The Linux build fails today: `rust/build.rs` links the ImageIO, CoreGraphics and CoreFoundation frameworks unconditionally, and `rust/src/imageio.rs` is always compiled. Making it build means gating both behind `cfg(target_os = "macos")` and refusing HEIC and JPEG XL with a clear message elsewhere. [todos/D1-linux-build.md](../todos/D1-linux-build.md) tracks that and the test plan.
+What differs by platform, all behind `cfg(target_os = "macos")` so the macOS build is unchanged ([D1](../todos/done/1006-D1-linux-build.md)):
+
+- `rust/src/imageio.rs` and the ImageIO, CoreGraphics and CoreFoundation frameworks are macOS-only. Elsewhere `rust/src/imageio_unavailable.rs` stands in with the same signatures, and `decode::format` refuses HEIC and JPEG XL before any entry point reaches them, so `oriented_size`, `profile`, `exif`, `decoder_id`, `memory_cost` and `decode` all fail with the same message. Later, `jxl-oxide` could decode JPEG XL and libheif + libde265 HEIC on Linux.
+- Free memory comes from `MemAvailable` in `/proc/meminfo` instead of Mach's `host_statistics64`; the profiler's resident set from `/proc/self/statm`; run IDs from `getrandom(2)` instead of `arc4random_buf`.
+- The Display P3 ICC profile that labels `--frames` PNGs is Apple's on macOS and, elsewhere, a minimal v4 matrix/TRC profile built in `colour::minimal_p3_icc` with the same colorants and the sRGB parametric curve; `colour::from_icc` reads both back as Display P3.
+- Tests that need ImageIO fixtures or ColorSync's profiles run on macOS only; a Linux-only test checks the refusal. `analysis/check.sh` converts the format and colour sets with sips and cjxl on macOS and with Pillow elsewhere, where the HEIC and JPEG XL runs become refusal checks, so it is 19 checks on both.
+
+Measured on the Linux host above: a clean release build takes 3 min 10 s wall (10 CPU-min, nearly all the C libraries); the 57-photo train clouds job 56 s wall without the cache; `check.sh` passes 19 of 19, with the train clouds rects matching `analysis/tracking_baseline.json` to 1.8e-15 (float-parsing noise), scales exactly and anchor points to 5e-4 px, the same three LOST photos. The binary is 23 MB with debug info and links only libc, libm and libgcc_s.
 
 ## Crates and licenses
 
@@ -265,15 +273,17 @@ A default build compiles 26 crates, 48 with the build dependencies. SIFT's paten
 ## Build and install
 
 ```sh
-brew install cmake meson ninja
+brew install cmake meson ninja                                # macOS
+sudo apt install cmake meson ninja-build nasm libclang-dev    # Debian/Ubuntu
 ```
 
 ```sh
 cd rust && cargo build --release
 ```
 
-- **Requirements:** Rust stable (1.97 here), cmake, meson and ninja, libclang for bindgen (Xcode or the Command Line Tools), and network access on the first build. nasm is needed only on x86 (aom's and dav1d's assembly). Homebrew's libavif is not needed.
-- **The C libraries are built by `rust/build.rs`.** It downloads the release tarballs of libavif 1.4.2, dav1d 1.5.4 and libaom 3.15.0, checks their SHA-256 (the same as Homebrew's for libavif and dav1d; aom's tarball is identical to its git tag `v3.15.0`), and builds them as static libraries in cargo's build directory (`OUT_DIR`), aom and libavif with cmake and dav1d with meson. Tarballs rather than git submodules: a clean checkout needs no extra step, the pins and checksums sit in one file, and aom's history is not cloned. aom builds only its encoder, without apps, docs, tests or VMAF tuning; dav1d without tools or tests; libavif without apps and with aom for encoding only. The C code targets macOS 11.0, like rustc, unless `MACOSX_DEPLOYMENT_TARGET` says otherwise.
+- **Requirements:** Rust stable (1.97 here), cmake, meson and ninja, libclang for bindgen (Xcode or the Command Line Tools on macOS, `libclang-dev` on Debian/Ubuntu), and network access on the first build. nasm is needed only on x86 (aom's and dav1d's assembly). Homebrew's libavif is not needed.
+- **Sources on a restricted network.** Verified tarballs are cached in `~/Library/Caches/pinframe-sources` on macOS and `$XDG_CACHE_HOME/pinframe-sources` (default `~/.cache/pinframe-sources`) elsewhere. A machine that cannot download one of them (a proxy that blocks github.com, say) can set `PINFRAME_SOURCES=DIR`, where `DIR` holds the unpacked sources under their names (`libavif-1.4.2/`, from `git clone --branch v1.4.2`, for example); those are used as they are, without a checksum. Changing the variable rebuilds the C libraries.
+- **The C libraries are built by `rust/build.rs`.** It downloads the release tarballs of libavif 1.4.2, dav1d 1.5.4 and libaom 3.15.0, checks their SHA-256 (the same as Homebrew's for libavif and dav1d; aom's tarball is identical to its git tag `v3.15.0`), and builds them as static libraries in cargo's build directory (`OUT_DIR`), aom and libavif with cmake and dav1d with meson. Tarballs rather than git submodules: a clean checkout needs no extra step, the pins and checksums sit in one file, and aom's history is not cloned. aom builds only its encoder, without apps, docs, tests or VMAF tuning; dav1d without tools or tests; libavif without apps and with aom for encoding only. On macOS the C code targets macOS 11.0, like rustc, unless `MACOSX_DEPLOYMENT_TARGET` says otherwise.
 - **Build cost:** a clean release build without sccache takes 37 s wall (116 CPU-s), most of it the C libraries; the C build leaves 107 MB in `OUT_DIR` (73 MB of it unpacked sources). The C libraries are rebuilt only when `build.rs` or `MACOSX_DEPLOYMENT_TARGET` changes, so a build after a Rust edit still takes about 1.5 s.
 - **The binary is 7.5 MB** (6.8 MB stripped; the dynamic build was 1.2 MB) and links only `/usr/lib/libSystem` and `/usr/lib/libiconv`. Its output is the same as the Homebrew-linked build: identical sidecar rects and decoded frames for the Girona job. The Girona job runs as fast (12 interleaved runs at load 35: fastest 2.19 s against 2.20 s, median 2.34 s against 2.36 s).
 - **Licenses for distribution.** libavif, dav1d and libaom are BSD-2-Clause: a binary must reproduce each copyright notice, the conditions and the disclaimer in its documentation or other materials. Also bundled are libyuv-derived scaling code in libavif (BSD-3-Clause, in libavif's `LICENSE`), and fastfeat (BSD-3-Clause) and vector (MIT) in libaom. libaom also comes under the Alliance for Open Media Patent License 1.0 (`PATENTS`), a royalty-free patent grant that ends for anyone who sues over AV1 patents; ship its text with the others. The texts are in each source tree under `OUT_DIR/src`.
@@ -281,14 +291,14 @@ cd rust && cargo build --release
 
 The `kornia` and `opencv` SIFT backends compared below (`--features kornia`, `--features opencv`) were spike-only, to measure against the crate's own SIFT. They're not in the crate: see "Correctness" and "SIFT in Rust" for what the comparison found.
 
-Run the Girona job, and the checks against Python's dumps:
+Run the train clouds job, and the checks against Python's dumps (`dump_sift.py` and `dump_ransac.py`, and with them `dump_pyramid.py`'s input, went with `anchor.py` in F1, so of the ignored tests in `rust/src/checks.rs` only the kernel comparison still has its dump):
 
 ```sh
-BIN=rust/target/release/pinframe bash analysis/girona_all.sh out/rust.avif
+BIN=rust/target/release/pinframe bash analysis/train_clouds_all.sh out/rust.avif
 ```
 
 ```sh
-uv run analysis/dump_sift.py IMG_4667 && uv run analysis/dump_sift.py IMG_4791 && uv run analysis/dump_kernels.py > out/kernels.jsonl && uv run analysis/dump_pyramid.py && uv run analysis/dump_ransac.py
+uv run analysis/dump_kernels.py > out/kernels.jsonl
 ```
 
 ```sh
@@ -304,9 +314,21 @@ cd rust && cargo test --release -- --include-ignored --test-threads=1 --nocaptur
 - **Platforms.** The Rust code is portable (no intrinsics). Free-memory and core-count queries are macOS-only (`host_statistics64`) and need Linux and Windows versions. The OpenCV backend would need OpenCV built for every target, which is the main argument for the own port or kornia.
 - **The web build** stays without pinframe, as `docs/wasm.md` concluded. The Rust core could compile to WASM later (no threads assumed in the algorithm), but libavif would need an Emscripten build, and nothing was measured here.
 
+## Library
+
+The crate is a library plus the `pinframe` CLI over it, so `enframe-serve` can track in-process (`cargo doc --open` in `rust/` has the details):
+
+- `pinframe::track(&job, &mut log)` checks a `Job` (the photos, their `Marks` and the CLI's other options, typed), tracks and plans the crop, and returns a `Tracked`. A job with no `output` only tracks: nothing is written but feature cache entries.
+- `Tracked::sidecar(run, clip)` gives the `.json` sidecar's data; `Sidecar::to_json()` its bytes. `Tracked::write(&mut log)` renders and publishes the job's clip and sidecar, as the CLI does.
+- Errors are the CLI's messages, as `String`s; nothing exits the process. Progress lines go to `log`, which the CLI prints.
+- Marks are kept in the CLI's text form so they are checked in the same order with the same messages; `Marks::new(points).with_at(photo, &mark).with_skip(photo)` builds them from points, and the text reads back to the same `f64`s.
+
+Measured on a 4-core Linux container (2026-10-08): an in-process re-track of the 57 train clouds photos with a warm feature cache takes 1.05 s, 1.02 s of it matching; the same CLI run takes 1.1 to 1.3 s. The 145 ms above is the M4 Pro's track and plan from features in memory (`retrack_bench` in `rust/src/checks.rs`).
+
 ## Files
 
-- `rust/src/main.rs`: CLI (same flags as `anchor.py` except box drawing), input checks, resource planning, pipeline, outputs.
+- `rust/src/lib.rs`: the library: input checks, resource planning, pipeline, outputs.
+- `rust/src/main.rs`: the CLI (same flags as `anchor.py` except box drawing), a thin layer over the library.
 - `rust/src/avif.rs`: libavif decode and encode, libyuv-exact YUV to RGB, RGB to YUV for the encoder.
 - `rust/src/colour.rs`: colour profiles from ICC and nclx, sRGB to Display P3.
 - `rust/src/pixels.rs`: orientation, OpenCV-exact gray and INTER_AREA.
