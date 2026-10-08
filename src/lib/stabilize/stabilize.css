@@ -485,7 +485,7 @@
 		position: absolute;
 		left: 14px;
 		right: 14px;
-		z-index: 5;
+		z-index: 6;
 		display: grid;
 		grid-template-columns: 1fr auto 1fr;
 		gap: 8px;
