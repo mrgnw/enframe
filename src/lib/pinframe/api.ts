@@ -18,10 +18,22 @@ export interface Folder {
 	marks: Marks | null;
 }
 
+// Serve answers a missing file and one outside the roots alike, so absence is read from the parent's listing
+// first. A document that cannot be told absent is read, and its error shown: never a fresh start, since the
+// first track would overwrite it.
+async function absent(document: string): Promise<boolean> {
+	const slash = document.lastIndexOf('/');
+	const name = document.slice(slash + 1);
+	const listing = await listDirectory(document.slice(0, slash) || '/').catch(() => null);
+	return listing !== null && !listing.entries.some((e) => e.name === name);
+}
+
 async function loadDocument(folder: string): Promise<Marks | null> {
+	const document = `${trimmed(folder)}.pin.json`;
+	if (await absent(document)) return null;
 	let text: string;
 	try {
-		text = await readTextFile(`${trimmed(folder)}.pin.json`);
+		text = await readTextFile(document);
 	} catch (e) {
 		if (MISSING.test((e as Error).message)) return null;
 		throw e;
