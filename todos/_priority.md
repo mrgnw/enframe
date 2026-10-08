@@ -5,4 +5,5 @@ The board is https://github.com/users/mrgnw/projects/10, and each card's issue c
 1. MVP, standalone: done (M1, M2, M3, spikes W1 and W2), then retired by R2 once enframe had the screens.
 2. UI in enframe (E2 done): E2, E3, E4 and E6 done.
 3. One app: R1 and R2 done. enframe is the UI; `web/` is gone.
-4. Candidates, not yet cards: pinframe results into enframe's SQLite frames and focal points (E6 left it out); the README "Next steps" items (soft lock, full-frame mode).
+4. One repo: [S1](S1-move-into-enframe.md) (running). Then this repository is archived.
+5. Candidates, not yet cards: pinframe results into enframe's SQLite frames and focal points (E6 left it out); the README "Next steps" items (soft lock, full-frame mode).

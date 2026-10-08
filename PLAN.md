@@ -48,10 +48,11 @@ One coordinating thread runs the plan; agents do the card work. The coordinator 
 
 | Card | Issue | What | Depends on | Touches | Model | Size |
 |-|-|-|-|-|-|-|
+| [S1](todos/S1-move-into-enframe.md) | [enframe#17](https://github.com/mrgnw/enframe/issues/17) | Move pinframe into enframe as the stabilize crate | R2 | enframe repo | Opus | L |
 
 Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md), [A1](todos/done/1006-A1-tracking-benchmark.md), [B1](todos/done/1006-B1-colour.md), [F1](todos/done/1006-F1-python-reference.md), [B2](todos/done/1006-B2-capture-time-order.md), [A4](todos/done/1006-A4-search-window.md), [A5a](todos/done/1006-A5a-points-tracker.md), [D2](todos/done/1006-D2-build-downloads.md), [A5b](todos/done/1006-A5b-points-syntax.md) (design: [A5](todos/done/1006-A5-reference-points.md)), [A2](todos/done/1006-A2-tracker-sensitivity.md), [A3](todos/done/1006-A3-track-edge.md) (kept 1024), [B4](todos/done/1006-B4-zoom-from-exif.md), [A6](todos/done/1006-A6-skip-photos.md), [B5](todos/done/1006-B5-exif-followups.md), [E5](todos/done/1006-E5-marking-mockup.md), [D1](todos/done/1006-D1-linux-build.md), [M1](todos/done/1007-M1-serve.md), [M2](todos/done/1007-M2-marking-live.md), [M3](todos/done/1007-M3-preview-export.md), spikes [W1](todos/done/1007-W1-browser-tests.md) (browser tests, opt-in) and [W2](todos/done/1007-W2-clip-done-state.md) (the clip in the done state), [M4](todos/done/1008-M4-marks-in-bounds.md), [M5](todos/done/1008-M5-soft-marks.md), [E2](todos/done/1008-E2-serve-endpoint.md), [E3](todos/done/1008-E3-marking-screen.md), [E4](todos/done/1008-E4-preview-export.md), [E6](todos/done/1008-E6-multiple-features.md), [R1](todos/done/1008-R1-e2e-parity.md) (in enframe), [R2](todos/done/1008-R2-retire-web-mvp.md).
 
-Order is in [todos/_priority.md](todos/_priority.md). Running: none. No open cards. enframe is the app (`/pin`, `/pin/export`); pinframe is the CLI and library. enframe's phase 2 landed on its `main` on 2026-10-08, so the E-cards are unblocked.
+Order is in [todos/_priority.md](todos/_priority.md). Running: S1 (enframe branch `s1-stabilize`, Opus 5.5). After S1 this repository is archived and the plan continues in enframe. enframe's phase 2 landed on its `main` on 2026-10-08, so the E-cards are unblocked.
 
 ## Decisions
 
@@ -66,6 +67,7 @@ Made on 2026-10-06:
 - **E5 trail style:** `steps` is the default, `flow` stays as an option, rebuilt in round 5 as a continuous glow. Mockup signed off 2026-10-06.
 - **E2 timing:** wait for enframe's `phase-2-remote-targets` to merge before starting E2. Merged 2026-10-08; E2 started the same day.
 - **E4 export progress:** E2's export answers once at the end; E4 streams pinframe's progress lines from the serve route as the MVP did, so the export screen can show them. Model raised to Opus because of the Rust half.
+- **One repo (S1):** made 2026-10-08. pinframe moves into enframe as the `stabilize` crate with its history; serve uses it as a library; the feature is named Stabilize. The pinframe repository is archived with a pointer.
 - **One app (R1, R2):** made 2026-10-08. enframe is the UI, pinframe the CLI and library; the standalone `web/` MVP is deleted once enframe's e2e covers its walkthrough, and the browser gate moves to enframe's `bun run test:e2e`.
 - **E6 scope:** made 2026-10-08. The document holds named features (`{version: 2, features: [{name, marks}]}`); the CLI and tracker are unchanged, N features are N runs; the serve lock stays per folder; export writes `<folder>-<feature>.avif`. Writing results into enframe's SQLite frames and focal points is a possible later card, not done.
 - **E2 binary, not crate:** enframe-serve calls the pinframe binary from a configured path rather than depending on the library crate, so enframe's build stays free of pinframe's C codec sources.
