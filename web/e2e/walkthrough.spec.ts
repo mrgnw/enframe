@@ -162,7 +162,7 @@ test('walkthrough: mark, track, fix 25 lost photos, preview, export', async ({ p
 	expect(errors).toEqual([]);
 });
 
-test('a saved mark outside its photo opens to Clear and Skip', async ({ page }) => {
+test('a saved mark outside its photo opens to Clear, Soft mark and Skip', async ({ page }) => {
 	const other = await sandbox();
 	try {
 		const known = scriptMarks();
@@ -178,7 +178,7 @@ test('a saved mark outside its photo opens to Clear and Skip', async ({ page }) 
 		};
 		plant();
 		await open();
-		await expect(page.locator('.drop .actions button')).toHaveText(['Clear mark', 'Skip photo']);
+		await expect(page.locator('.drop .actions button')).toHaveText(['Clear mark', 'Soft mark', 'Skip photo']);
 		await shot(page, '10-bad-mark');
 		await page.click('button:text("Clear mark")');
 		await expect(page.locator('.count')).toBeVisible({ timeout: 120_000 });
@@ -193,6 +193,68 @@ test('a saved mark outside its photo opens to Clear and Skip', async ({ page }) 
 		const marks = readDoc(other.doc).marks;
 		expect(bad in (marks.at ?? {})).toBe(false);
 		expect(marks.skip).toContain(bad);
+
+		// Soft mark keeps the points inside the photo, moved from `at` to `near`.
+		plant();
+		await open();
+		await page.click('button:text("Soft mark")');
+		await expect(page.locator('.count')).toBeVisible({ timeout: 120_000 });
+		await settled(page);
+		const softened = readDoc(other.doc).marks;
+		expect(bad in (softened.at ?? {})).toBe(false);
+		expect(softened.near?.[bad]).toEqual(known.at[bad]);
+	} finally {
+		await other.dispose();
+	}
+});
+
+test('a soft mark on a lost photo is placed, cleared and kept across a reload', async ({ page }) => {
+	const other = await sandbox();
+	try {
+		const known = scriptMarks();
+		const photos = readdirSync(other.folder).filter((f) => f.endsWith('.avif')).sort();
+		writeFileSync(other.doc, JSON.stringify({ version: 1, folder: other.folder, marks: known, photos }, null, '\t') + '\n');
+		/** The source the app's next sidecar gives `file`, after `act` posts the document. */
+		const sourceAfter = async (file: string, act: () => Promise<unknown>) => {
+			const response = page.waitForResponse((r) => r.url().endsWith('/api/track') && r.ok());
+			await act();
+			const sidecar = (await (await response).json()) as { photos: { file: string; source: string }[] };
+			return sidecar.photos.find((r) => r.file === file)?.source;
+		};
+		const back = async (file: string) => {
+			for (let i = 0; i < 10 && (await current(page)) !== file; i++) await page.keyboard.press('Shift+Tab');
+			expect(await current(page)).toBe(file);
+		};
+		await page.goto(`/?folder=${encodeURIComponent(other.folder)}`);
+		await expect(page.locator('.count')).toContainText('to fix', { timeout: 120_000 });
+		await settled(page);
+		const file = await current(page);
+		await photoReady(page, file);
+
+		// Shift-click places a soft mark where a click would place a mark.
+		const [w, h] = await page.locator('.stage .photo img').evaluate((i: HTMLImageElement) => [i.naturalWidth, i.naturalHeight]);
+		await page.keyboard.down('Shift');
+		const placed = await sourceAfter(file, () => clickPhoto(page, w / 2, h / 2));
+		await page.keyboard.up('Shift');
+		expect(placed).toBe('soft');
+		expect(readDoc(other.doc).marks.near?.[file]).toBeDefined();
+		expect(file in (readDoc(other.doc).marks.at ?? {})).toBe(false);
+		await settled(page);
+		await back(file);
+		await expect(page.locator('.ptag.soft')).toContainText('soft mark');
+		await shot(page, '11-soft-mark');
+
+		expect(await sourceAfter(file, () => page.keyboard.press('Backspace'))).toBe('lost');
+		expect(readDoc(other.doc).marks.near?.[file]).toBeUndefined();
+		await settled(page);
+
+		// N accepts the estimate as a soft mark; a reload keeps it.
+		expect(await sourceAfter(file, () => page.keyboard.press('n'))).toBe('soft');
+		await settled(page);
+		expect(await sourceAfter(file, () => page.reload())).toBe('soft');
+		await settled(page);
+		expect(readDoc(other.doc).marks.near?.[file]).toBeDefined();
+		await expect(page.locator('.thumb.soft')).toHaveCount(1);
 	} finally {
 		await other.dispose();
 	}

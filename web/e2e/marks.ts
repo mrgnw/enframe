@@ -8,6 +8,7 @@ export type Point = [number, number];
 export interface Marks {
 	points: Point[];
 	at: Record<string, { points: Point[]; zoom?: number }>;
+	near?: Record<string, { points: Point[]; zoom?: number }>;
 	skip?: string[];
 }
 
@@ -32,6 +33,9 @@ export function flags(marks: Marks): string[] {
 	const args = ['--points', list(marks.points)];
 	for (const [file, m] of Object.entries(marks.at)) {
 		args.push('--at', `${file}=${list(m.points)}${m.zoom === undefined ? '' : `@${m.zoom}`}`);
+	}
+	for (const [file, m] of Object.entries(marks.near ?? {})) {
+		args.push('--near', `${file}=${list(m.points)}${m.zoom === undefined ? '' : `@${m.zoom}`}`);
 	}
 	for (const file of marks.skip ?? []) args.push('--skip', file);
 	return args;
