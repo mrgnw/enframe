@@ -49,6 +49,7 @@ One coordinating thread runs the plan; agents do the card work. The coordinator 
 | Card | Issue | What | Depends on | Touches | Model | Size |
 |-|-|-|-|-|-|-|
 | [M4](todos/M4-marks-in-bounds.md) | [pinframe#1](https://github.com/mrgnw/pinframe/issues/1) | Marks stay inside the photo | — | `web/src/lib/marking/`, `web/e2e/` | Sonnet | S |
+| [M5](todos/M5-soft-marks.md) | — | Soft marks: place a photo without making it a tracking reference | M4 | `rust/src/`, `web/src/lib/marking/`, `web/e2e/`, README | Opus | M |
 | [E2](todos/E2-serve-endpoint.md) | [enframe#6](https://github.com/mrgnw/enframe/issues/6) | enframe-serve endpoint that runs pinframe | enframe phase-2 | enframe repo | Opus | M |
 | [E3](todos/E3-marking-screen.md) | [enframe#7](https://github.com/mrgnw/enframe/issues/7) | Marking screen in enframe | E2 | enframe repo | Opus | L |
 | [E4](todos/E4-preview-export.md) | [enframe#8](https://github.com/mrgnw/enframe/issues/8) | Preview and export screen in enframe | E3 | enframe repo | Sonnet | M |
@@ -56,7 +57,7 @@ One coordinating thread runs the plan; agents do the card work. The coordinator 
 
 Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md), [A1](todos/done/1006-A1-tracking-benchmark.md), [B1](todos/done/1006-B1-colour.md), [F1](todos/done/1006-F1-python-reference.md), [B2](todos/done/1006-B2-capture-time-order.md), [A4](todos/done/1006-A4-search-window.md), [A5a](todos/done/1006-A5a-points-tracker.md), [D2](todos/done/1006-D2-build-downloads.md), [A5b](todos/done/1006-A5b-points-syntax.md) (design: [A5](todos/done/1006-A5-reference-points.md)), [A2](todos/done/1006-A2-tracker-sensitivity.md), [A3](todos/done/1006-A3-track-edge.md) (kept 1024), [B4](todos/done/1006-B4-zoom-from-exif.md), [A6](todos/done/1006-A6-skip-photos.md), [B5](todos/done/1006-B5-exif-followups.md), [E5](todos/done/1006-E5-marking-mockup.md), [D1](todos/done/1006-D1-linux-build.md), [M1](todos/done/1007-M1-serve.md), [M2](todos/done/1007-M2-marking-live.md), [M3](todos/done/1007-M3-preview-export.md), spikes [W1](todos/done/1007-W1-browser-tests.md) (browser tests, opt-in) and [W2](todos/done/1007-W2-clip-done-state.md) (the clip in the done state).
 
-Order is in [todos/_priority.md](todos/_priority.md). Running: none. E2 waits for enframe's `phase-2-remote-targets` branch, which rewrites `src-tauri/serve/src/main.rs`.
+Order is in [todos/_priority.md](todos/_priority.md). Running: M4 (branch `m4-marks-in-bounds`, Sonnet 5). E2 waits for enframe's `phase-2-remote-targets` branch, which rewrites `src-tauri/serve/src/main.rs`.
 
 ## Decisions
 
@@ -75,6 +76,8 @@ Made on 2026-10-06:
 - **Clip in the done state (W2):** the export's done state shows the clip inline and offers Download and Sidecar links; "Reveal in Finder" only when the page is on localhost.
 - **D1 Linux:** un-deferred 2026-10-06 and done on a Linux host, so the MVP can be developed there too; the macOS build is unchanged.
 - **MVP (M1–M3):** ship the MVP as a SvelteKit app in this repo (`web/`, Svelte 5, adapter-node, port 7341), built from the signed-off mockups; server routes wrap the pinframe binary. Chosen over a Python or axum server because the marking UI is the expensive artifact and Svelte components port into enframe at E3; the thin backend gets rewritten as an axum route at E2 (enframe-serve is axum 0.8). E2–E4 stay as the later integration, still gated on phase-2.
+
+- **Bad marks (M4, M5):** made 2026-10-08. No mark may leave the photo; the click is refused. A document whose first track fails offers Clear mark and Skip photo; M5 adds a soft mark, which places the photo without making it a tracking reference.
 
 Waiting for the user: nothing.
 
