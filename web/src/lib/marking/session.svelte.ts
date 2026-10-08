@@ -256,8 +256,9 @@ export class Session {
 
 	/** The photo the first track's refusal named, if the document still has one: Clear/Skip need it by name. */
 	get failedPhoto(): string | null {
-		const m = /^([^:]+): point .+ is outside the/.exec(this.error);
-		return m && this.photos.some((p) => p.file === m[1]) ? m[1] : null;
+		if (!this.error.includes(' is outside the ')) return null;
+		const named = (file: string) => ` ${this.error}`.includes(` ${file}: point `);
+		return this.photos.find((p) => named(p.file))?.file ?? null;
 	}
 
 	/** A bad mark planted by hand: drop it and try again, or, for the first photo, redo its points. */
