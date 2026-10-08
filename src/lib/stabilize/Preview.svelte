@@ -91,7 +91,7 @@ function keydown(e: KeyboardEvent) {
 	<main class="stage preview">
 		<div class="dock top">
 			<div class="island start">
-				<span class="wordmark">pin<b>frame</b></span>
+				<span class="wordmark">Stabilize</span>
 				<span class="sep desk"></span>
 				<span class="muted desk">{session.name} · {n} photos</span>
 			</div>

@@ -175,7 +175,7 @@ test('features: mark two features, switch, reload, export all, match the CLI', a
 
 	// Export all: one clip per feature, at their default destinations.
 	await page.click('.island.end a.btn.primary');
-	await expect(page).toHaveURL(/\/pin\/export\?.*feature=Ridge/);
+	await expect(page).toHaveURL(/\/stabilize\/export\?.*feature=Ridge/);
 	await expect(page.locator('.clip canvas')).toBeVisible({ timeout: 120_000 });
 	await expect(page.locator('#feature button.on')).toHaveText(RIDGE);
 	await page.click('#feature button:has-text("Feature 1")');
