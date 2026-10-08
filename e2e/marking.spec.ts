@@ -6,17 +6,21 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
+import {
+	clickPhoto,
+	count,
+	current,
+	FOLDER,
+	fixLost,
+	type Marks,
+	PINFRAME_REPO,
+	photoReady,
+	readFeatures,
+	scriptMarks,
+	settled,
+	WORK
+} from './pin';
 
-type Point = [number, number];
-interface Marks {
-	points: Point[];
-	at?: Record<string, { points: Point[]; zoom?: number }>;
-	skip?: string[];
-}
-
-const FOLDER = process.env.ENFRAME_E2E_FOLDER ?? '';
-const WORK = process.env.ENFRAME_E2E_WORK ?? '';
-const PINFRAME_REPO = process.env.ENFRAME_E2E_PINFRAME_REPO ?? '';
 const SAMPLE_DOC = join(PINFRAME_REPO, 'samples', 'train clouds.pin.json');
 const SHOTS = 'captures/e3';
 
@@ -53,21 +57,6 @@ const SKIPPED = [
 	'IMG_4796'
 ].map((f) => `${f}.avif`);
 
-const parsePoints = (text: string): Point[] => text.split('/').map((p) => p.split(',').map(Number) as Point);
-
-/** The known marks of the train clouds job, from pinframe's analysis/train_clouds_all.sh. */
-function scriptMarks(): Required<Pick<Marks, 'points' | 'at'>> {
-	const script = readFileSync(join(PINFRAME_REPO, 'analysis', 'train_clouds_all.sh'), 'utf8');
-	const points = /--points (\S+)/.exec(script)?.[1];
-	if (!points) throw new Error('no --points in analysis/train_clouds_all.sh');
-	const at: NonNullable<Marks['at']> = {};
-	for (const m of script.matchAll(/^\s*--at (\S+\.avif)=([^@\s]+)(?:@([\d.]+))?$/gm)) {
-		at[m[1]] = { points: parsePoints(m[2]), ...(m[3] && { zoom: Number(m[3]) }) };
-	}
-	if (Object.keys(at).length < 20) throw new Error('could not read the --at marks of train_clouds_all.sh');
-	return { points: parsePoints(points), at };
-}
-
 function fingerprint(path: string): string {
 	try {
 		return createHash('sha1').update(readFileSync(path)).digest('hex');
@@ -77,50 +66,7 @@ function fingerprint(path: string): string {
 }
 
 const shot = (page: Page, name: string) => page.screenshot({ path: `${SHOTS}/${name}.png` });
-const readDoc = (): { marks: Marks } => JSON.parse(readFileSync(`${FOLDER}.pin.json`, 'utf8')).features[0];
-const count = async (page: Page) => ((await page.locator('.count').textContent()) ?? '').trim();
-
-async function settled(page: Page) {
-	await expect(page.locator('.island.busy')).toHaveCount(0);
-}
-
-/** The photo the screen is on, as the document names it: the screen shows the stem. */
-async function current(page: Page): Promise<string> {
-	const where = (await page.locator('.where').textContent()) ?? '';
-	const name = /(\S+)\s*·/.exec(where.replace(/\s+/g, ' '));
-	if (!name) throw new Error(`cannot read the photo name from "${where}"`);
-	return `${name[1]}.avif`;
-}
-
-/** Waits until the stage shows `file` decoded and its box has stopped moving. */
-async function photoReady(page: Page, file: string) {
-	await page.waitForFunction((f) => {
-		const img = document.querySelector('.stage .photo img') as HTMLImageElement | null;
-		return !!img && img.complete && img.naturalWidth > 0 && decodeURIComponent(img.src).endsWith(`/${f}`);
-	}, file);
-	let last = '';
-	await expect
-		.poll(
-			async () => {
-				const now = JSON.stringify(await page.locator('.photo').boundingBox());
-				const same = now === last;
-				last = now;
-				return same;
-			},
-			{ intervals: [100] }
-		)
-		.toBe(true);
-}
-
-/** Clicks a point given in photo pixels on the stage's photo. */
-async function clickPhoto(page: Page, x: number, y: number) {
-	const [w, h] = await page
-		.locator('.stage .photo img')
-		.evaluate((i: HTMLImageElement) => [i.naturalWidth, i.naturalHeight]);
-	const box = await page.locator('.photo').boundingBox();
-	if (!box) throw new Error('no photo on the stage');
-	await page.mouse.click(box.x + (box.width * x) / w, box.y + (box.height * y) / h);
-}
+const readDoc = (): { marks: Marks } => readFeatures()[0];
 
 const sampleBefore = fingerprint(SAMPLE_DOC);
 
@@ -168,42 +114,17 @@ test('marking: points, track, fix the lost photos, clear the fix list', async ({
 	await page.keyboard.press('ArrowRight');
 	await page.keyboard.press('ArrowLeft');
 
-	const clicked: string[] = [];
-	const skipped: string[] = [];
-	for (let round = 0; round < 40; round++) {
-		await settled(page);
-		if (!(await count(page)).includes('to fix')) break;
-		const file = await current(page);
-		await photoReady(page, file);
-		await expect(page.locator('.looking .label', { hasText: 'Looking for' })).toBeVisible();
-		const mark = known.at[file];
-		const [w, h] = await page
-			.locator('.stage .photo img')
-			.evaluate((i: HTMLImageElement) => [i.naturalWidth, i.naturalHeight]);
-		const near = !mark || mark.points.some(([x, y]) => x < EDGE || y < EDGE || x > w - EDGE || y > h - EDGE);
-		if (near) {
-			await page.keyboard.press('s');
-			skipped.push(file);
-		} else {
+	const { clicked, skipped } = await fixLost(
+		page,
+		(file, [w, h]) => {
+			const mark = known.at[file];
+			if (!mark || mark.points.some(([x, y]) => x < EDGE || y < EDGE || x > w - EDGE || y > h - EDGE)) return null;
 			const cx = mark.points.reduce((t, p) => t + p[0], 0) / mark.points.length;
 			const cy = mark.points.reduce((t, p) => t + p[1], 0) / mark.points.length;
-			await clickPhoto(page, cx, cy);
-			clicked.push(file);
-		}
-		// Serve saves the document before it tracks.
-		await expect
-			.poll(() => {
-				try {
-					const m = readDoc().marks;
-					return file in (m.at ?? {}) || (m.skip ?? []).includes(file);
-				} catch {
-					return false;
-				}
-			})
-			.toBe(true);
-		await expect.poll(async () => !(await count(page)).includes('to fix') || (await current(page)) !== file).toBe(true);
-	}
-	await settled(page);
+			return [cx, cy];
+		},
+		() => readDoc().marks
+	);
 	console.log(`clicked ${clicked.length}: ${clicked.join(' ')}\nskipped ${skipped.length}: ${skipped.join(' ')}`);
 	await expect(page.locator('.count')).toHaveText('All 57 linked');
 	expect(clicked).toEqual(CLICKED);
