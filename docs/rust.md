@@ -321,7 +321,7 @@ The crate is a library plus the `pinframe` CLI over it, so `enframe-serve` can t
 - `pinframe::track(&job, &mut log)` checks a `Job` (the photos, their `Marks` and the CLI's other options, typed), tracks and plans the crop, and returns a `Tracked`. A job with no `output` only tracks: nothing is written but feature cache entries.
 - `Tracked::sidecar(run, clip)` gives the `.json` sidecar's data; `Sidecar::to_json()` its bytes. `Tracked::write(&mut log)` renders and publishes the job's clip and sidecar, as the CLI does.
 - Errors are the CLI's messages, as `String`s; nothing exits the process. Progress lines go to `log`, which the CLI prints.
-- Marks are kept in the CLI's text form so they are checked in the same order with the same messages; `Marks::new(points).with_at(photo, &mark).with_skip(photo)` builds them from points, and the text reads back to the same `f64`s.
+- Marks are kept in the CLI's text form so they are checked in the same order with the same messages; `Marks::new(points).with_at(photo, &mark).with_near(photo, &mark).with_skip(photo)` builds them from points, and the text reads back to the same `f64`s.
 
 Measured on a 4-core Linux container (2026-10-08): an in-process re-track of the 57 train clouds photos with a warm feature cache takes 1.05 s, 1.02 s of it matching; the same CLI run takes 1.1 to 1.3 s. The 145 ms above is the M4 Pro's track and plan from features in memory (`retrack_bench` in `rust/src/checks.rs`).
 

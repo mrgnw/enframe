@@ -41,6 +41,8 @@ Otherwise a mark keeps the zoom of the photo before it, times the change in EXIF
 
 If a building or trees hide the feature entirely rather than just losing the tracker, mark it with `--skip PHOTO` instead: the photo is never matched and stays in the clip at an estimated position, like `LOST`, but without risking a wrong fit on whatever is in front of the feature. A skipped photo cannot also carry an `--at` mark, and the first photo cannot be skipped.
 
+When the feature is visible but too hazy or half-hidden to place precisely, `--near PHOTO=x,y/x,y...@zoom` soft-marks it instead. The photo is placed at those points and zoom, like `--at`, but tracking carries on from the last tracked or marked photo as if this one were lost, so a rough position never becomes the reference for the photos after it. It takes the same points, zoom and checks as `--at`, and cannot share a photo with `--at` or `--skip`.
+
 ```sh
 rust/target/release/pinframe "samples/train clouds"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.avif=846,641.5/1046,641.5/846,816.5/1046,816.5 --out out/turbines.avif
 ```
@@ -64,7 +66,7 @@ rust/target/release/pinframe "samples/train clouds"/IMG_479{1,2,3,4,5}.avif --po
 rust/target/release/pinframe "samples/train clouds"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --cache /tmp/pinframe-cache --out out/track.json
 ```
 
-Writes the clip and a `.json` beside it: `{"run": ..., "clip": ..., "photos": [...]}`. Each entry in `photos` has the photo's crop rect, normalized to 0–1 like enframe's coordinates. With padding, rects can extend past 0 and 1. Each entry also has the photo's `scale` relative to the first photo and its `source`: `tracked`, `mark` (placed by `--points` or `--at`), `lost` (position estimated from neighbours, the photos to mark next), or `skipped` (position estimated the same way, for a photo marked `--skip`). `points` lists every point of that photo, `[[x, y], ...]` normalized the same way as the crop rect, in the order given (or carried forward by tracking); the anchor that stays still in the clip is their mean.
+Writes the clip and a `.json` beside it: `{"run": ..., "clip": ..., "photos": [...]}`. Each entry in `photos` has the photo's crop rect, normalized to 0–1 like enframe's coordinates. With padding, rects can extend past 0 and 1. Each entry also has the photo's `scale` relative to the first photo and its `source`: `tracked`, `mark` (placed by `--points` or `--at`), `lost` (position estimated from neighbours, the photos to mark next), `soft` (placed by `--near`), or `skipped` (position estimated the same way, for a photo marked `--skip`). `points` lists every point of that photo, `[[x, y], ...]` normalized the same way as the crop rect, in the order given (or carried forward by tracking); the anchor that stays still in the clip is their mean.
 
 Both files are written under names unique to the run, then renamed into place together while holding a lock on the output folder. A failed run leaves the previous clip and `.json` untouched, and runs that share an output never mix their files. `run` is a random ID that is also stored in the clip's metadata (XMP for `.avif`, `comment` for ffmpeg outputs), so a reader can confirm a clip and its `.json` belong together. A reader can also take a shared lock on the folder while reading the pair.
 
