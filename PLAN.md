@@ -12,7 +12,7 @@ pinframe's Rust CLI is the only implementation: `bash analysis/check.sh` passes 
 
 1. **One card, one branch, one thread.** Each card in `todos/` is sized for one agent session. Its branch is named after it (for example `e1-sidecar-points`).
 2. **A card lists what it may touch.** Stay inside those files. Anything else becomes a new card.
-3. **Gate:** `bash analysis/check.sh` passes, plus the card's own "Done when". A card that touches `web/` also runs `bash analysis/check.sh --browser` (the Playwright walkthrough, about 90 s more; one-time Mac setup `cd web && pnpm install && pnpm exec playwright install chromium`). A card that changes tracking on purpose says so and updates the expected values in `check.sh` in the same branch.
+3. **Gate:** `bash analysis/check.sh` passes, plus the card's own "Done when". The browser walkthrough runs in enframe, via `bun run test:e2e`. A card that changes tracking on purpose says so and updates the expected values in `check.sh` in the same branch.
 4. **Merge:** rebase onto `main`, fast-forward, one merge at a time. Delete the branch and worktree after.
 5. **Parallel threads:** at most two at once, and only cards with no dependency between them and no shared files.
 6. **Decisions** marked ⚑ wait for the user. A thread never makes them.

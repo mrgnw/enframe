@@ -84,7 +84,7 @@ The whole sample folder, with every mark, is one script:
 BIN=rust/target/release/pinframe bash analysis/train_clouds_all.sh out/all.avif
 ```
 
-The marking UI is being built as a SvelteKit app in `web/` (cards M1 to M3, see [docs/ui-plan.md](docs/ui-plan.md)). Today it serves `POST /api/track` and `POST /api/export`, which wrap the binary, on port 7341: `cd web && pnpm install && pnpm dev`, see [web/README.md](web/README.md).
+The marking UI lives in [enframe](https://github.com/mrgnw/enframe), at `/pin`; its `bun run test:e2e` covers the walkthrough.
 
 Run the test suite as the self-check:
 
