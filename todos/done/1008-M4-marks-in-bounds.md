@@ -1,3 +1,7 @@
+---
+branch: m4-marks-in-bounds
+---
+
 # M4 · Marks stay inside the photo
 
 Depends on: — · Model: Sonnet · Size: S
@@ -17,6 +21,10 @@ Found by the W1 spike. On a lost photo a click places the ghost's whole point pa
 
 ## Done when
 
-- [ ] Clicking at the edge of a lost photo at zoom 3 does not produce a mark the CLI refuses.
-- [ ] `pnpm test:e2e` passes with the workaround removed.
-- [ ] A document with a bad mark, planted by hand, opens to a message naming the photo and buttons that clear the mark or skip the photo.
+- [x] Clicking at the edge of a lost photo at zoom 3 does not produce a mark the CLI refuses.
+- [x] `pnpm test:e2e` passes with the workaround removed.
+- [x] A document with a bad mark, planted by hand, opens to a message naming the photo and buttons that clear the mark or skip the photo.
+
+## Result
+
+A click whose ghost would put any point outside the photo is refused: the cursor shows not-allowed, the ghost turns red, and a toast explains. The check matches the CLI (`0 <= p < size`) and also covers Enter on an estimate and edits of a marked photo. Refused rather than shrunk, because shrinking would silently change the zoom the ghost shows. The ghost, the reference patch and the "Looking for" label use the scale the sidecar last reported (`refScale`). A document whose first track fails shows the CLI error with Clear mark and Skip photo (Clear only on the first photo, which goes back to the Points step). The walkthrough follows auto-advance with no workaround and gained tests for the edge click and both recovery buttons. `check.sh --browser`: 22 passed, 0 failed.
