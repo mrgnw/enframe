@@ -64,7 +64,7 @@ type Point = [f64; 2];
 // saved beside the folder as `<folder>.stabilize.json`; each feature is one tracker run. The
 // marks' fields are the tracker's: `points` is the first photo's, `at` and `near` map a
 // photo to its mark and soft mark, `skip` lists hidden photos, `zoom` maps a photo to the
-// scale it is shown at in the clip, `order` is the order.
+// scale it is shown at in the clip, `canvas` is the clip's size, `order` is the order.
 #[derive(Deserialize, Serialize)]
 pub struct Marks {
     points: Vec<Point>,
@@ -76,6 +76,8 @@ pub struct Marks {
     skip: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     zoom: BTreeMap<String, f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    canvas: Option<[u32; 2]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     order: Option<Order>,
 }
@@ -106,7 +108,6 @@ struct RunArgs {
     features: Vec<Feature>,
     feature: String,
     pad: Option<String>,
-    canvas: Option<[u32; 2]>,
     out: Option<String>,
     fps: Option<f64>,
     frames: Option<String>,
@@ -139,6 +140,10 @@ fn check_marks(marks: &Marks) -> Result<(), String> {
         if !(scale.is_finite() && *scale > 0.0) {
             return Err(format!("zoom {file}: the scale must be a positive number"));
         }
+    }
+    if let Some([width, height]) = marks.canvas {
+        ::stabilize::check_canvas((width, height))
+            .map_err(|_| "canvas: [width, height], both even and positive".to_string())?;
     }
     Ok(())
 }
@@ -173,15 +178,6 @@ fn parse_pad(raw: Option<String>) -> ApiResult<Option<String>> {
         return Ok(Some(pad));
     }
     Err(bad("pad must be transparent, black, white or #rrggbb"))
-}
-
-fn parse_canvas(raw: Option<[u32; 2]>) -> ApiResult<Option<(u32, u32)>> {
-    let Some([width, height]) = raw else {
-        return Ok(None);
-    };
-    ::stabilize::check_canvas((width, height))
-        .map_err(|_| bad("canvas must be [width, height], both even and positive"))?;
-    Ok(Some((width, height)))
 }
 
 fn points(points: &[Point]) -> Vec<(f64, f64)> {
@@ -327,7 +323,6 @@ struct Job {
     features: Vec<Feature>,
     feature: usize,
     pad: Option<String>,
-    canvas: Option<(u32, u32)>,
     output: Option<::stabilize::Output>,
 }
 
@@ -416,12 +411,13 @@ impl Stabilize {
         running: Running,
         mut on_line: impl FnMut(&str) + Send + 'static,
     ) -> ApiResult<Value> {
+        let marks = &job.features[job.feature].marks;
         let tracker_job = ::stabilize::Job {
             photos: running.photos,
-            order: tracker_order(job.features[job.feature].marks.order),
-            marks: tracker_marks(&job.features[job.feature].marks),
+            order: tracker_order(marks.order),
+            marks: tracker_marks(marks),
             pad: job.pad.clone(),
-            canvas: job.canvas,
+            canvas: marks.canvas.map(|[width, height]| (width, height)),
             output: job.output.clone(),
             cancel: Some(running.cancel.0.clone()),
             ..::stabilize::Job::default()
@@ -467,7 +463,6 @@ pub async fn track(
 ) -> ApiResult<Json<Value>> {
     let (args, feature) = parse_args(body)?;
     let pad = parse_pad(args.pad)?;
-    let canvas = parse_canvas(args.canvas)?;
     let (folder, document) = confine_folder(&state, &args.folder)?;
     let job = Job {
         folder,
@@ -475,7 +470,6 @@ pub async fn track(
         features: args.features,
         feature,
         pad,
-        canvas,
         output: None,
     };
     let running = state.stabilize.start(&job).await?;
@@ -564,7 +558,6 @@ fn ending(result: ApiResult<Value>, out: &Path) -> Event {
 pub async fn export(State(state): State<AppState>, Json(body): Json<Value>) -> ApiResult<Response> {
     let (mut args, feature) = parse_args(body)?;
     let pad = parse_pad(args.pad.take())?;
-    let canvas = parse_canvas(args.canvas.take())?;
     let (folder, document) = confine_folder(&state, &args.folder)?;
     let out = export_out(&state, &folder, &args.feature, args.out.take())?;
     let output = export_output(&state, &folder, out.clone(), &mut args)?;
@@ -574,7 +567,6 @@ pub async fn export(State(state): State<AppState>, Json(body): Json<Value>) -> A
         features: args.features,
         feature,
         pad,
-        canvas,
         output: Some(output),
     };
     let running = state.stabilize.start(&job).await?;
@@ -650,9 +642,11 @@ mod tests {
             "near": { "c.avif": { "points": [[3, 4]] } },
             "skip": ["d.avif"],
             "zoom": { "e.avif": 0.5 },
+            "canvas": [1920, 1080],
             "order": "name"
         }))
         .unwrap();
+        assert_eq!(marks.canvas, Some([1920, 1080]));
         assert_eq!(
             tracker_marks(&marks),
             ::stabilize::Marks {
@@ -667,12 +661,9 @@ mod tests {
         let zero: Marks =
             serde_json::from_value(json!({ "points": [[1, 2]], "zoom": { "e.avif": 0 } })).unwrap();
         assert!(check_marks(&zero).is_err());
-        assert_eq!(
-            parse_canvas(Some([1920, 1080])).unwrap(),
-            Some((1920, 1080))
-        );
-        assert!(parse_canvas(Some([1921, 1080])).is_err());
-        assert_eq!(parse_canvas(None).unwrap(), None);
+        let odd: Marks =
+            serde_json::from_value(json!({ "points": [[1, 2]], "canvas": [1921, 1080] })).unwrap();
+        assert!(check_marks(&odd).is_err());
         assert_eq!(tracker_order(marks.order), ::stabilize::Order::Name);
         assert_eq!(tracker_order(None), ::stabilize::Order::Time);
     }

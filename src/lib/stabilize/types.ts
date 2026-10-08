@@ -13,6 +13,8 @@ export interface Marks {
 	skip?: string[];
 	/** Per photo, the scale it is shown at in the clip instead of what tracking found (`--zoom`). */
 	zoom?: Record<string, number>;
+	/** The clip's width and height in pixels (`--canvas`); absent, the crop's own size. */
+	canvas?: Canvas;
 	order?: 'time' | 'name';
 }
 

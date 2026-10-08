@@ -3,7 +3,7 @@
 // but a slow network can still deliver old answers out of order, so the sequence number decides).
 
 import { currentConnection, getImageSrc, isLocalInstance, listDirectory, readTextFile } from '$lib/bridge';
-import { type Canvas, type Feature, FIRST_FEATURE, type Marks, type Sidecar } from './types';
+import { type Feature, FIRST_FEATURE, type Marks, type Sidecar } from './types';
 
 const PHOTO = /\.(avif|heic|heif|jxl|jpe?g|png)$/i;
 const MISSING = /\(os error 2\)/;
@@ -110,22 +110,10 @@ export function lastSidecar(folder: string, feature: string): Sidecar | null {
 	return last?.folder === folder && last.feature === feature && last.sequence === sequence ? last.sidecar : null;
 }
 
-/**
- * `track` with `pad` (the CLI's `--pad`, none when absent) and `canvas` (`--canvas`, the crop's own size when
- * absent); `Stale` when a newer call was made.
- */
-export function trackPad(
-	folder: string,
-	features: Feature[],
-	feature: string,
-	pad?: string,
-	canvas?: Canvas | null
-): Promise<Sidecar> {
+/** `track` with `pad` (the CLI's `--pad`, none when absent); `Stale` when a newer call was made. */
+export function trackPad(folder: string, features: Feature[], feature: string, pad?: string): Promise<Sidecar> {
 	const mine = ++sequence;
-	return postTrack(
-		{ folder, features, feature, ...(pad && { pad }), ...(canvas && { canvas }) },
-		() => mine === sequence
-	);
+	return postTrack({ folder, features, feature, ...(pad && { pad }) }, () => mine === sequence);
 }
 
 export interface ExportRequest {
@@ -135,7 +123,6 @@ export interface ExportRequest {
 	feature: string;
 	out: string;
 	pad?: string;
-	canvas?: Canvas;
 	fps: number;
 	/** A directory for the aligned PNG frames. */
 	frames?: string;

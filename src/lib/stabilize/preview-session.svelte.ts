@@ -18,7 +18,7 @@ import {
 	type Format,
 	type PadChoice
 } from './clip';
-import type { Canvas, Feature, SidecarPhoto } from './types';
+import type { Canvas, Feature, Marks, SidecarPhoto } from './types';
 
 /** One step of the zoom buttons, as a factor on the photo's scale. */
 const ZOOM_STEP = 1.25;
@@ -84,8 +84,6 @@ export class Preview {
 	fps = $state(FPS_DEFAULT);
 	pad = $state<PadChoice>('none');
 	custom = $state('#4b8bf5');
-	/** The clip's size when the user set one; null sizes it to the crop. */
-	canvas = $state<Canvas | null>(null);
 	format = $state<Format>('avif');
 	frames = $state(false);
 	features = $state.raw<Feature[]>([]);
@@ -158,6 +156,11 @@ export class Preview {
 		return baseName(this.folder);
 	}
 
+	/** The clip's size the user set for this feature, saved in the document; null sizes it to the crop. */
+	get canvas(): Canvas | null {
+		return this.features[this.selected]?.marks.canvas ?? null;
+	}
+
 	/** The clip's size on screen: the canvas the user typed, else the crop's own. */
 	get size(): { w: number; h: number } | null {
 		if (this.canvas) return { w: this.canvas[0], h: this.canvas[1] };
@@ -208,7 +211,7 @@ export class Preview {
 	/** Draws the feature on screen: from the marking screen's sidecar when it handed one over, else by tracking. */
 	private async show(): Promise<void> {
 		this.busy = true;
-		const handed = this.pad === 'none' && !this.canvas ? lastSidecar(this.folder, this.feature) : null;
+		const handed = this.pad === 'none' ? lastSidecar(this.folder, this.feature) : null;
 		if (!handed) return this.retrack();
 		this.padded = false;
 		await this.render(handed.photos, ++this.generation);
@@ -228,13 +231,7 @@ export class Preview {
 		this.busy = true;
 		this.tracking = true;
 		try {
-			const sidecar = await trackPad(
-				this.folder,
-				this.features,
-				this.feature,
-				padArg(this.pad, this.custom),
-				this.canvas
-			);
+			const sidecar = await trackPad(this.folder, this.features, this.feature, padArg(this.pad, this.custom));
 			this.tracking = false;
 			if (mine !== this.generation) return;
 			this.padded = this.pad !== 'none';
@@ -346,7 +343,14 @@ export class Preview {
 		this.resetExport();
 	}
 
-	// ---- canvas and zoom: both change the rects, so they re-track ----
+	// ---- canvas and zoom: both live in the document's marks and change the rects, so they re-track ----
+
+	/** Replaces the shown feature's marks with `edit(marks)` and tracks them; the track saves the document. */
+	private async editMarks(edit: (marks: Marks) => Marks): Promise<void> {
+		this.features = this.features.map((f, i) => (i === this.selected ? { ...f, marks: edit(f.marks) } : f));
+		this.resetExport();
+		await this.retrack();
+	}
 
 	/** Sizes the clip to `w` by `h` pixels, rounded to even; null goes back to the crop's own size. */
 	async setCanvas(w: number | null, h: number | null): Promise<void> {
@@ -356,9 +360,7 @@ export class Preview {
 		const [cw, ch] = [even(w), even(h)];
 		const canvas: Canvas | null = cw && ch ? [cw, ch] : null;
 		if (JSON.stringify(canvas) === JSON.stringify(this.canvas)) return;
-		this.canvas = canvas;
-		this.resetExport();
-		await this.retrack();
+		await this.editMarks(({ canvas: _, ...marks }) => (canvas ? { ...marks, canvas } : marks));
 	}
 
 	/** Shows the frame on screen at `scale` in the clip; null goes back to what tracking found. */
@@ -369,13 +371,7 @@ export class Preview {
 		const zoom = { ...this.zooms };
 		if (scale === null) delete zoom[row.file];
 		else zoom[row.file] = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(scale * 100) / 100));
-		this.features = this.features.map((f, i) => {
-			if (i !== this.selected) return f;
-			const { zoom: _, ...marks } = f.marks;
-			return { ...f, marks: Object.keys(zoom).length ? { ...marks, zoom } : marks };
-		});
-		this.resetExport();
-		await this.retrack();
+		await this.editMarks(({ zoom: _, ...marks }) => (Object.keys(zoom).length ? { ...marks, zoom } : marks));
 	}
 
 	stepZoom(dir: 1 | -1): Promise<void> {
@@ -423,7 +419,6 @@ export class Preview {
 					feature: this.features[i].name,
 					out,
 					pad: padArg(this.pad, this.custom),
-					...(this.canvas && { canvas: this.canvas }),
 					fps: this.fps,
 					...(this.frames && { frames: `${base} frames` })
 				},
@@ -438,7 +433,7 @@ export class Preview {
 					}
 				}
 			);
-			const size = clipSize(done.sidecar.photos, this.canvas);
+			const size = clipSize(done.sidecar.photos, this.features[i].marks.canvas ?? null);
 			this.exps[i] = {
 				...idle(),
 				status: 'done',
