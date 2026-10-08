@@ -1,6 +1,7 @@
 # M5 · Soft marks
 
 Depends on: M4 (shares `web/src/lib/marking/`) · Model: Opus · Size: M
+Issue: https://github.com/mrgnw/pinframe/issues/6
 Touches: `rust/src/lib.rs`, `rust/src/main.rs`, `rust/src/track.rs`, `README.md`, `docs/rust.md`, `web/src/lib/marking/`, `web/e2e/`, `analysis/check.sh` (one new README command if needed)
 
 ## Problem
