@@ -42,6 +42,8 @@ export interface Photo {
 	w: number;
 	h: number;
 	scale: number;
+	/** The sidecar's last confirmed scale, unlike `scale` which a local mark sets ahead of the retrack that confirms it. */
+	refScale: number;
 	source: Source;
 	/** Normalized 0–1 to this photo. */
 	pts: Point[];
@@ -78,6 +80,7 @@ export function fromSidecar(row: SidecarPhoto): Photo {
 		w: row.width ?? 0,
 		h: row.height ?? 0,
 		scale: row.scale,
+		refScale: row.scale,
 		source: row.source,
 		pts: row.points.map(([x, y]) => [x, y]),
 		feats: feats ? Number(feats[1]) : null

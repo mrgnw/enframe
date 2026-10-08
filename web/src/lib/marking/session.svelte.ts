@@ -111,6 +111,7 @@ export class Session {
 			w: 0,
 			h: 0,
 			scale: 1,
+			refScale: 1,
 			source: 'tracked',
 			pts: [],
 			feats: null
@@ -246,7 +247,7 @@ export class Session {
 		this.unmark(p);
 		this.fixList.add(p.file);
 		// Lost again: the zoom starts over from the reference, as when landing on a lost photo.
-		this.zoom = this.ref.scale;
+		this.zoom = this.ref.refScale;
 		this.zoomTouched = false;
 		void this.retrack();
 	}
@@ -326,7 +327,7 @@ export class Session {
 		this.autoAdvanced = false;
 		this.current = clamp(i, 0, this.photos.length - 1);
 		if (this.photo.source === 'lost') {
-			this.zoom = this.ref.scale;
+			this.zoom = this.ref.refScale;
 			this.zoomTouched = false;
 		}
 		this.scroll = { serial: this.scroll.serial + 1, jump };

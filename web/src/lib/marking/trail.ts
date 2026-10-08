@@ -24,7 +24,7 @@ export function prevLinked(photos: Photo[], i: number): Photo {
  */
 export function ghostOffsets(p: Photo, ref: Photo, zoom: number): Point[] {
 	const [cx, cy] = centre(ref);
-	const f = zoom / ref.scale;
+	const f = zoom / ref.refScale;
 	return ref.pts.map(([x, y]) => [((x - cx) * ref.w * f) / p.w, ((y - cy) * ref.h * f) / p.h]);
 }
 
@@ -115,7 +115,7 @@ export function trailSvg(
 
 /** The reference patch: where the photo's background sits so its points' centre is in the middle. */
 export function patchLayout(ref: Photo, pw: number, ph: number, patchPx: number) {
-	const k = pw / (patchPx * ref.scale);
+	const k = pw / (patchPx * ref.refScale);
 	const [cx, cy] = centre(ref);
 	const ox = pw / 2 - cx * ref.w * k;
 	const oy = ph / 2 - cy * ref.h * k;

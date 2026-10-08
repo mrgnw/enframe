@@ -187,7 +187,7 @@
 						</div>
 						<div class="label">
 							{#if lost}
-								Looking for<b>{session.ref.name} · {session.ref.scale.toFixed(2)}×</b>
+								Looking for<b>{session.ref.name} · {session.ref.refScale.toFixed(2)}×</b>
 								<span class="more">
 									{#if phone}tap where it is now{:else}click where it is now<br />or <kbd>⏎</kbd> to accept the estimate{/if}
 								</span>
