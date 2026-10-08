@@ -21,12 +21,13 @@ export type Point = [number, number];
 /**
  * The document the UI edits, saved beside the folder as `<folder>.pin.json`. Coordinates are pixels of
  * the photo as displayed (after EXIF orientation), exactly what the CLI takes, so the file reproduces the
- * CLI call: `points` is `--points` on the first photo, each `at` entry is `--at FILE=points[@zoom]`, `skip`
- * is `--skip FILE`, `order` is `--order`.
+ * CLI call: `points` is `--points` on the first photo, each `at` entry is `--at FILE=points[@zoom]`, each
+ * `near` entry (a soft mark) is `--near FILE=points[@zoom]`, `skip` is `--skip FILE`, `order` is `--order`.
  */
 export interface Marks {
 	points: Point[];
 	at?: Record<string, { points: Point[]; zoom?: number }>;
+	near?: Record<string, { points: Point[]; zoom?: number }>;
 	skip?: string[];
 	order?: 'time' | 'name';
 }
@@ -104,6 +105,25 @@ function points(list: unknown, what: string): Point[] {
 	return list.map((p) => point(p, what));
 }
 
+/** An `at` or `near` map: photo name to {points, zoom?}. */
+function markMap(raw: unknown, key: 'at' | 'near'): NonNullable<Marks['at']> {
+	if (typeof raw !== 'object' || raw === null) {
+		throw new PinframeError(`${key} must map a photo name to {points, zoom?}`);
+	}
+	const map: NonNullable<Marks['at']> = {};
+	for (const [file, mark] of Object.entries(raw as Record<string, unknown>)) {
+		if (typeof mark !== 'object' || mark === null) {
+			throw new PinframeError(`${key} ${file}: needs {points, zoom?}`);
+		}
+		const { points: p, zoom } = mark as Record<string, unknown>;
+		if (zoom !== undefined && (typeof zoom !== 'number' || !(zoom > 0))) {
+			throw new PinframeError(`${key} ${file}: zoom must be a positive number`);
+		}
+		map[file] = { points: points(p, `${key} ${file}`), ...(zoom !== undefined && { zoom }) };
+	}
+	return map;
+}
+
 /** Validates a request body's `marks`; the shape mirrors the CLI, so a bad one gets the CLI's wording. */
 export function parseMarks(raw: unknown): Marks {
 	if (typeof raw !== 'object' || raw === null) {
@@ -111,22 +131,8 @@ export function parseMarks(raw: unknown): Marks {
 	}
 	const m = raw as Record<string, unknown>;
 	const marks: Marks = { points: points(m.points, 'points') };
-	if (m.at !== undefined) {
-		if (typeof m.at !== 'object' || m.at === null) {
-			throw new PinframeError('at must map a photo name to {points, zoom?}');
-		}
-		marks.at = {};
-		for (const [file, mark] of Object.entries(m.at as Record<string, unknown>)) {
-			if (typeof mark !== 'object' || mark === null) {
-				throw new PinframeError(`at ${file}: needs {points, zoom?}`);
-			}
-			const { points: p, zoom } = mark as Record<string, unknown>;
-			if (zoom !== undefined && (typeof zoom !== 'number' || !(zoom > 0))) {
-				throw new PinframeError(`at ${file}: zoom must be a positive number`);
-			}
-			marks.at[file] = { points: points(p, `at ${file}`), ...(zoom !== undefined && { zoom }) };
-		}
-	}
+	if (m.at !== undefined) marks.at = markMap(m.at, 'at');
+	if (m.near !== undefined) marks.near = markMap(m.near, 'near');
 	if (m.skip !== undefined) {
 		if (!Array.isArray(m.skip) || !m.skip.every((s) => typeof s === 'string')) {
 			throw new PinframeError('skip must be a list of photo names');
@@ -156,9 +162,11 @@ const formatPoints = (list: Point[]) => list.map(([x, y]) => `${x},${y}`).join('
 /** The CLI flags for a document, without the photos and `--out`. */
 export function cliArgs(marks: Marks): string[] {
 	const args = ['--points', formatPoints(marks.points)];
-	for (const [file, mark] of Object.entries(marks.at ?? {})) {
-		const zoom = mark.zoom === undefined ? '' : `@${mark.zoom}`;
-		args.push('--at', `${file}=${formatPoints(mark.points)}${zoom}`);
+	for (const [flag, map] of [['--at', marks.at], ['--near', marks.near]] as const) {
+		for (const [file, mark] of Object.entries(map ?? {})) {
+			const zoom = mark.zoom === undefined ? '' : `@${mark.zoom}`;
+			args.push(flag, `${file}=${formatPoints(mark.points)}${zoom}`);
+		}
 	}
 	for (const file of marks.skip ?? []) {
 		args.push('--skip', file);
