@@ -1,4 +1,3 @@
-0. app-switch — the wordmark is the menu between enframe and Stabilize (mockup 1, chosen 2026-10-08). Running.
 1. one-writer-instance-connection — phases 1 and 2 done. Remaining: phase 3, export
    destination chosen per export, which is what a remotely-connected app needs to write
    back to the machine you are sitting at.

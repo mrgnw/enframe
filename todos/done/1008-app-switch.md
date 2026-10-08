@@ -1,3 +1,7 @@
+---
+branch: app-switch
+---
+
 # App switch: the wordmark is the menu
 
 Issue: https://github.com/mrgnw/enframe/issues/21 · Mockup: `mockups/nav/01-wordmark-menu.html` (https://mox.xcc.es/enframe/nav/01-wordmark-menu.html) · Model: Sonnet · Size: S
@@ -31,9 +35,13 @@ One component, `AppSwitch`, rendered where each screen shows its name:
 
 ## Done when
 
-- [ ] The wordmark on every screen opens the menu and switches; `⌘1`/`⌘2` switch without it.
-- [ ] A Playwright test (extend `e2e/marking.spec.ts` or a small `e2e/nav.spec.ts`) switches
+- [x] The wordmark on every screen opens the menu and switches; `⌘1`/`⌘2` switch without it.
+- [x] A Playwright test (extend `e2e/marking.spec.ts` or a small `e2e/nav.spec.ts`) switches
       Stabilize → enframe → Stabilize by menu and by key; screenshots of the open menu in
       both shells to `captures/nav/`.
-- [ ] `bun run check`, `bun run lint`, `bun run test`, `bun run test:e2e` pass; a line under
+- [x] `bun run check`, `bun run lint`, `bun run test`, `bun run test:e2e` pass; a line under
       Unreleased in CHANGELOG.md.
+
+## Result
+
+`AppSwitch.svelte` is the wordmark on all five screens: the layout renders it top-left for the framer, library and editor (offset past the traffic lights in the desktop shell); Marking and Preview render it in their dark dock, as a 28px icon pill on phones. ⌘1/⌘2 switch from anywhere except typed fields. Two z-index bugs found by the e2e were fixed: the Stabilize dock sat level with the features panel, and Standalone's corner slot covered the framer wordmark. e2e 7/7 with `e2e/app-switch.spec.ts`; screenshots in `captures/nav/`.
