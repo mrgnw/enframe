@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>pinframe · choose photos and mark the feature</title>
+<link rel="stylesheet" href="pin.css">
+<style>
+	.drop {
+		display: grid;
+		place-items: center;
+		text-align: center;
+		width: min(640px, calc(100% - 80px));
+		padding: 72px 40px;
+		border: 1.5px dashed var(--faint);
+		border-radius: 20px;
+		transition: border-color 0.2s, background 0.2s;
+	}
+	.drop.over { border-color: var(--accent); background: rgba(245, 165, 36, 0.05); }
+	.drop h1 {
+		margin: 0 0 12px;
+		font: 600 40px/1.05 var(--display);
+		letter-spacing: -0.03em;
+	}
+	.drop h1 b { color: var(--accent); font-weight: inherit; }
+	.drop p { margin: 0 0 28px; max-width: 42ch; color: var(--muted); font-size: 16px; line-height: 1.55; }
+	.drop .btn.primary { height: 40px; padding: 0 18px; font-size: 15px; }
+	.drop small { display: block; margin-top: 20px; color: var(--faint); font-size: 12px; }
+	.drop .sample { margin-top: 16px; color: var(--muted); font-size: 13px; }
+	.drop .sample a { color: var(--accent); text-decoration: none; }
+
+	.stage.marking .photo { cursor: crosshair; }
+	.prompt {
+		position: absolute;
+		bottom: 64px;
+		left: 50%;
+		translate: -50% 0;
+		padding: 6px 12px;
+		border-radius: 999px;
+		background: rgba(0, 0, 0, 0.55);
+		color: rgba(255, 255, 255, 0.85);
+		font-size: 13px;
+		white-space: nowrap;
+		pointer-events: none;
+		z-index: 4;
+	}
+	.filmstrip.empty { min-height: 84px; }
+	@media (max-width: 700px) {
+		.stage { grid-template-rows: auto minmax(0, 1fr); }
+		.dock { justify-self: stretch; }
+		.drop { padding: 48px 20px; }
+		.drop h1 { font-size: 32px; }
+		.prompt { bottom: 16px; }
+		.mock { top: auto; bottom: 120px; }
+	}
+	.filmstrip .thumb.pending { opacity: 0.5; }
+	.filmstrip .thumb.pending::after { background: var(--faint); }
+	.tracking .thumb.pending img { filter: saturate(0.4); }
+	.island .bar.wide { opacity: 1; }
+	.island .bar.wide::after { animation: none; width: var(--p, 0%); transition: width 0.1s linear; }
+</style>
+</head>
+<body>
+
+<div class="mock" id="mock">
+	<button data-s="empty" class="on">empty</button>
+	<button data-s="loaded">loaded</button>
+	<button data-s="points">points</button>
+	<button data-s="tracking">tracking</button>
+</div>
+
+<main class="stage" id="stage">
+	<div class="dock top">
+		<div class="island start">
+			<span class="wordmark">pin<b>frame</b></span>
+			<span class="sep desk" id="folder-sep" hidden></span>
+			<span class="muted desk" id="folder" hidden>train clouds · 57 photos</span>
+		</div>
+
+		<div class="island steps mid desk" id="steps" hidden>
+			<span class="step active"><span class="n">1</span>Points</span>
+			<span class="step"><span class="n">2</span>Fix</span>
+			<span class="step"><span class="n">3</span>Export</span>
+		</div>
+
+		<div class="island end" id="action" hidden>
+			<span class="muted" id="point-count"></span>
+			<span class="sep"></span>
+			<button class="btn primary" id="track">Track <kbd class="desk">⏎</kbd></button>
+			<div class="bar"></div>
+		</div>
+	</div>
+
+	<section class="drop" id="drop">
+		<div>
+			<h1>Hold one thing <b>still</b></h1>
+			<p>Drop a folder of photos. Click points on the cloud, the mountain, the moon, whatever should stay put. Everything else moves around it.</p>
+			<button class="btn primary">Choose folder</button>
+			<div class="sample">or try the <a href="#" id="try-sample">train clouds clouds sample</a> · 57 photos from a train</div>
+			<small>Photos play in filename order · AVIF, HEIC, JPEG, PNG</small>
+		</div>
+	</section>
+
+	<div class="prompt" id="prompt" hidden></div>
+
+	<div class="photo" id="photo" hidden style="aspect-ratio: 2048 / 1536; width: min(100%, calc((100vh - 110px) * 4 / 3))">
+		<img src="assets/IMG_4667.jpg" alt="">
+		<svg class="trail" id="points"></svg>
+	</div>
+</main>
+
+<nav class="filmstrip empty" id="filmstrip"></nav>
+
+<script src="assets/photos.js"></script>
+<script>
+	const $ = id => document.getElementById(id);
+	// The first photo's points, as in 01: the real point plus the simulated pattern around it, normalized 0–1.
+	const START = [[0.7446, 0.3971], [0.6714, 0.3776], [0.7983, 0.3580], [0.7641, 0.4557]];
+	const HIT_PX = 12;
+	let state = 'empty', trackTimer = null, pts = [];
+
+	function drawPoints(just = false) {
+		const svg = $('points'), W = svg.clientWidth, H = svg.clientHeight;
+		svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+		svg.innerHTML = pts.map(([x, y], i) =>
+			`<circle class="pt${just && i === pts.length - 1 ? ' just' : ''}" cx="${x * W}" cy="${y * H}" r="5.5"/>`).join('');
+		$('point-count').textContent = `${pts.length} point${pts.length === 1 ? '' : 's'}`;
+	}
+
+	function setState(s) {
+		state = s;
+		clearInterval(trackTimer);
+		for (const b of $('mock').children) b.classList.toggle('on', b.dataset.s === s);
+		const loaded = s !== 'empty', marking = s === 'loaded' || s === 'points';
+		if (s === 'empty' || s === 'loaded') pts = [];
+		else if (!pts.length) pts = START.map(q => [...q]);
+		$('drop').hidden = loaded;
+		$('photo').hidden = !loaded;
+		$('folder').hidden = $('folder-sep').hidden = !loaded;
+		$('steps').hidden = !loaded;
+		$('prompt').hidden = !marking;
+		$('prompt').textContent = s === 'loaded' ? 'Click points on the feature to hold still' : 'Click to add a point · click a point to remove it';
+		$('action').hidden = !(s === 'points' || s === 'tracking');
+		$('stage').classList.toggle('marking', marking);
+		$('stage').classList.toggle('tracking', s === 'tracking');
+		$('filmstrip').classList.toggle('empty', !loaded);
+		$('filmstrip').innerHTML = loaded ? PHOTOS.map((p, i) =>
+			`<a class="thumb pending${i === 0 ? ' current' : ''}"><img src="assets/${p.name}-t.jpg" alt=""><span class="tip">${p.name}</span></a>`
+		).join('') : '';
+		$('track').innerHTML = 'Track <kbd class="desk">⏎</kbd>';
+		$('action').querySelector('.bar').className = 'bar';
+		drawPoints();
+		if (s === 'tracking') runTracking();
+	}
+
+	// Results arrive photo by photo; dots and the link line fill in left to right.
+	function runTracking() {
+		const thumbs = [...$('filmstrip').children];
+		const bar = $('action').querySelector('.bar');
+		bar.className = 'bar wide';
+		let i = 0;
+		$('track').innerHTML = `Tracking <b>0</b>/57`;
+		trackTimer = setInterval(() => {
+			const p = PHOTOS[i];
+			thumbs[i].className = `thumb ${i === 0 ? 'mark' : p.source === 'mark' ? 'lost' : p.source}`;
+			i++;
+			$('track').innerHTML = `Tracking <b>${i}</b>/57`;
+			bar.style.setProperty('--p', `${i / 57 * 100}%`);
+			if (i >= 57) {
+				clearInterval(trackTimer);
+				setTimeout(() => location.href = '01-marking.html', 500);
+			}
+		}, 40);
+	}
+
+	$('mock').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setState(b.dataset.s); });
+	$('try-sample').addEventListener('click', e => { e.preventDefault(); setState('loaded'); });
+	$('drop').querySelector('.btn').addEventListener('click', () => setState('loaded'));
+	$('drop').addEventListener('dragover', e => { e.preventDefault(); $('drop').classList.add('over'); });
+	$('drop').addEventListener('dragleave', () => $('drop').classList.remove('over'));
+	$('drop').addEventListener('drop', e => { e.preventDefault(); setState('loaded'); });
+	$('track').addEventListener('click', () => { if (state === 'points') setState('tracking'); });
+
+	// Before tracking, a click adds a point and a click on a point removes it.
+	const photo = $('photo');
+	photo.addEventListener('click', e => {
+		if (state !== 'loaded' && state !== 'points') return;
+		const r = photo.getBoundingClientRect(), x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+		const hit = pts.findIndex(([px, py]) => Math.hypot((px - x) * r.width, (py - y) * r.height) <= HIT_PX);
+		if (hit >= 0) pts.splice(hit, 1);
+		else pts.push([x, y]);
+		if (!pts.length) return setState('loaded');
+		if (state === 'loaded') setState('points');
+		drawPoints(hit < 0);
+	});
+	new ResizeObserver(() => drawPoints()).observe(photo);
+	window.addEventListener('keydown', e => { if (e.key === 'Enter' && state === 'points') setState('tracking'); });
+
+	setState('empty');
+</script>
+</body>
+</html>

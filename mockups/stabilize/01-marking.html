@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>pinframe · fix lost photos</title>
+<link rel="stylesheet" href="pin.css">
+<style>
+	:root {
+		--before: #b49cff;
+		--after: #3fd8c4;
+	}
+	.stage { grid-template-rows: minmax(0, 1fr); place-items: stretch; }
+	.view { position: relative; display: grid; place-items: center; container-type: size; min-height: 0; }
+	.photo { width: min(100cqw, 100cqh * var(--r)); aspect-ratio: var(--r); touch-action: manipulation; }
+	.view.edit .photo { cursor: crosshair; }
+	.where { font-variant-numeric: tabular-nums; }
+	.where b { color: var(--fg); font-weight: 600; }
+
+	.looking { height: auto; padding: 8px; border-radius: 14px; gap: 10px; align-items: flex-start; }
+	.looking .label { padding: 4px 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.35; }
+	.looking .label b { display: block; color: var(--fg); font-weight: 600; font-size: 13px; }
+	.looking .btn { margin-top: 6px; display: flex; width: fit-content; height: 26px; padding: 0 10px; background: rgba(255, 255, 255, 0.08); font-size: 12px; }
+
+	.tools { gap: 4px; font-variant-numeric: tabular-nums; }
+	.tools .val { font: 600 15px/1 var(--display); min-width: 2.4ch; text-align: center; }
+	.tools .val.off { font: 500 13px/1 var(--body); color: var(--muted); }
+	.tools .btn.icon { width: 26px; height: 26px; font-size: 15px; color: var(--muted); }
+	.tools .group { display: contents; }
+	.legend { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; margin-right: 2px; }
+	.legend i { width: 7px; height: 7px; border-radius: 999px; }
+	.legend .b { background: var(--before); }
+	.legend .a { background: var(--after); margin-left: 4px; }
+
+	.nav { gap: 2px; padding: 0 4px; }
+	.nav .btn.icon { font-size: 17px; }
+
+	.overlay-msg {
+		position: absolute;
+		bottom: 72px;
+		left: 50%;
+		translate: -50% 0;
+		z-index: 6;
+		white-space: nowrap;
+	}
+	.hint {
+		padding: 6px 12px;
+		border-radius: 999px;
+		background: rgba(0, 0, 0, 0.55);
+		color: rgba(255, 255, 255, 0.85);
+		font-size: 13px;
+		pointer-events: none;
+	}
+	.toast { position: absolute; gap: 8px; padding: 0 5px 0 14px; animation: rise 0.25s var(--ease); }
+	.toast .btn { background: rgba(255, 255, 255, 0.1); }
+	@keyframes rise { from { opacity: 0; translate: -50% 6px; } }
+
+	.ghost { visibility: hidden; }
+	.photo:hover .ghost { visibility: visible; }
+	.ptag {
+		position: absolute;
+		translate: -50% calc(-100% - 12px);
+		padding: 1px 6px;
+		border-radius: 4px;
+		background: var(--accent);
+		color: var(--accent-fg);
+		font-size: 11px;
+		font-weight: 600;
+		white-space: nowrap;
+		pointer-events: none;
+	}
+	.ptag.lost, .ptag.skipped { background: rgba(0, 0, 0, 0.6); color: rgba(255, 255, 255, 0.8); }
+	.ptag.tracked { background: rgba(0, 0, 0, 0.6); color: var(--accent); }
+
+	.trail .halo { stroke: rgba(0, 0, 0, 0.7); }
+	.trail .line { stroke-width: 2.5; stroke-linecap: round; }
+	.trail .line.halo { stroke-width: 6.5; }
+	.trail .dot-halo { fill: rgba(0, 0, 0, 0.6); }
+	.trail .dashed { stroke-dasharray: 4 4; stroke-linecap: butt; }
+	.trail .before { stroke: var(--before); }
+	.trail .after { stroke: var(--after); }
+	.trail .dot.tracked { fill: currentColor; stroke: rgba(0, 0, 0, 0.6); stroke-width: 1.5; }
+	.trail .dot.mark { stroke-width: 2.25; }
+	.trail .dot.lost { stroke-width: 1.5; stroke-dasharray: 2 2; fill: rgba(0, 0, 0, 0.35); }
+	.trail .before.dot { color: var(--before); }
+	.trail .after.dot { color: var(--after); }
+		.trail .flow { stroke-width: 6; stroke-linecap: round; stroke-dasharray: 16 14; opacity: 0.9; filter: blur(6px); animation: flow 1.6s linear infinite; }
+	@keyframes flow { from { stroke-dashoffset: var(--o); } to { stroke-dashoffset: calc(var(--o) - 30px); } }
+	@media (prefers-reduced-motion: reduce) { .trail .flow { animation: none; } }
+	.trail .pt.tracked { opacity: 0.85; }
+	.trail .pt.lost, .trail .pt.skipped, .trail .pt.ghost { fill: rgba(0, 0, 0, 0.5); stroke-dasharray: 3 2; }
+	.trail .pt.skipped { stroke: var(--muted); stroke-width: 2; }
+	.trail .pt.lost { stroke: rgba(255, 255, 255, 0.9); stroke-width: 2; }
+	.trail .pt.ghost { stroke: var(--accent); stroke-width: 2; }
+	.looking .patch { position: relative; overflow: hidden; flex: none; }
+	.looking .patch .pt { stroke-width: 1.25; }
+	.thumb.mark.listed::after { background: var(--accent); box-shadow: none; }
+	.thumb.skipped::after { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted); }
+	.thumb.skipped.listed::after { background: var(--muted); box-shadow: none; }
+	#clear-fixed { background: rgba(255, 255, 255, 0.08); }
+
+	@media (max-width: 700px) {
+		.stage { grid-template-rows: auto minmax(0, 1fr) auto; }
+		.view { padding: 0 8px; }
+		.looking { padding: 6px; gap: 8px; align-items: center; }
+		.looking .patch { width: 48px; height: 42px; }
+		.looking .label { padding: 0; }
+		.looking .label .more { display: none; }
+		.looking .btn { margin-top: 2px; }
+		.overlay-msg { bottom: auto; top: 8px; }
+		.tools .btn.icon { width: 32px; height: 32px; }
+	}
+</style>
+</head>
+<body>
+
+<main class="stage" id="stage">
+	<div class="dock top">
+		<div class="island start">
+			<span class="wordmark desk">pin<b>frame</b></span>
+			<span class="sep desk"></span>
+			<span class="muted where" id="where"></span>
+		</div>
+		<div class="island steps mid desk">
+			<a class="step done" href="00-start.html"><span class="n">1</span>Points</a>
+			<span class="step active"><span class="n">2</span>Fix</span>
+			<span class="step"><span class="n">3</span>Export</span>
+		</div>
+		<div class="island end" id="status">
+			<span class="count" id="count"><span class="dot"></span><span id="count-text"></span></span>
+			<button class="btn icon" id="next-lost" title="Next photo in the fix list (Tab)">→</button>
+			<button class="btn" id="clear-fixed" title="Remove the photos you have marked from the fix list"></button>
+			<span class="sep"></span>
+			<a class="btn primary" href="02-preview.html">Preview</a>
+			<div class="bar"></div>
+		</div>
+	</div>
+
+	<div class="view" id="view">
+		<div class="photo" id="photo">
+			<img id="img" alt="">
+			<svg class="trail" id="trail"></svg>
+			<svg class="trail ghost" id="ghost"><g id="ghost-pts"></g></svg>
+			<span class="ptag" id="tag"></span>
+		</div>
+		<div class="overlay-msg hint desk" id="hint"></div>
+		<div class="overlay-msg island toast" id="toast" hidden>
+			<span id="toast-text"></span>
+			<button class="btn" id="undo">Undo <kbd class="desk">⌘Z</kbd></button>
+		</div>
+	</div>
+
+	<div class="dock bottom">
+		<div class="island looking start" id="looking">
+			<div class="patch" id="patch"><svg class="trail" id="patch-pts"></svg></div>
+			<div class="label" id="looking-label"></div>
+		</div>
+		<div class="island nav mid phone">
+			<button class="btn icon" id="prev" title="Previous photo">‹</button>
+			<button class="btn icon" id="next" title="Next photo">›</button>
+		</div>
+		<div class="island tools end">
+			<span class="legend" title="Path of the points' centre through neighbouring photos: dashed = estimated, ring = your mark"><i class="b"></i><span class="desk">before</span><i class="a"></i><span class="desk">after</span></span>
+			<button class="btn icon" id="trail-less" title="Fewer neighbours">−</button>
+			<span class="val" id="trail-n" title="Neighbours shown each side (T toggles)"></span>
+			<button class="btn icon" id="trail-more" title="More neighbours">+</button>
+			<span class="group" id="zoom-group">
+				<span class="sep"></span>
+				<span class="muted desk">zoom</span>
+				<button class="btn icon" id="zoom-out" title="Zoom out ([)">−</button>
+				<span class="val" id="zoom-val"></span>
+				<button class="btn icon" id="zoom-in" title="Zoom in (])">+</button>
+			</span>
+		</div>
+	</div>
+</main>
+
+<nav class="filmstrip" id="filmstrip"></nav>
+
+<script src="assets/photos.js"></script>
+<script>
+	// ponytail: a scenario, not the live tracker. Real train clouds points; IMG_4703 un-marked so four photos are left to fix.
+	const ZOOMS = [1, 1.5, 2, 2.5, 3, 5];
+	const TRAIL_MIN = 5, TRAIL_DEFAULT = 6, TRAIL_MAX = 10;
+	const ADVANCE_MS = 450, TOAST_MS = 6000, HISTORY_MAX = 100;
+	const HIT_PX = 12, PATCH_PX = 600;
+	// Simulated: the sidecar has one point per photo until A5. These three more sit around it as a fixed pattern,
+	// in pixels at scale 1, grown by each photo's scale. They sum to zero, so the centre stays the real point.
+	const SIMULATED = [[-150, -30], [110, -60], [40, 90]];
+	const photos = PHOTOS.map(p => {
+		const [x, y] = p.pts[0];
+		return { ...p, pts: [[x, y], ...SIMULATED.map(([dx, dy]) => [x + dx * p.scale / p.w, y + dy * p.scale / p.h])] };
+	});
+	Object.assign(photos.find(p => p.name === 'IMG_4703'), { source: 'lost', feats: 3 });
+
+	let current = photos.findIndex(p => p.name === 'IMG_4721');
+	let zoom = 1;
+	let trailN = TRAIL_DEFAULT, trailLast = TRAIL_DEFAULT;
+	// The fix list: every photo that was lost. Marking keeps a photo here; only "Clear fixed" takes it out.
+	let fixList = new Set(photos.flatMap((p, i) => p.source === 'lost' ? [i] : []));
+	const history = [];
+	let advanceTimer = null, toastTimer = null;
+
+	const $ = id => document.getElementById(id);
+	const view = $('view'), photo = $('photo'), img = $('img'), filmstrip = $('filmstrip'), trail = $('trail');
+	const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+	const phone = matchMedia('(max-width: 700px)');
+	const centre = p => [p.pts.reduce((s, q) => s + q[0], 0) / p.pts.length, p.pts.reduce((s, q) => s + q[1], 0) / p.pts.length];
+	const pointsSvg = (pts, cls, W, H) => pts.map(([x, y]) => `<circle class="pt ${cls}" cx="${x * W}" cy="${y * H}" r="${cls.startsWith('mark') ? 5.5 : cls === 'tracked' ? 4.5 : 6}"/>`).join('');
+
+	const seen = p => p.source === 'tracked' || p.source === 'mark';
+
+	function prevLinked(i) {
+		for (let j = i - 1; j >= 0; j--) if (seen(photos[j])) return photos[j];
+		return photos[0];
+	}
+
+	// The points the tracker would look for here at the current zoom: the last linked photo's points around their
+	// centre, rescaled, as offsets in this photo's 0–1 units.
+	function ghostOffsets(p) {
+		const ref = prevLinked(current), [cx, cy] = centre(ref), f = zoom / ref.scale;
+		return ref.pts.map(([x, y]) => [(x - cx) * ref.w * f / p.w, (y - cy) * ref.h * f / p.h]);
+	}
+
+	function renderStage() {
+		const p = photos[current];
+		img.src = `assets/${p.name}.jpg`;
+		photo.style.setProperty('--r', p.w / p.h);
+		$('where').innerHTML = `<b class="desk">${p.name} · </b>${current + 1} / ${photos.length}`;
+		const lost = p.source === 'lost', skipped = p.source === 'skipped', editable = lost || p.source === 'mark';
+		view.classList.toggle('edit', editable);
+		$('looking').hidden = !editable && !skipped;
+		$('zoom-group').hidden = !lost;
+		$('hint').hidden = (!editable && !skipped) || !$('toast').hidden;
+		$('hint').textContent = lost ? 'Click the cloud to place its points · scroll to change zoom'
+			: skipped ? 'Skipped: the feature is hidden here, so the clip uses the estimate'
+			: 'Click to add a point · click a point to remove it';
+		if (editable || skipped) {
+			const ref = prevLinked(current);
+			if (lost) zoom = ref.scale;
+			drawPatch(ref);
+			$('looking-label').innerHTML = lost
+				? `Looking for<b>${ref.name} · ${ref.scale.toFixed(2)}×</b><span class="more">${phone.matches ? 'tap where it is now' : 'click where it is now<br>or <kbd>⏎</kbd> to accept the estimate'}</span><button class="btn" id="skip" title="The feature is hidden in this photo (a building, trees). The clip keeps it at the estimate.">Skip, hidden here <kbd class="desk">S</kbd></button>`
+				: skipped ? `Skipped<b>feature hidden</b><button class="btn" id="clear">Unskip <kbd class="desk">⌫</kbd></button>`
+				: `Your mark<b>${p.pts.length} points · ${p.scale.toFixed(2)}×</b><button class="btn" id="clear">Clear mark <kbd class="desk">⌫</kbd></button>`;
+			$('clear')?.addEventListener('click', clearMark);
+			$('skip')?.addEventListener('click', skip);
+		}
+		$('tag').className = `ptag ${p.source}`;
+		$('tag').textContent = lost ? 'estimated' : skipped ? 'skipped · estimated' : p.source === 'mark' ? `your mark · ${p.scale.toFixed(2)}×` : `${p.feats} features · ${p.scale.toFixed(2)}×`;
+		const [cx] = centre(p), top = Math.min(...p.pts.map(q => q[1]));
+		Object.assign($('tag').style, { left: `${cx * 100}%`, top: `${top * 100}%` });
+		drawGhost();
+		drawOverlay();
+	}
+
+	// The reference patch: the last linked photo around its points' centre, with the points on it.
+	function drawPatch(ref) {
+		const patch = $('patch'), pw = patch.offsetWidth || 120, ph = patch.offsetHeight || 105;
+		const k = pw / (PATCH_PX * ref.scale), [cx, cy] = centre(ref);
+		const ox = pw / 2 - cx * ref.w * k, oy = ph / 2 - cy * ref.h * k;
+		patch.style.backgroundImage = `url(assets/${ref.name}.jpg)`;
+		patch.style.backgroundSize = `${ref.w * k}px auto`;
+		patch.style.backgroundPosition = `${ox}px ${oy}px`;
+		$('patch-pts').setAttribute('viewBox', `0 0 ${pw} ${ph}`);
+		$('patch-pts').innerHTML = ref.pts.map(([x, y]) => `<circle class="pt mark" cx="${ox + x * ref.w * k}" cy="${oy + y * ref.h * k}" r="3"/>`).join('');
+	}
+
+	function drawGhost() {
+		const p = photos[current], W = photo.clientWidth, H = photo.clientHeight;
+		$('ghost').setAttribute('viewBox', `0 0 ${W} ${H}`);
+		$('zoom-val').textContent = `${+zoom.toFixed(2)}×`;
+		$('ghost-pts').innerHTML = p.source === 'lost' ? pointsSvg(ghostOffsets(p), 'ghost', W, H) : '';
+	}
+
+	// The trail: a path through the points' centre in up to trailN photos each side, in order, with a dot per photo.
+	// Then the current photo's own points on top.
+	// ?trail=fade|steps|flow compares three ways to show distance from the current photo.
+	// fade: opacity 1 to 0.55 (round 2). steps: one OKLCH colour per photo, hue and lightness stepping with distance,
+	// at full opacity. flow: each segment blends from one photo's colour to the next, and a soft blurred glow of
+	// that blend slides continuously along the path in photo order, so each colour flows from one point to the next.
+	const TRAIL_MODE = ['fade', 'steps', 'flow'].find(m => m === new URLSearchParams(location.search).get('trail')) ?? 'steps';
+	const FLOW_MS = 1600;
+	const RAMP = {
+		before: { near: [0.8, 0.14, 295], far: [0.72, 0.17, 352] },
+		after: { near: [0.82, 0.13, 182], far: [0.78, 0.17, 145] },
+	};
+	const spread = d => trailN === 1 ? 0 : (d - 1) / (trailN - 1);
+	const fade = d => TRAIL_MODE === 'fade' ? 1 - 0.45 * spread(d) : 1;
+	const stepColour = (side, d, lift = 0) => {
+		const { near, far } = RAMP[side], t = spread(Math.max(1, d));
+		const [l, c, h] = near.map((v, i) => v + (far[i] - v) * t);
+		return TRAIL_MODE === 'fade' ? `var(--${side})` : `oklch(${(l + lift).toFixed(3)} ${c.toFixed(3)} ${h.toFixed(1)})`;
+	};
+	// A gradient along one segment from a's colour to b's, in photo order. The current photo takes its side's nearest colour.
+	const flowGradient = (id, a, b, side, lift) =>
+		`<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}">` +
+		`<stop offset="0" stop-color="${stepColour(side, Math.abs(a.k), lift)}"/><stop offset="1" stop-color="${stepColour(side, Math.abs(b.k), lift)}"/></linearGradient>`;
+
+	function drawOverlay(just = false) {
+		const W = photo.clientWidth, H = photo.clientHeight, p = photos[current];
+		trail.setAttribute('viewBox', `0 0 ${W} ${H}`);
+		$('trail-n').textContent = trailN ? trailN : 'off';
+		$('trail-n').classList.toggle('off', !trailN);
+		const own = pointsSvg(p.pts, `${p.source}${just ? ' just' : ''}`, W, H);
+		if (!trailN) { trail.innerHTML = own; return; }
+		const cs = [];
+		// A skipped photo gets no point: its position is only an estimate, so the line joins its neighbours directly.
+		for (let k = -trailN; k <= trailN; k++) {
+			const q = photos[current + k];
+			if (q && (k === 0 || q.source !== 'skipped')) { const [x, y] = centre(q); cs.push({ q, k, x: x * W, y: y * H }); }
+		}
+		// Dashes continue across segments: each starts at the path length so far. A negative delay keeps the phase on redraw.
+		let lines = '', dots = '', flows = '', defs = '', run = 0;
+		const delay = -(performance.now() % FLOW_MS);
+		for (let j = 0; j + 1 < cs.length; j++) {
+			const a = cs[j], b = cs[j + 1];
+			const side = b.k <= 0 ? 'before' : 'after';
+			const d = Math.max(Math.abs(a.k), Math.abs(b.k));
+			const dash = a.q.source === 'lost' || b.q.source === 'lost' ? ' dashed' : '';
+			const seg = `M${a.x} ${a.y}L${b.x} ${b.y}`;
+			let stroke = stepColour(side, d);
+			if (TRAIL_MODE === 'flow') {
+				defs += flowGradient(`fg${j}`, a, b, side, -0.2) + flowGradient(`fl${j}`, a, b, side, 0.22);
+				stroke = `url(#fg${j})`;
+				flows += `<path class="flow" d="${seg}" style="stroke:url(#fl${j});--o:${run.toFixed(1)}px;animation-delay:${delay.toFixed(0)}ms"/>`;
+				run += Math.hypot(b.x - a.x, b.y - a.y);
+			}
+			lines += `<g opacity="${fade(d).toFixed(2)}"><path class="line halo" d="${seg}"/><path class="line ${side}${dash}" d="${seg}" style="stroke:${stroke}"/></g>`;
+		}
+		for (const { q, k, x, y } of cs) {
+			if (k === 0) continue;
+			const side = k < 0 ? 'before' : 'after', d = Math.abs(k);
+			const r = q.source === 'mark' ? 5.5 : 4;
+			dots += `<g opacity="${fade(d).toFixed(2)}"><circle class="dot-halo" cx="${x}" cy="${y}" r="${r + 2.5}"/><circle class="dot ${side} ${q.source}" cx="${x}" cy="${y}" r="${r}" style="color:${stepColour(side, d)}${q.source === 'tracked' ? '' : ';stroke:currentColor'}"/></g>`;
+		}
+		trail.innerHTML = `<defs>${defs}</defs>` + lines + flows + dots + own;
+	}
+
+	function renderFilmstrip() {
+		const lost = photos.filter(p => p.source === 'lost').length;
+		const fixed = [...fixList].filter(i => photos[i].source !== 'lost').length;
+		$('count').className = `count${lost ? '' : ' ok'}`;
+		$('count-text').textContent = lost ? `${lost}${phone.matches ? '' : ' to fix'}` : phone.matches ? '0' : `All ${photos.length} linked`;
+		$('next-lost').disabled = !fixList.size;
+		$('clear-fixed').hidden = !fixed;
+		$('clear-fixed').innerHTML = `Clear <span class="desk">${fixed} </span>fixed`;
+		filmstrip.innerHTML = photos.map((p, i) => {
+			const listed = fixList.has(i) && (p.source === 'mark' || p.source === 'skipped');
+			const tip = p.source === 'mark' ? `your mark${listed ? ' · in fix list' : ''}`
+				: p.source === 'skipped' ? `skipped · feature hidden${listed ? ' · in fix list' : ''}`
+				: p.source === 'lost' ? `lost · ${p.feats} features · estimated` : `${p.feats} features`;
+			return `<a class="thumb ${p.source}${listed ? ' listed' : ''}${i === current ? ' current' : ''}" data-i="${i}"><img src="assets/${p.name}-t.jpg" alt="" draggable="false"><span class="tip">${p.name} <b>${tip} · ${p.scale.toFixed(2)}×</b></span></a>`;
+		}).join('');
+	}
+
+	// Jumps (Tab, Home, End, undo) centre the current thumb smoothly; steps and scrubbing only keep it in view.
+	function go(i, jump = false) {
+		clearTimeout(advanceTimer);
+		i = clamp(i, 0, photos.length - 1);
+		filmstrip.children[current]?.classList.remove('current');
+		current = i;
+		const t = filmstrip.children[current];
+		t.classList.add('current');
+		t.scrollIntoView(jump ? { inline: 'center', block: 'nearest', behavior: 'smooth' } : { inline: 'nearest', block: 'nearest' });
+		renderStage();
+	}
+
+	// Tab visits the whole fix list, marked photos included. Auto-advance after a mark skips to the next lost one.
+	function nextInList(dir = 1, lostOnly = false) {
+		for (let k = 1; k <= photos.length; k++) {
+			const i = (current + k * dir + photos.length * 2) % photos.length;
+			if (fixList.has(i) && (!lostOnly || photos[i].source === 'lost')) return go(i, true);
+		}
+	}
+
+	function remember(i) {
+		history.push({ i, before: { ...photos[i], pts: photos[i].pts.map(q => [...q]) }, list: new Set(fixList) });
+		if (history.length > HISTORY_MAX) history.shift();
+	}
+
+	// A mark shows where it landed, with an undo, then moves on to the next lost photo.
+	function mark(pts) {
+		const p = photos[current], i = current;
+		remember(i);
+		Object.assign(p, { source: 'mark', pts, scale: zoom, feats: null });
+		renderStage();
+		drawOverlay(true);
+		toast(`Marked ${p.name}`);
+		retrack();
+		advanceTimer = setTimeout(() => { if (current === i) nextInList(1, true); }, ADVANCE_MS);
+	}
+
+	// The feature is hidden here. The photo stays in the clip at the estimate and counts as handled, like a mark.
+	function skip() {
+		const p = photos[current], i = current;
+		if (p.source !== 'lost') return;
+		remember(i);
+		p.source = 'skipped';
+		renderStage();
+		toast(`Skipped ${p.name}`);
+		retrack();
+		advanceTimer = setTimeout(() => { if (current === i) nextInList(1, true); }, ADVANCE_MS);
+	}
+
+	// On a marked photo a click adds a point, and a click on a point removes it. The stage stays put.
+	function editPoints(pts, text) {
+		const p = photos[current];
+		remember(current);
+		p.pts = pts;
+		renderStage();
+		toast(`${text} ${p.name}`);
+		retrack();
+	}
+
+	function clearMark() {
+		const p = photos[current];
+		if (!(p.source === 'mark' || p.source === 'skipped') || current === 0) return;
+		remember(current);
+		toast(`${p.source === 'mark' ? 'Cleared mark on' : 'Unskipped'} ${p.name}`);
+		Object.assign(p, { source: 'lost', feats: p.feats ?? 0 });
+		fixList.add(current);
+		retrack();
+		renderStage();
+	}
+
+	function clearFixed() {
+		const fixed = [...fixList].filter(i => photos[i].source !== 'lost');
+		if (!fixed.length) return;
+		remember(current);
+		for (const i of fixed) fixList.delete(i);
+		toast(`Took ${fixed.length} fixed off the list`);
+		renderFilmstrip();
+		filmstrip.children[current].classList.add('current');
+	}
+
+	function undo() {
+		const h = history.pop();
+		if (!h) return;
+		Object.assign(photos[h.i], h.before);
+		fixList = h.list;
+		retrack();
+		renderFilmstrip();
+		go(h.i, true);
+		toast(`Undone on ${photos[h.i].name}`, history.length > 0);
+	}
+
+	function toast(text, canUndo = true) {
+		clearTimeout(toastTimer);
+		$('toast-text').textContent = text;
+		$('undo').hidden = !canUndo;
+		$('toast').hidden = false;
+		$('hint').hidden = true;
+		toastTimer = setTimeout(() => { $('toast').hidden = true; renderStage(); }, TOAST_MS);
+	}
+
+	// Re-tracking with cached keypoints is ~0.3–0.5 s. Dots dim while it runs; the stage may already have moved on.
+	function retrack() {
+		$('status').classList.add('busy');
+		filmstrip.classList.add('dim');
+		setTimeout(() => {
+			$('status').classList.remove('busy');
+			filmstrip.classList.remove('dim');
+			renderFilmstrip();
+			filmstrip.children[current].classList.add('current');
+			drawOverlay();
+		}, 450);
+	}
+
+	function setTrail(n) {
+		trailN = n;
+		if (n) trailLast = n;
+		drawOverlay();
+	}
+	function setZoom(z) {
+		if (photos[current].source !== 'lost') return;
+		zoom = z;
+		drawGhost();
+	}
+	function stepZoom(dir) {
+		const i = ZOOMS.findIndex(z => z >= zoom - 1e-6);
+		setZoom(ZOOMS[clamp((i < 0 ? ZOOMS.length - 1 : i) + dir, 0, ZOOMS.length - 1)]);
+	}
+
+	$('trail-less').addEventListener('click', () => setTrail(trailN <= TRAIL_MIN ? 0 : trailN - 1));
+	$('trail-more').addEventListener('click', () => setTrail(trailN ? Math.min(TRAIL_MAX, trailN + 1) : TRAIL_MIN));
+	$('zoom-out').addEventListener('click', () => stepZoom(-1));
+	$('zoom-in').addEventListener('click', () => stepZoom(1));
+	$('prev').addEventListener('click', () => go(current - 1));
+	$('next').addEventListener('click', () => go(current + 1));
+	$('next-lost').addEventListener('click', () => nextInList());
+	$('clear-fixed').addEventListener('click', clearFixed);
+	$('undo').addEventListener('click', undo);
+
+	// Stage: on a lost photo a click places the ghost's points there; on a marked photo it adds or removes one point.
+	const norm = e => { const r = photo.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }; };
+	photo.addEventListener('pointermove', e => {
+		const n = norm(e);
+		$('ghost-pts').setAttribute('transform', `translate(${n.x * photo.clientWidth} ${n.y * photo.clientHeight})`);
+	});
+	photo.addEventListener('click', e => {
+		const p = photos[current], n = norm(e), W = photo.clientWidth, H = photo.clientHeight;
+		if (p.source === 'tracked' || p.source === 'skipped') return;
+		if (p.source === 'lost') return mark(ghostOffsets(p).map(([dx, dy]) => [n.x + dx, n.y + dy]));
+		const hit = p.pts.findIndex(([x, y]) => Math.hypot((x - n.x) * W, (y - n.y) * H) <= HIT_PX);
+		if (hit < 0) editPoints([...p.pts, [n.x, n.y]], 'Added a point on');
+		else if (p.pts.length > 1) editPoints(p.pts.toSpliced(hit, 1), 'Removed a point on');
+	});
+	photo.addEventListener('wheel', e => {
+		if (photos[current].source !== 'lost') return;
+		e.preventDefault();
+		stepZoom(e.deltaY < 0 ? 1 : -1);
+	}, { passive: false });
+	new ResizeObserver(() => { drawGhost(); drawOverlay(); }).observe(photo);
+
+	// Filmstrip: press and drag to scrub; near either edge it scrolls on its own. A vertical wheel scrolls it sideways.
+	let scrubX = null;
+	function pick() {
+		const r = filmstrip.getBoundingClientRect();
+		const t = document.elementFromPoint(clamp(scrubX, r.left + 2, r.right - 2), r.top + r.height / 2)?.closest('.thumb');
+		if (t && +t.dataset.i !== current) go(+t.dataset.i);
+	}
+	function edgeScroll() {
+		if (scrubX === null) return;
+		const r = filmstrip.getBoundingClientRect(), edge = 56;
+		const speed = scrubX < r.left + edge ? -(r.left + edge - scrubX) : scrubX > r.right - edge ? scrubX - (r.right - edge) : 0;
+		if (speed) { filmstrip.scrollLeft += speed / 3; pick(); }
+		requestAnimationFrame(edgeScroll);
+	}
+	filmstrip.addEventListener('pointerdown', e => {
+		if (e.button !== 0) return;
+		filmstrip.setPointerCapture(e.pointerId);
+		filmstrip.classList.add('scrubbing');
+		scrubX = e.clientX;
+		pick();
+		requestAnimationFrame(edgeScroll);
+	});
+	filmstrip.addEventListener('pointermove', e => { if (scrubX !== null) { scrubX = e.clientX; pick(); } });
+	for (const end of ['pointerup', 'pointercancel']) filmstrip.addEventListener(end, () => { scrubX = null; filmstrip.classList.remove('scrubbing'); });
+	filmstrip.addEventListener('wheel', e => {
+		if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+		e.preventDefault();
+		filmstrip.scrollLeft += e.deltaY;
+	}, { passive: false });
+
+	window.addEventListener('keydown', e => {
+		const p = photos[current];
+		const step = e.shiftKey ? 10 : 1;
+		if (e.key === 'z' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); undo(); }
+		else if (e.key === 'ArrowRight') { e.preventDefault(); go(current + step); }
+		else if (e.key === 'ArrowLeft') { e.preventDefault(); go(current - step); }
+		else if (e.key === 'Home') { e.preventDefault(); go(0, true); }
+		else if (e.key === 'End') { e.preventDefault(); go(photos.length - 1, true); }
+		else if (e.key === 'Tab' || e.key === 'l') { e.preventDefault(); nextInList(e.shiftKey ? -1 : 1); }
+		else if (e.key === 'Enter' && p.source === 'lost') mark(p.pts);
+		else if (e.key === 'Backspace' || e.key === 'Delete') clearMark();
+		else if (e.key === 's') skip();
+		else if (e.key === 't') setTrail(trailN ? 0 : trailLast);
+		else if (e.key === ']') stepZoom(1);
+		else if (e.key === '[') stepZoom(-1);
+		else if (e.key === '1') setZoom(1);
+	});
+	phone.addEventListener('change', () => { renderFilmstrip(); go(current); });
+
+	renderFilmstrip();
+	go(current, true);
+	addEventListener('load', () => { for (const q of photos) new Image().src = `assets/${q.name}.jpg`; });
+</script>
+</body>
+</html>
