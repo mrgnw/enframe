@@ -46,6 +46,7 @@
 		"serve": "cargo run --release --manifest-path src-tauri/Cargo.toml -p enframe-serve --",
 		"test": "vitest run",
 		"test:watch": "vitest",
+		"test:e2e": "bun run sveltekit:build && bun run sidecar && playwright test",
 		"screenshots": "bash scripts/screenshots.sh"
 	},
 	"dependencies": {
@@ -65,6 +66,7 @@
 		"@biomejs/biome": "^2.2.0",
 		"@internationalized/date": "^3.10.0",
 		"@lucide/svelte": "^0.561.0",
+		"@playwright/test": "1.56.1",
 		"@sveltejs/adapter-static": "^3.0.9",
 		"@sveltejs/kit": "^2.31.1",
 		"@tauri-apps/cli": "^2.7.1",
