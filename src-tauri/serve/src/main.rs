@@ -1,4 +1,5 @@
 mod db;
+mod pinframe;
 mod roots;
 
 use axum::Json;
@@ -31,6 +32,7 @@ struct AppState {
     inbox: PathBuf,
     browse: PathBuf,
     roots: Arc<Roots>,
+    pinframe: Arc<pinframe::Pinframe>,
 }
 
 type ApiResult<T> = Result<T, (StatusCode, String)>;
@@ -494,6 +496,7 @@ struct Options {
     inbox: PathBuf,
     read_roots: Vec<PathBuf>,
     write_roots: Vec<PathBuf>,
+    pinframe: Option<PathBuf>,
 }
 
 fn flag(args: &[String], name: &str, env: &str) -> Option<String> {
@@ -545,6 +548,7 @@ fn options() -> Result<Options, String> {
         web: PathBuf::from(flag(&args, "--web", "ENFRAME_WEB").unwrap_or_else(|| "build".into())),
         read_roots: flags(&args, "--read-root", "ENFRAME_READ_ROOTS"),
         write_roots: flags(&args, "--write-root", "ENFRAME_WRITE_ROOTS"),
+        pinframe: flag(&args, "--pinframe", "ENFRAME_PINFRAME").map(PathBuf::from),
         database,
         inbox,
     })
@@ -651,6 +655,8 @@ fn router(state: AppState, web: &FsPath) -> Router {
         .route("/api/stat", get(stat))
         .route("/api/ls", get(ls))
         .route("/api/upload", post(upload))
+        .route("/api/pinframe/track", post(pinframe::track))
+        .route("/api/pinframe/export", post(pinframe::export))
         .route("/api/{command}", post(api))
         .route("/img/{*path}", get(img))
         .fallback_service(spa)
@@ -680,6 +686,7 @@ async fn main() -> Result<(), String> {
         inbox: options.inbox.clone(),
         browse,
         roots: Arc::new(roots),
+        pinframe: Arc::new(pinframe::Pinframe::new(options.pinframe.clone())),
     };
 
     let app = router(state.clone(), &options.web);
@@ -697,6 +704,10 @@ async fn main() -> Result<(), String> {
     }
     for root in state.roots.write_roots() {
         println!("  write    {}", root.display());
+    }
+    match state.pinframe.binary() {
+        Some(binary) => println!("  pinframe {}", binary.display()),
+        None => println!("  pinframe unset"),
     }
 
     axum::serve(
@@ -740,6 +751,10 @@ mod tests {
         }
 
         fn app(&self) -> Router {
+            self.app_with(None)
+        }
+
+        fn app_with(&self, pinframe: Option<PathBuf>) -> Router {
             let inbox = self.base.join("inbox");
             std::fs::create_dir_all(&inbox).unwrap();
             let connection = db::open(&self.base.join("enframe.db")).unwrap();
@@ -748,6 +763,7 @@ mod tests {
                 conn: Arc::new(Mutex::new(connection)),
                 browse: self.base.clone(),
                 roots: Arc::new(roots),
+                pinframe: Arc::new(pinframe::Pinframe::new(pinframe)),
                 inbox,
             };
             router(state, &self.base)
@@ -977,5 +993,273 @@ mod tests {
             status(&app, from("100.64.0.7:52001", execute)).await,
             StatusCode::OK
         );
+    }
+
+    async fn respond(app: Router, request: Request) -> (StatusCode, String) {
+        let response = app.oneshot(request).await.unwrap();
+        let status = response.status();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, String::from_utf8_lossy(&body).into_owned())
+    }
+
+    // Stands in for pinframe: sleeps long enough to be superseded, then writes a sidecar
+    // whose run is the --points it was given, so a test can tell which request it answers.
+    const FAKE_PINFRAME: &str = r#"#!/bin/sh
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --out) out=$2; shift ;;
+        --points) points=$2; shift ;;
+    esac
+    shift
+done
+sleep 0.4
+printf '{"run":"%s","clip":null,"photos":[{"file":"a.png"}]}' "$points" > "$out"
+echo "a.png  10x20  anchor 1,2  scale 1.00  your mark"
+"#;
+
+    impl Sandbox {
+        fn fake_pinframe(&self) -> PathBuf {
+            use std::os::unix::fs::PermissionsExt;
+            let path = self.base.join("pinframe");
+            std::fs::write(&path, FAKE_PINFRAME).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        }
+
+        // A series inside the write root, so the document beside it is writable.
+        fn series(&self) -> PathBuf {
+            let folder = self.base.join("inbox/series");
+            std::fs::create_dir_all(&folder).unwrap();
+            std::fs::write(folder.join("a.png"), b"x").unwrap();
+            std::fs::write(folder.join("b.png"), b"x").unwrap();
+            folder
+        }
+    }
+
+    fn track_request(folder: &FsPath, marks: &str) -> Request {
+        let body = format!(
+            "{{\"folder\":{:?},\"marks\":{marks}}}",
+            text(folder.to_path_buf())
+        );
+        post_json("/api/pinframe/track", &body)
+    }
+
+    #[tokio::test]
+    async fn pinframe_rejects_bad_requests_before_anything_runs() {
+        let sandbox = Sandbox::new("pinframe_bad");
+        let app = sandbox.app_with(Some(sandbox.fake_pinframe()));
+        let folder = text(sandbox.series());
+
+        let bad_marks = [
+            "{}",
+            "{\"points\":[]}",
+            "{\"points\":[[1]]}",
+            "{\"points\":[[1,\"2\"]]}",
+            "{\"points\":[[1,2]],\"at\":{\"b.png\":{\"points\":[]}}}",
+            "{\"points\":[[1,2]],\"near\":{\"b.png\":{\"points\":[[1,2]],\"zoom\":0}}}",
+            "{\"points\":[[1,2]],\"skip\":\"b.png\"}",
+            "{\"points\":[[1,2]],\"order\":\"sideways\"}",
+        ];
+        for marks in bad_marks {
+            let body = format!("{{\"folder\":{folder:?},\"marks\":{marks}}}");
+            let (status, error) =
+                respond(app.clone(), post_json("/api/pinframe/track", &body)).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{marks}: {error}");
+        }
+
+        let marks = "{\"points\":[[1,2]]}";
+        let inside = format!("{folder}/clip.avif");
+        let outside = text(std::env::temp_dir().canonicalize().unwrap());
+        let unwritable = sandbox.base.join("unwritable");
+        std::fs::create_dir_all(&unwritable).unwrap();
+        let unwritable = text(unwritable);
+        let beside_root = text(sandbox.base.join("clip.avif"));
+        let rejected = [
+            (
+                "track",
+                format!("{{\"folder\":{folder:?},\"marks\":{marks},\"pad\":\"red\"}}"),
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                "track",
+                format!("{{\"marks\":{marks}}}"),
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                "export",
+                format!("{{\"folder\":{folder:?},\"marks\":{marks},\"fps\":0}}"),
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                "export",
+                format!("{{\"folder\":{folder:?},\"marks\":{marks},\"out\":{inside:?}}}"),
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                "track",
+                format!("{{\"folder\":{outside:?},\"marks\":{marks}}}"),
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                "track",
+                format!("{{\"folder\":{unwritable:?},\"marks\":{marks}}}"),
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                "export",
+                format!("{{\"folder\":{folder:?},\"marks\":{marks},\"out\":{beside_root:?}}}"),
+                StatusCode::FORBIDDEN,
+            ),
+        ];
+        for (route, body, expected) in rejected {
+            let request = post_json(&format!("/api/pinframe/{route}"), &body);
+            let (status, error) = respond(app.clone(), request).await;
+            assert_eq!(status, expected, "{body}: {error}");
+        }
+        assert!(
+            !sandbox.base.join("inbox/series.pin.json").exists(),
+            "a rejected request must not write the document"
+        );
+    }
+
+    #[tokio::test]
+    async fn pinframe_answers_a_clear_error_when_the_binary_is_unset_or_missing() {
+        let sandbox = Sandbox::new("pinframe_unset");
+        let folder = sandbox.series();
+        let marks = "{\"points\":[[1,2]]}";
+
+        let (status, error) = respond(sandbox.app(), track_request(&folder, marks)).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(error.contains("--pinframe"), "{error}");
+
+        let missing = sandbox.app_with(Some(sandbox.base.join("absent")));
+        let (status, error) = respond(missing, track_request(&folder, marks)).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(error.contains("absent"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn a_newer_track_supersedes_the_one_in_flight() {
+        let sandbox = Sandbox::new("pinframe_supersede");
+        let app = sandbox.app_with(Some(sandbox.fake_pinframe()));
+        let folder = sandbox.series();
+
+        let first = tokio::spawn(respond(
+            app.clone(),
+            track_request(&folder, "{\"points\":[[1,1]]}"),
+        ));
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let (status, body) = respond(app, track_request(&folder, "{\"points\":[[2,2]]}")).await;
+
+        assert_eq!(first.await.unwrap().0, StatusCode::CONFLICT);
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let sidecar: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(sidecar["run"], "2,2");
+        assert_eq!(sidecar["photos"][0]["width"], 10);
+        assert_eq!(sidecar["photos"][0]["note"], "your mark");
+
+        let document = std::fs::read_to_string(sandbox.base.join("inbox/series.pin.json")).unwrap();
+        let document: Value = serde_json::from_str(&document).unwrap();
+        assert_eq!(document["marks"]["points"], serde_json::json!([[2.0, 2.0]]));
+        assert_eq!(document["photos"], serde_json::json!(["a.png", "b.png"]));
+    }
+
+    #[tokio::test]
+    async fn rapid_marks_only_ever_answer_with_the_newest_result() {
+        let sandbox = Sandbox::new("pinframe_rapid");
+        let app = sandbox.app_with(Some(sandbox.fake_pinframe()));
+        let folder = sandbox.series();
+
+        let mut runs = Vec::new();
+        for mark in 0..6 {
+            let marks = format!("{{\"points\":[[{mark},{mark}]]}}");
+            runs.push(tokio::spawn(respond(
+                app.clone(),
+                track_request(&folder, &marks),
+            )));
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        let mut answers = Vec::new();
+        for run in runs {
+            answers.push(run.await.unwrap());
+        }
+
+        let (last, older) = answers.split_last().unwrap();
+        for (status, body) in older {
+            assert_eq!(*status, StatusCode::CONFLICT, "{body}");
+        }
+        assert_eq!(last.0, StatusCode::OK, "{}", last.1);
+        let sidecar: Value = serde_json::from_str(&last.1).unwrap();
+        assert_eq!(sidecar["run"], "5,5");
+    }
+
+    const PINFRAME: &str = "/Users/user/dev/pinframe/rust/target/release/pinframe";
+    const TRAIN_CLOUDS: &str = "/Users/user/dev/pinframe/samples/train clouds";
+    const TRAIN_CLOUDS_MARKS: &str = r#"{
+        "points": [[1267.5, 510], [1782.5, 510], [1267.5, 710], [1782.5, 710]],
+        "at": {
+            "IMG_4680.avif": { "points": [[485, 1100], [655, 1100], [485, 1180], [655, 1180]] },
+            "IMG_4684.avif": { "points": [[855, 695], [1005, 695], [855, 845], [1005, 845]], "zoom": 3 },
+            "IMG_4695.avif": { "points": [[1240, 675], [1360, 675], [1240, 745], [1360, 745]], "zoom": 1 },
+            "IMG_4697.avif": { "points": [[1230, 655], [1350, 655], [1230, 725], [1350, 725]], "zoom": 1 },
+            "IMG_4698.avif": { "points": [[940, 637.5], [1140, 637.5], [940, 812.5], [1140, 812.5]] },
+            "IMG_4703.avif": { "points": [[846, 641.5], [1046, 641.5], [846, 816.5], [1046, 816.5]] },
+            "IMG_4706.avif": { "points": [[960, 705], [1040, 705], [960, 755], [1040, 755]], "zoom": 1 },
+            "IMG_4708.avif": { "points": [[870, 705], [1050, 705], [870, 795], [1050, 795]], "zoom": 1 },
+            "IMG_4713.avif": { "points": [[1160, 645], [1320, 645], [1160, 795], [1320, 795]] },
+            "IMG_4716.avif": { "points": [[750, 707.5], [950, 707.5], [750, 782.5], [950, 782.5]] },
+            "IMG_4718.avif": { "points": [[535, 985], [805, 985], [535, 1075], [805, 1075]], "zoom": 1 },
+            "IMG_4766.avif": { "points": [[900, 165], [1200, 165], [900, 335], [1200, 335]], "zoom": 1 },
+            "IMG_4767.avif": { "points": [[1000, 200]] },
+            "IMG_4768.avif": { "points": [[1000, 230]] },
+            "IMG_4769.avif": { "points": [[1000, 400]] },
+            "IMG_4770.avif": { "points": [[1000, 330]] },
+            "IMG_4772.avif": { "points": [[1000, 380]] },
+            "IMG_4773.avif": { "points": [[650, 600]] },
+            "IMG_4774.avif": { "points": [[700, 400]] },
+            "IMG_4780.avif": { "points": [[1000, 300]] },
+            "IMG_4791.avif": { "points": [[675, 345], [985, 345], [675, 595], [985, 595]], "zoom": 1 },
+            "IMG_4796.avif": { "points": [[1620, 60]] }
+        }
+    }"#;
+
+    // The marking loop's budget: once one run has warmed the feature cache, a re-run with
+    // one more mark answers through the endpoint in about 0.15 s on train clouds.
+    #[tokio::test]
+    async fn a_warm_rerun_on_train_clouds_is_fast() {
+        let samples = FsPath::new(TRAIN_CLOUDS);
+        if !FsPath::new(PINFRAME).exists() || !samples.exists() {
+            eprintln!("skipped: {PINFRAME} or {TRAIN_CLOUDS} is absent");
+            return;
+        }
+        let sandbox = Sandbox::new("pinframe_real");
+        let app = sandbox.app_with(Some(PathBuf::from(PINFRAME)));
+        let folder = sandbox.base.join("inbox/train clouds");
+        std::fs::create_dir_all(&folder).unwrap();
+        for entry in std::fs::read_dir(samples).unwrap().flatten() {
+            let target = folder.join(entry.file_name());
+            if std::fs::hard_link(entry.path(), &target).is_err() {
+                std::fs::copy(entry.path(), &target).unwrap();
+            }
+        }
+
+        let (status, body) = respond(app.clone(), track_request(&folder, TRAIN_CLOUDS_MARKS)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+
+        let mut marks: Value = serde_json::from_str(TRAIN_CLOUDS_MARKS).unwrap();
+        marks["at"]["IMG_4798.avif"] = serde_json::json!({ "points": [[1000, 400]] });
+        let started = std::time::Instant::now();
+        let (status, body) = respond(app, track_request(&folder, &marks.to_string())).await;
+        let elapsed = started.elapsed();
+        assert_eq!(status, StatusCode::OK, "{body}");
+
+        let sidecar: Value = serde_json::from_str(&body).unwrap();
+        let photos = sidecar["photos"].as_array().unwrap();
+        assert_eq!(photos.len(), 57);
+        assert!(photos.iter().all(|photo| photo["note"].is_string()));
+        eprintln!("warm re-run through the endpoint: {elapsed:?}");
+        assert!(elapsed < std::time::Duration::from_secs(1), "{elapsed:?}");
     }
 }
