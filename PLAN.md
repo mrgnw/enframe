@@ -55,7 +55,7 @@ One coordinating thread runs the plan; agents do the card work. The coordinator 
 
 Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md), [A1](todos/done/1006-A1-tracking-benchmark.md), [B1](todos/done/1006-B1-colour.md), [F1](todos/done/1006-F1-python-reference.md), [B2](todos/done/1006-B2-capture-time-order.md), [A4](todos/done/1006-A4-search-window.md), [A5a](todos/done/1006-A5a-points-tracker.md), [D2](todos/done/1006-D2-build-downloads.md), [A5b](todos/done/1006-A5b-points-syntax.md) (design: [A5](todos/done/1006-A5-reference-points.md)), [A2](todos/done/1006-A2-tracker-sensitivity.md), [A3](todos/done/1006-A3-track-edge.md) (kept 1024), [B4](todos/done/1006-B4-zoom-from-exif.md), [A6](todos/done/1006-A6-skip-photos.md), [B5](todos/done/1006-B5-exif-followups.md), [E5](todos/done/1006-E5-marking-mockup.md), [D1](todos/done/1006-D1-linux-build.md), [M1](todos/done/1007-M1-serve.md), [M2](todos/done/1007-M2-marking-live.md), [M3](todos/done/1007-M3-preview-export.md), spikes [W1](todos/done/1007-W1-browser-tests.md) (browser tests, opt-in) and [W2](todos/done/1007-W2-clip-done-state.md) (the clip in the done state), [M4](todos/done/1008-M4-marks-in-bounds.md), [M5](todos/done/1008-M5-soft-marks.md).
 
-Order is in [todos/_priority.md](todos/_priority.md). Running: none. E2 waits for enframe's `phase-2-remote-targets` branch, which rewrites `src-tauri/serve/src/main.rs`.
+Order is in [todos/_priority.md](todos/_priority.md). Running: E2 (enframe branch `e2-serve-endpoint`, Opus 5.5). enframe's phase 2 landed on its `main` on 2026-10-08, so the E-cards are unblocked.
 
 ## Decisions
 
@@ -68,7 +68,8 @@ Made on 2026-10-06:
 - **A6 skip:** `--skip PHOTO` for a hidden feature; the photo stays in the clip at its estimated position.
 - **B4 lens:** a mark without `@zoom` follows the EXIF lens ratio; a typed `@zoom` wins.
 - **E5 trail style:** `steps` is the default, `flow` stays as an option, rebuilt in round 5 as a continuous glow. Mockup signed off 2026-10-06.
-- **E2 timing:** wait for enframe's `phase-2-remote-targets` to merge before starting E2.
+- **E2 timing:** wait for enframe's `phase-2-remote-targets` to merge before starting E2. Merged 2026-10-08; E2 started the same day.
+- **E2 binary, not crate:** enframe-serve calls the pinframe binary from a configured path rather than depending on the library crate, so enframe's build stays free of pinframe's C codec sources.
 - **Several features per sequence (E6):** researched 2026-10-08 and placed after the enframe integration, because enframe's frame model (a frame per photo with its focal points) and its frame selection are the natural home; the tracker needs no change. Not in scope: several features held still in one clip, which needs per-photo warping.
 - **Browser tests (W1):** in the repository under `web/e2e/`, opt-in through `check.sh --browser`, run for cards that touch `web/`; not a default gate, since it adds half again to every card and needs Chromium on the Mac. Screenshots are artifacts, not diffed against the mockups.
 - **Clip in the done state (W2):** the export's done state shows the clip inline and offers Download and Sidecar links; "Reveal in Finder" only when the page is on localhost.
