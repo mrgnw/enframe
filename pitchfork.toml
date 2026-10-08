@@ -2,7 +2,7 @@
 namespace = "enframe"
 
 [daemons.serve]
-run = "exec ./src-tauri/target/release/enframe-serve --host 0.0.0.0"
+run = "exec ./src-tauri/target/release/enframe-serve --host 0.0.0.0 --pinframe \"${ENFRAME_PINFRAME:-$HOME/dev/pinframe/rust/target/release/pinframe}\""
 retry = true
 port = 5911
 ready_port = 5911

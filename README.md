@@ -155,6 +155,10 @@ Overrides, as flags or environment variables:
 | `--write-root` | `ENFRAME_WRITE_ROOTS` | see below |
 | `--pinframe` | `ENFRAME_PINFRAME` | unset |
 
+The `serve` daemon in `pitchfork.toml` passes `--pinframe`, defaulting to
+`$HOME/dev/pinframe/rust/target/release/pinframe`; set `ENFRAME_PINFRAME` to point it at
+another build. Pitchfork runs `run` through `sh -c`, which expands the default.
+
 Browsers give no filesystem paths, so serve mode substitutes a server-side file picker
 for the native dialogs, and drag-dropped files are uploaded into the inbox directory and
 imported from there.
