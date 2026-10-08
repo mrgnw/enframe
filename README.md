@@ -153,6 +153,7 @@ Overrides, as flags or environment variables:
 | `--inbox` | `ENFRAME_INBOX` | app-support `inbox` |
 | `--read-root` | `ENFRAME_READ_ROOTS` | see below |
 | `--write-root` | `ENFRAME_WRITE_ROOTS` | see below |
+| `--pinframe` | `ENFRAME_PINFRAME` | unset |
 
 Browsers give no filesystem paths, so serve mode substitutes a server-side file picker
 for the native dialogs, and drag-dropped files are uploaded into the inbox directory and
@@ -186,6 +187,31 @@ also refused a handful of routes off loopback, which was dropped when the app ga
 ability to connect to an instance on another machine — that app is an off-loopback caller
 too, so the address test would have let it browse a library and then refused it every
 export. Widen the roots and you widen what any caller can reach.
+
+#### Tracking a series with pinframe
+
+Two routes run [pinframe](https://github.com/mrgnw/pinframe), which holds one feature
+still across a photo series. Serve calls the binary named by `--pinframe`; with none
+set, both routes answer 503 and say so.
+
+```sh
+PINFRAME=~/dev/pinframe/rust/target/release/pinframe
+```
+
+```sh
+bun run serve --pinframe "$PINFRAME"
+```
+
+- `POST /api/pinframe/track` `{folder, marks, pad?}` saves `marks` beside the folder as
+  `<folder>.pin.json`, tracks without rendering, using pinframe's feature cache, and
+  answers with the sidecar: each photo's crop, plus its size and the tracker's note.
+- `POST /api/pinframe/export` `{folder, marks, out?, pad?, fps?, frames?, vf?}` renders
+  the clip, `<folder>.avif` by default, and answers `{out, sidecar}`.
+
+`marks` is `{points, at?, near?, skip?, order?}`, the CLI's `--points`, `--at`, `--near`,
+`--skip` and `--order`. The folder must be inside a read root, and the document, the clip
+and `frames` inside a write root. One run per folder: a newer request cancels the one in
+flight, which answers 409, so the newest mark is the only one that gets a result.
 
 #### On a Linux host
 
