@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nav mockup 3 · corner pill to the other app</title>
+<link rel="stylesheet" href="shell.css">
+<style>
+	/* Wordmarks stay as they are. One small pill in the top-right corner names the other app and goes there. */
+	.goto {
+		position: absolute; top: 14px; right: 14px; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px;
+		border-radius: 999px; border: 1px solid var(--nb); background: var(--nbg); backdrop-filter: blur(14px); box-shadow: var(--nsh);
+		font: 500 12.5px/1 var(--body); color: var(--nmuted); text-decoration: none; transition: color 0.15s, border-color 0.15s;
+	}
+	.goto:hover { color: var(--nfg); border-color: var(--nfg); }
+	.goto svg { width: 13px; height: 13px; }
+	.goto .arrow { width: 10px; height: 10px; opacity: 0.6; }
+	@media (max-width: 720px) { .goto span { display: none; } .goto { padding: 0 8px; } }
+</style>
+</head>
+<body>
+<header class="note">
+	<h1>3 · Corner pill to the other app</h1>
+	<p>Nothing changes where the user already looks. A single pill in the top-right corner, in the island style both screens use, names the other app: "Stabilize ↗" from the framer, "enframe ↗" from Stabilize. The command bar and <code>⌘1</code>/<code>⌘2</code> keep working.</p>
+</header>
+
+<div class="split">
+	<section class="app light">
+		<div class="topbar">
+			<span class="word">enframe</span>
+			<span class="crumb">IMG_4698.avif · 3 frames</span>
+		</div>
+		<a class="goto" href="#"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2" fill="currentColor"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3" stroke="currentColor" stroke-width="1.5"/></svg><span>Stabilize</span><svg class="arrow" viewBox="0 0 10 10"><path d="M2 8l6-6M3.5 2H8v4.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></a>
+		<div class="canvas">
+			<div class="photo"></div>
+			<div class="frame" style="left:22%;top:18%;width:48%;height:58%"><i></i></div>
+		</div>
+		<div class="toolbar">
+			<span class="tg"><b></b><b></b></span><span class="div"></span><span class="tg"><b></b><b></b><b></b></span><span class="div"></span><span class="tg"><b></b></span>
+		</div>
+	</section>
+
+	<section class="app dark">
+		<div class="dock">
+			<div class="island">
+				<span class="word">Stabilize</span>
+				<span class="sep"></span>
+				<span class="muted">train clouds · 57 photos</span>
+			</div>
+			<div class="island steps"><span class="on">Points</span><span>Fix</span><span>Export</span></div>
+		</div>
+		<a class="goto" href="#"><svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 6h12M6 2v12" stroke="currentColor" stroke-width="1.2"/></svg><span>enframe</span><svg class="arrow" viewBox="0 0 10 10"><path d="M2 8l6-6M3.5 2H8v4.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></a>
+		<div class="stage"><div class="photo"></div><div class="ghost" style="left:58%;top:36%"></div></div>
+		<div class="strip"><b></b><b class="lost"></b><b></b><b></b><b class="lost"></b><b></b><b></b><b></b><b class="lost"></b><b></b></div>
+	</section>
+</div>
+
+<footer class="note">
+	<p><b>Pro:</b> most unobtrusive of the three that stay visible; both wordmarks untouched. <b>Con:</b> the top-right corner is where the Stabilize dock's end island and the framer's panel toggle already sit on some screens, so it needs a free corner; it says nothing about a third mode later.</p>
+</footer>
+</body>
+</html>

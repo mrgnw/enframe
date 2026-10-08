@@ -1,0 +1,272 @@
+/* Shared stand-ins for the two shells: enframe's framer (light, shadcn tokens) and Stabilize (dark, pin.css tokens). */
+@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600&family=Karla:wght@400;500;600&display=swap");
+
+:root {
+	--display: "Bricolage Grotesque", system-ui, sans-serif;
+	--body: "Karla", system-ui, sans-serif;
+	--ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+* {
+	box-sizing: border-box;
+}
+body {
+	margin: 0;
+	background: #202329;
+	color: #c9ced6;
+	font: 14px / 1.5 var(--body);
+}
+
+.note {
+	max-width: 980px;
+	margin: 0 auto;
+	padding: 22px 20px 10px;
+}
+.note h1 {
+	font: 600 20px / 1.2 var(--display);
+	letter-spacing: -0.02em;
+	color: #fff;
+	margin: 0 0 6px;
+}
+.note p {
+	margin: 0;
+	color: #a7adb7;
+}
+.note code,
+.note em {
+	font-style: normal;
+	color: #f5a524;
+}
+.note b {
+	color: #e6e9ee;
+	font-weight: 600;
+}
+footer.note {
+	padding-top: 14px;
+}
+
+.split {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 16px;
+	max-width: 1180px;
+	margin: 10px auto;
+	padding: 0 20px;
+}
+@media (max-width: 860px) {
+	.split {
+		grid-template-columns: 1fr;
+	}
+}
+
+.app {
+	position: relative;
+	aspect-ratio: 4 / 3;
+	border-radius: 14px;
+	overflow: hidden;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* enframe framer: light */
+.app.light {
+	background: oklch(0.985 0.002 247);
+	color: oklch(0.129 0.042 264.695);
+	--nfg: oklch(0.129 0.042 264.695);
+	--nmuted: oklch(0.554 0.046 257.417);
+	--nb: oklch(0.9 0.01 255);
+	--nbg: rgba(255, 255, 255, 0.92);
+	--nhover: oklch(0.96 0.005 255);
+	--nsh: 0 2px 12px rgba(20, 24, 40, 0.08);
+}
+.light .topbar {
+	position: absolute;
+	top: 12px;
+	left: 14px;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	z-index: 3;
+}
+.light .word {
+	font: 600 15px / 1 var(--display);
+	letter-spacing: -0.02em;
+}
+.light .crumb {
+	font: 500 12px / 1 var(--body);
+	color: var(--nmuted);
+}
+.light .canvas {
+	position: absolute;
+	inset: 44px 20px 62px;
+}
+.light .photo {
+	position: absolute;
+	inset: 0;
+	border-radius: 6px;
+	background: linear-gradient(160deg, #cfd8e3, #8fa3b8 55%, #5f7490);
+}
+.light .frame {
+	position: absolute;
+	border: 1.5px solid #fff;
+	box-shadow:
+		0 0 0 1px rgba(0, 0, 0, 0.25),
+		0 0 0 9999px rgba(255, 255, 255, 0.28);
+}
+.light .frame i {
+	position: absolute;
+	left: 40%;
+	top: 38%;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: #f5a524;
+	border: 2px solid #fff;
+}
+.light .toolbar {
+	position: absolute;
+	left: 50%;
+	bottom: 14px;
+	translate: -50% 0;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	height: 36px;
+	padding: 0 8px;
+	border-radius: 10px;
+	background: #fff;
+	border: 1px solid var(--nb);
+	box-shadow: var(--nsh);
+}
+.light .tg {
+	display: flex;
+	gap: 4px;
+}
+.light .tg b {
+	width: 22px;
+	height: 22px;
+	border-radius: 6px;
+	background: oklch(0.93 0.01 255);
+}
+.light .div {
+	width: 1px;
+	height: 18px;
+	background: var(--nb);
+}
+
+/* Stabilize: dark */
+.app.dark {
+	background: #090a0c;
+	color: #eceef1;
+	--nfg: #eceef1;
+	--nmuted: #8a919c;
+	--nb: rgba(255, 255, 255, 0.09);
+	--nbg: rgba(24, 27, 32, 0.92);
+	--nhover: rgba(255, 255, 255, 0.06);
+	--nsh: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+.dark .dock {
+	position: absolute;
+	top: 14px;
+	left: 14px;
+	right: 14px;
+	display: flex;
+	justify-content: space-between;
+	align-items: start;
+	z-index: 3;
+}
+.dark .island {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	height: 38px;
+	padding: 0 12px;
+	border: 1px solid var(--nb);
+	border-radius: 999px;
+	background: rgba(24, 27, 32, 0.82);
+	backdrop-filter: blur(14px);
+	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+}
+.dark .word {
+	font: 600 16px / 1 var(--display);
+	letter-spacing: -0.02em;
+	padding-right: 4px;
+}
+.dark .sep {
+	width: 1px;
+	height: 16px;
+	background: var(--nb);
+	margin: 0 4px;
+}
+.dark .muted {
+	font: 500 12.5px / 1 var(--body);
+	color: var(--nmuted);
+}
+.dark .steps {
+	gap: 2px;
+	padding: 0 5px;
+}
+.dark .steps span {
+	font: 600 12px / 1 var(--display);
+	color: var(--nmuted);
+	padding: 7px 10px;
+	border-radius: 999px;
+}
+.dark .steps .on {
+	color: #1a1200;
+	background: #f5a524;
+}
+.dark .stage {
+	position: absolute;
+	inset: 0 0 58px;
+}
+.dark .photo {
+	position: absolute;
+	inset: 0;
+	background:
+		radial-gradient(ellipse 60% 40% at 58% 40%, #3d4756, transparent 70%),
+		linear-gradient(180deg, #14181f, #0d1014 60%, #1a1a16);
+}
+.dark .ghost {
+	position: absolute;
+	width: 60px;
+	height: 60px;
+	translate: -50% -50%;
+	border: 1px dashed rgba(245, 165, 36, 0.5);
+	border-radius: 50%;
+}
+.dark .ghost::before,
+.dark .ghost::after {
+	content: "";
+	position: absolute;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: #f5a524;
+	left: 18px;
+	top: 22px;
+}
+.dark .ghost::after {
+	left: 36px;
+	top: 30px;
+}
+.dark .strip {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 58px;
+	display: flex;
+	gap: 4px;
+	align-items: center;
+	padding: 0 12px;
+	background: #0e1013;
+	border-top: 1px solid var(--nb);
+}
+.dark .strip b {
+	flex: 1;
+	height: 40px;
+	border-radius: 4px;
+	background: #1f242b;
+}
+.dark .strip b.lost {
+	box-shadow: inset 0 -3px 0 #f0564a;
+}

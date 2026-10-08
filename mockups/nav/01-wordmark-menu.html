@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nav mockup 1 · the wordmark is the switch</title>
+<link rel="stylesheet" href="shell.css">
+<style>
+	/* The wordmark you already see becomes the switch: click it, pick the other app. No new chrome. */
+	.brand { position: relative; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; user-select: none; }
+	.brand .caret { width: 8px; height: 8px; opacity: 0.45; transition: opacity 0.15s, rotate 0.2s var(--ease); }
+	.brand:hover .caret, .brand.open .caret { opacity: 0.9; }
+	.brand.open .caret { rotate: 180deg; }
+	.menu {
+		position: absolute; top: calc(100% + 10px); left: -8px; min-width: 164px;
+		padding: 5px; border-radius: 12px; border: 1px solid var(--nb); background: var(--nbg);
+		backdrop-filter: blur(14px); box-shadow: var(--nsh); display: none; z-index: 5;
+	}
+	.brand.open .menu { display: block; }
+	.menu a {
+		display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 8px;
+		font: 500 13.5px/1 var(--body); color: var(--nfg); text-decoration: none;
+	}
+	.menu a:hover { background: var(--nhover); }
+	.menu a.current { color: var(--nmuted); cursor: default; }
+	.menu a.current::after { content: '✓'; margin-left: auto; font-size: 11px; }
+	.menu svg { width: 14px; height: 14px; }
+	.menu kbd { margin-left: auto; font: 500 10.5px/1 var(--body); color: var(--nmuted); }
+	.menu a.current kbd { display: none; }
+</style>
+</head>
+<body>
+<header class="note">
+	<h1>1 · The wordmark is the switch</h1>
+	<p>Both screens already show their name top-left. Clicking it opens a two-item menu. Nothing is added to the chrome; the caret is the only hint. <code>⌘1</code> / <code>⌘2</code> jump without the menu.</p>
+</header>
+
+<div class="split">
+	<section class="app light">
+		<div class="topbar">
+			<div class="brand" onclick="this.classList.toggle('open')">
+				<span class="word">enframe</span>
+				<svg class="caret" viewBox="0 0 8 8"><path d="M1 2.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+				<div class="menu">
+					<a class="current"><svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 6h12M6 2v12" stroke="currentColor" stroke-width="1.2"/></svg>enframe</a>
+					<a href="#"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2" fill="currentColor"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3" stroke="currentColor" stroke-width="1.5"/></svg>Stabilize<kbd>⌘2</kbd></a>
+				</div>
+			</div>
+			<span class="crumb">IMG_4698.avif · 3 frames</span>
+		</div>
+		<div class="canvas">
+			<div class="photo"></div>
+			<div class="frame" style="left:22%;top:18%;width:48%;height:58%"><i></i></div>
+		</div>
+		<div class="toolbar">
+			<span class="tg"><b></b><b></b></span><span class="div"></span><span class="tg"><b></b><b></b><b></b></span><span class="div"></span><span class="tg"><b></b></span>
+		</div>
+	</section>
+
+	<section class="app dark">
+		<div class="dock">
+			<div class="island">
+				<div class="brand" onclick="this.classList.toggle('open')">
+					<span class="word">Stabilize</span>
+					<svg class="caret" viewBox="0 0 8 8"><path d="M1 2.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+					<div class="menu">
+						<a href="#"><svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 6h12M6 2v12" stroke="currentColor" stroke-width="1.2"/></svg>enframe<kbd>⌘1</kbd></a>
+						<a class="current"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2" fill="currentColor"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3" stroke="currentColor" stroke-width="1.5"/></svg>Stabilize</a>
+					</div>
+				</div>
+				<span class="sep"></span>
+				<span class="muted">train clouds · 57 photos</span>
+			</div>
+			<div class="island steps"><span class="on">Points</span><span>Fix</span><span>Export</span></div>
+		</div>
+		<div class="stage"><div class="photo"></div><div class="ghost" style="left:58%;top:36%"></div></div>
+		<div class="strip"><b></b><b class="lost"></b><b></b><b></b><b class="lost"></b><b></b><b></b><b></b><b class="lost"></b><b></b></div>
+	</section>
+</div>
+
+<footer class="note">
+	<p><b>Pro:</b> zero added elements; the name doubles as "where am I". <b>Con:</b> the caret is the only discovery cue, so first-time users may not find it. Mobile: the wordmark is hidden in the Stabilize dock today; it would come back as a 28px icon-only pill.</p>
+</footer>
+</body>
+</html>

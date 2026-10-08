@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nav mockup 2 · two-segment pill</title>
+<link rel="stylesheet" href="shell.css">
+<style>
+	/* A two-segment pill replaces the wordmark. Both destinations are always visible; the current one is filled. */
+	.seg { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--nseg); gap: 2px; }
+	.seg a {
+		display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px 0 8px; border-radius: 999px;
+		font: 600 12.5px/1 var(--display); letter-spacing: -0.01em; color: var(--nmuted); text-decoration: none;
+		transition: color 0.15s, background 0.15s;
+	}
+	.seg a:hover { color: var(--nfg); }
+	.seg a.on { background: var(--nbg-solid); color: var(--nfg); box-shadow: 0 1px 3px rgba(0,0,0,0.18); }
+	.seg svg { width: 13px; height: 13px; }
+	.app.light .seg { --nseg: rgba(0,0,0,0.06); --nbg-solid: #fff; }
+	.app.dark .seg { --nseg: rgba(255,255,255,0.07); --nbg-solid: #2a2f37; }
+	@media (max-width: 720px) { .seg a span { display: none; } .seg a { padding: 0 7px; } }
+</style>
+</head>
+<body>
+<header class="note">
+	<h1>2 · Two-segment pill</h1>
+	<p>The wordmark becomes a segmented control: <em>Frame · Stabilize</em>, current segment filled. Always visible, one glance tells you where you are and where else you can go. On phones the labels drop and the icons stay.</p>
+</header>
+
+<div class="split">
+	<section class="app light">
+		<div class="topbar">
+			<nav class="seg">
+				<a class="on" href="#"><svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 6h12M6 2v12" stroke="currentColor" stroke-width="1.2"/></svg><span>Frame</span></a>
+				<a href="#"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2" fill="currentColor"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3" stroke="currentColor" stroke-width="1.5"/></svg><span>Stabilize</span></a>
+			</nav>
+			<span class="crumb">IMG_4698.avif · 3 frames</span>
+		</div>
+		<div class="canvas">
+			<div class="photo"></div>
+			<div class="frame" style="left:22%;top:18%;width:48%;height:58%"><i></i></div>
+		</div>
+		<div class="toolbar">
+			<span class="tg"><b></b><b></b></span><span class="div"></span><span class="tg"><b></b><b></b><b></b></span><span class="div"></span><span class="tg"><b></b></span>
+		</div>
+	</section>
+
+	<section class="app dark">
+		<div class="dock">
+			<div class="island" style="padding-left:5px">
+				<nav class="seg">
+					<a href="#"><svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 6h12M6 2v12" stroke="currentColor" stroke-width="1.2"/></svg><span>Frame</span></a>
+					<a class="on" href="#"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2" fill="currentColor"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3" stroke="currentColor" stroke-width="1.5"/></svg><span>Stabilize</span></a>
+				</nav>
+				<span class="sep"></span>
+				<span class="muted">train clouds · 57 photos</span>
+			</div>
+			<div class="island steps"><span class="on">Points</span><span>Fix</span><span>Export</span></div>
+		</div>
+		<div class="stage"><div class="photo"></div><div class="ghost" style="left:58%;top:36%"></div></div>
+		<div class="strip"><b></b><b class="lost"></b><b></b><b></b><b class="lost"></b><b></b><b></b><b></b><b class="lost"></b><b></b></div>
+	</section>
+</div>
+
+<footer class="note">
+	<p><b>Pro:</b> discoverable, no click to see the options, reads as one product with two modes. <b>Con:</b> the word "enframe" disappears from the screen (the pill says Frame); it costs ~60px more width than the wordmark. Scales to a third mode without redesign.</p>
+</footer>
+</body>
+</html>
