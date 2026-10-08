@@ -1,26 +1,32 @@
 <script lang="ts">
+// `/pin/export?folder=PATH`: the clip playing from the folder's saved document, and the export panel.
 import { page } from '$app/state';
+import Preview from '$lib/pinframe/Preview.svelte';
 import '$lib/pinframe/pin.css';
 import '$lib/pinframe/marking.css';
 
-const folder = $derived(page.url.searchParams.get('folder') ?? '');
+const folder = $derived(page.url.searchParams.get('folder'));
 </script>
 
 <svelte:head>
-	<title>pinframe · export</title>
+	<title>pinframe{folder ? ' · preview and export' : ''}</title>
 </svelte:head>
 
 <div class="pinframe">
-	<main class="stage">
-		<section class="drop">
-			<div>
-				<h1>Export is <b>next</b></h1>
-				<p>The preview and export step is not built yet.</p>
-				<div class="actions">
-					<a class="btn primary" href="/pin?folder={encodeURIComponent(folder)}">Back to fixing</a>
+	{#if folder}
+		{#key folder}
+			<Preview {folder} />
+		{/key}
+	{:else}
+		<main class="stage">
+			<section class="drop">
+				<div>
+					<h1>Which <b>folder</b>?</h1>
+					<p>The preview plays a folder's clip once its points are marked.</p>
+					<a class="btn primary" href="/pin">Choose a folder</a>
 				</div>
-			</div>
-		</section>
-	</main>
-	<nav class="filmstrip empty"></nav>
+			</section>
+		</main>
+		<nav class="filmstrip empty"></nav>
+	{/if}
 </div>
