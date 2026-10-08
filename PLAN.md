@@ -4,6 +4,7 @@ pinframe's Rust CLI is the only implementation: `bash analysis/check.sh` passes 
 
 ## Where things live
 
+- **The board** is the GitHub Project [nframe](https://github.com/users/mrgnw/projects/10): every open card of both repos, in plan order, with the tracking issue [pinframe#2](https://github.com/mrgnw/pinframe/issues/2) for the enframe integration. Status lives there and on the issues; the Done list below is the written history.
 - **The spec** of a card is its file in `todos/`; **its status** is its GitHub issue (the Issue column below). Open the issue when the card starts, close it when the card is merged, and name the branch after the card as before. A card whose code lands in enframe has its issue in [mrgnw/enframe](https://github.com/mrgnw/enframe/issues) and is a sub-issue of [pinframe#2](https://github.com/mrgnw/pinframe/issues/2), the cross-repo view of the integration.
 - Finished cards keep their file under `todos/done/`; the Done list below is the index.
 
