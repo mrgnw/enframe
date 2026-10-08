@@ -1,5 +1,5 @@
 """Report how far a run's crop rects are from a baseline, without a pass/fail threshold:
-uv run analysis/rect_diff.py out/base.json out/rust.json"""
+uv run analysis/stabilize/rect_diff.py out/base.json out/rust.json"""
 
 import json
 import sys

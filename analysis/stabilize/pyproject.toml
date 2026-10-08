@@ -1,8 +1,7 @@
 [project]
-name = "pinframe"
+name = "stabilize-analysis"
 version = "0.1.0"
-description = "Pin one feature in place across a photo sequence"
-readme = "README.md"
+description = "Analysis scripts for the stabilize crate"
 license = "MIT"
 requires-python = ">=3.14"
 dependencies = [

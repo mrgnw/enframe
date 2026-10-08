@@ -1,4 +1,4 @@
-"""Seconds and bytes to save the --frames PNGs at each zlib level, and with threads: uv run analysis/png_levels.py out/frames"""
+"""Seconds and bytes to save the --frames PNGs at each zlib level, and with threads: uv run analysis/stabilize/png_levels.py out/frames"""
 
 import io
 import sys

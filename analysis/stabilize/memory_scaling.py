@@ -1,7 +1,7 @@
-"""Peak memory of a pinframe run against the number of photos.
+"""Peak memory of a stabilize run against the number of photos.
 
-uv run analysis/memory_scaling.py
-Runs pinframe on the first N train clouds photos (transparent padding, AVIF out) and reads the peak RSS that
+uv run analysis/stabilize/memory_scaling.py
+Runs stabilize on the first N train clouds photos (transparent padding, AVIF out) and reads the peak RSS that
 /usr/bin/time -l reports for the whole process.
 """
 
@@ -10,7 +10,7 @@ import subprocess
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent
+ROOT = Path(__file__).parent.parent.parent
 PHOTOS = sorted((ROOT / 'samples' / 'train clouds').glob('*.avif'))
 COUNTS = (10, 20, 40, 57)
 
@@ -18,7 +18,7 @@ COUNTS = (10, 20, 40, 57)
 def peak_mb(count: int) -> tuple[float, float]:
 	out = ROOT / 'out' / f'memory-{count}.avif'
 	cmd = [
-		'/usr/bin/time', '-l', 'rust/target/release/pinframe', *map(str, PHOTOS[:count]),
+		'/usr/bin/time', '-l', 'src-tauri/target/release/stabilize', *map(str, PHOTOS[:count]),
 		'--points', '1267.5,510/1782.5,510/1267.5,710/1782.5,710', '--pad', 'transparent', '--out', str(out),
 	]  # fmt: skip
 	start = time.perf_counter()

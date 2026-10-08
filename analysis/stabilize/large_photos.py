@@ -1,6 +1,6 @@
-"""Run pinframe on 48 MP photos and compare peak memory with the planned budget.
+"""Run stabilize on 48 MP photos and compare peak memory with the planned budget.
 
-uv run analysis/large_photos.py  (BIN=path/to/binary runs an alternate build)
+uv run analysis/stabilize/large_photos.py  (BIN=path/to/binary runs an alternate build)
 Upscales the 8 turbine photos (IMG_4698-4705) to 8064x6048 AVIFs once, into out/large/, then runs them with
 the turbine box and mark scaled to match.
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PIL import Image
 
-ROOT = Path(__file__).parent.parent
+ROOT = Path(__file__).parent.parent.parent
 SOURCES = [ROOT / 'samples' / 'train clouds' / f'IMG_{n}.avif' for n in range(4698, 4706)]
 WORK = ROOT / 'out' / 'large'
 SIZE = (8064, 6048)
@@ -42,7 +42,7 @@ def box_points(x: int, y: int, w: int, h: int) -> str:
 if __name__ == '__main__':
 	photos = [upscaled(s) for s in SOURCES]
 	cmd = [
-		'/usr/bin/time', '-l', *os.environ.get('BIN', 'rust/target/release/pinframe').split(), *map(str, photos),
+		'/usr/bin/time', '-l', *os.environ.get('BIN', 'src-tauri/target/release/stabilize').split(), *map(str, photos),
 		'--points', box_points(840, 550, 400, 350), '--at', f'IMG_4703.avif={box_points(746, 554, 400, 350)}',
 		'--pad', 'transparent', '--out', str(WORK / 'clip.avif'),
 	]  # fmt: skip

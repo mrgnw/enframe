@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# The check every task runs before it merges: bash analysis/check.sh
+# The check every task runs before it merges: bash analysis/stabilize/check.sh
 # Builds from scratch-safe state, lints, tests, runs every README command and each input format, checks the
 # outputs, and compares the train clouds job against the tracking baseline. Exits non-zero if anything fails.
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
-OUT=out/check
+OUT=out/stabilize/check
 rm -rf "$OUT"
 mkdir -p "$OUT"
 LOG=$OUT/last.log
@@ -23,15 +23,15 @@ check() {
 	fi
 }
 
-P=rust/target/release/pinframe
+P=src-tauri/target/release/stabilize
 G="samples/train clouds"
 TURBINES=("$G"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif)
 MARKS=(--points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.avif=846,641.5/1046,641.5/846,816.5/1046,816.5)
 
-check 'release build' bash -c 'cd rust && cargo build --release'
-check 'cargo fmt --check' bash -c 'cd rust && cargo fmt --check'
-check 'clippy -D warnings' bash -c 'cd rust && cargo clippy --release --all-targets -- -D warnings'
-check 'cargo test' bash -c 'cd rust && cargo test --release'
+check 'release build' cargo build --release --manifest-path src-tauri/Cargo.toml -p stabilize
+check 'cargo fmt --check' cargo fmt --check --manifest-path src-tauri/Cargo.toml -p stabilize
+check 'clippy -D warnings' cargo clippy --release --manifest-path src-tauri/Cargo.toml -p stabilize --all-targets -- -D warnings
+check 'cargo test' cargo test --release --manifest-path src-tauri/Cargo.toml -p stabilize
 
 check 'README: heart.avif' $P "$G"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --out $OUT/heart.avif
 check 'README: turbines.avif' $P "${TURBINES[@]}" "${MARKS[@]}" --out $OUT/turbines.avif
@@ -40,7 +40,7 @@ check 'README: JSON only' $P "$G"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,3
 check 'README: --cache' $P "$G"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --cache $OUT/cache --out $OUT/cached.json
 check 'README: .mp4 with --vf' $P "${TURBINES[@]}" "${MARKS[@]}" --vf deflicker,tpad=stop_mode=clone:stop_duration=2 --out $OUT/turbines.mp4
 check 'README: --frames' $P "${TURBINES[@]}" "${MARKS[@]}" --frames $OUT/frames --out $OUT/frames.avif
-check 'train clouds, all 57 photos' env BIN="$P --no-cache" bash analysis/train_clouds_all.sh $OUT/all.avif
+check 'train clouds, all 57 photos' env BIN="$P --no-cache" bash analysis/stabilize/train_clouds_all.sh $OUT/all.avif
 
 # Each input format: the 8 turbine photos converted, with the same marks. macOS converts with sips and cjxl.
 # Elsewhere Pillow writes the JPEG and PNG sets, and HEIC and JPEG XL, which decode through ImageIO, must be
@@ -75,7 +75,7 @@ convert() {
 			sips -s format "${2##*.}" "$1" --out "$2" > /dev/null
 		fi
 	else
-		uv run "$OUT/convert.py" "$1" "$2" "${3-}"
+		uv run --project analysis/stabilize "$OUT/convert.py" "$1" "$2" "${3-}"
 	fi
 }
 refused() {
@@ -104,8 +104,8 @@ for fmt in "${formats[@]}"; do
 	check "input: $fmt" $P "$OUT/$fmt"/*.$fmt --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at "IMG_4703.$fmt=846,641.5/1046,641.5/846,816.5/1046,816.5" --out "$OUT/input-$fmt.json"
 done
 if [[ $(uname) != Darwin ]]; then
-	check 'input: heic refused off macOS' refused $P rust/testdata/orientation-6.heic --points 1,1 --out "$OUT/heic.json"
-	check 'input: jxl refused off macOS' refused $P rust/testdata/orientation-6.jxl --points 1,1 --out "$OUT/jxl.json"
+	check 'input: heic refused off macOS' refused $P src-tauri/stabilize/testdata/orientation-6.heic --points 1,1 --out "$OUT/heic.json"
+	check 'input: jxl refused off macOS' refused $P src-tauri/stabilize/testdata/orientation-6.jxl --points 1,1 --out "$OUT/jxl.json"
 fi
 
 # Colour: the conversions above keep Display P3. An sRGB set stays sRGB; a mixed set becomes Display P3.
@@ -158,8 +158,8 @@ for name, expected in (('turbines.avif', p3), ('turbines.mp4', p3), ('srgb.avif'
 with Image.open(out / 'frames/0001.png') as im:
 	assert im.info.get('icc_profile'), 'a Display P3 frame carries its ICC profile'
 
-# Tracking: Rust against the committed baseline (analysis/tracking_baseline.json) on all 57 train clouds photos.
-baseline = json.loads(Path('analysis/tracking_baseline.json').read_text())['stability']['original']
+# Tracking: Rust against the committed baseline (analysis/stabilize/tracking_baseline.json) on all 57 train clouds photos.
+baseline = json.loads(Path('analysis/stabilize/tracking_baseline.json').read_text())['stability']['original']
 rust = {p['file']: p for p in json.loads((out / 'all.json').read_text())['photos']}
 samples = Path('samples/train clouds')
 
@@ -169,11 +169,11 @@ def oriented_size(path):
 		return ImageOps.exif_transpose(im).size
 
 
-# x,y,w,h go into the sidecar as full f64 precision (no rounding in main.rs), and both the baseline and
+# x,y,w,h go into the sidecar as full f64 precision (no rounding in lib.rs), and both the baseline and
 # this run's JSON round-trip a double through text exactly (serde_json and Python's json both use a
 # shortest round-trippable float format). A bit-exact rerun gives 0; this just leaves float-parsing noise.
 RECT_TOLERANCE = 1e-9
-# main.rs writes scale as `format!("{:.4}", hit.scale)`, so both sides are already quantized to 4 decimal
+# lib.rs writes scale as `format!("{:.4}", hit.scale)`, so both sides are already quantized to 4 decimal
 # places; half that step covers the same float-parsing noise as above.
 SCALE_TOLERANCE = 5e-5
 # tracking_benchmark.py's train_clouds_run() rounds point_px to 3 decimal places when it writes the baseline;
@@ -186,7 +186,7 @@ worst_point_px = 0.0
 for file, row in rust.items():
 	base = baseline[Path(file).stem]
 	assert row['source'] == base['source'], (
-		f'{file}: source {row["source"]!r}, baseline (analysis/tracking_baseline.json) has {base["source"]!r}'
+		f'{file}: source {row["source"]!r}, baseline (analysis/stabilize/tracking_baseline.json) has {base["source"]!r}'
 	)
 	rect_diff = max(abs(row[k] - base['rect'][i]) for i, k in enumerate('xywh'))
 	assert rect_diff <= RECT_TOLERANCE, f'{file}: rect differs from baseline by {rect_diff:.2e}'
@@ -203,11 +203,11 @@ for file, row in rust.items():
 	worst_point_px = max(worst_point_px, point_diff)
 lost = sorted(f for f in rust if rust[f]['source'] == 'lost')
 print(
-	f'train clouds vs baseline (analysis/tracking_baseline.json): max rect diff {worst_rect:.2e}, '
+	f'train clouds vs baseline (analysis/stabilize/tracking_baseline.json): max rect diff {worst_rect:.2e}, '
 	f'max scale diff {worst_scale:.1e}, max point diff {worst_point_px:.2e}px, lost {lost}'
 )
 PY
-check 'outputs valid, train clouds matches baseline' uv run "$OUT/verify.py" "$OUT"
+check 'outputs valid, train clouds matches baseline' uv run --project analysis/stabilize "$OUT/verify.py" "$OUT"
 tail -1 "$LOG"
 
 echo "--- $pass passed, $fail failed"

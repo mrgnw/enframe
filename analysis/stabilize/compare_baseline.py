@@ -1,7 +1,7 @@
 """Compare a tracking benchmark report with the committed baseline, ignoring run time.
 
-uv run analysis/tracking_benchmark.py
-uv run analysis/compare_baseline.py out/tracking_benchmark.json analysis/tracking_baseline.json
+uv run analysis/stabilize/tracking_benchmark.py
+uv run analysis/stabilize/compare_baseline.py out/tracking_benchmark.json analysis/stabilize/tracking_baseline.json
 """
 
 import json

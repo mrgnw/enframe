@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # All 57 train clouds photos in one clip, with the anchor re-marked wherever tracking can't link two photos.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 OUT=${1:-out/all.avif}
 # PAD= (empty) runs without padding, the tool's default crop. BIN= overrides the binary (e.g. to add
 # flags or point at a different build); it defaults to the release build.
 PAD=${PAD-transparent}
-BIN=${BIN:-rust/target/release/pinframe}
+BIN=${BIN:-src-tauri/target/release/stabilize}
 
 fixes=(
 	--at IMG_4680.avif=485,1100/655,1100/485,1180/655,1180

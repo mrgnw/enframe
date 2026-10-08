@@ -1,6 +1,6 @@
 """Export downscaled JPEGs of the train clouds samples for the HTML mockups.
 
-Run after `PAD=transparent analysis/train_clouds_all.sh /tmp/pin/all.avif --frames /tmp/pin/frames`.
+Run after `PAD=transparent analysis/stabilize/train_clouds_all.sh /tmp/pin/all.avif --frames /tmp/pin/frames`.
 """
 
 import json
@@ -9,10 +9,10 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
-SAMPLES = Path('/Users/user/dev/pinframe/samples/train clouds')
+SAMPLES = Path(__file__).resolve().parent.parent.parent / 'samples' / 'train clouds'
 FRAMES = Path('/tmp/pin/frames')
 SIDECAR = Path('/tmp/pin/all.json')
-OUT = Path(__file__).resolve().parent.parent / 'mockups' / 'assets'
+OUT = Path(__file__).resolve().parent.parent.parent / 'mockups' / 'stabilize' / 'assets'
 
 THUMB_LONG, MAIN_LONG, FRAME_LONG = 200, 1100, 720
 

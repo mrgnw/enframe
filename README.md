@@ -196,6 +196,14 @@ Track, fix the photos it lost, then export a clip. It is the `stabilize` crate i
 [pinframe](https://github.com/mrgnw/pinframe), now archived. Open it from the command bar
 ("Stabilize a Series…") or at `/stabilize?folder=PATH`.
 
+Its gate builds, lints and tests the crate, runs every command its README documents and
+compares the train clouds job with the tracking baseline. It needs the samples linked at
+`samples/`:
+
+```sh
+just check-stabilize
+```
+
 - `POST /api/stabilize/track` `{folder, features, feature, pad?}` saves the document,
   `features` (`[{name, marks}]`, one tracker run each), beside the folder as
   `<folder>.stabilize.json` (a `<folder>.pin.json` is still read when that is absent),

@@ -1,4 +1,4 @@
-"""Compare two animated AVIF clips frame by frame: uv run analysis/clip_psnr.py out/base.avif out/rust.avif
+"""Compare two animated AVIF clips frame by frame: uv run analysis/stabilize/clip_psnr.py out/base.avif out/rust.avif
 
 Prints frame count, frame duration and mode of each, the PSNR of the RGB and alpha channels of the second
 against the first, and whether each clip's XMP carries the run ID of its .json sidecar."""

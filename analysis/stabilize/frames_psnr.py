@@ -1,5 +1,5 @@
 """Compare two --frames folders of placed PNGs (lossless, before encoding):
-uv run analysis/frames_psnr.py out/fmt/pyframes out/fmt/frames"""
+uv run analysis/stabilize/frames_psnr.py out/fmt/pyframes out/fmt/frames"""
 
 import math
 import sys

@@ -7,7 +7,7 @@
 Renders the first photo, cropped to its frame's source rectangle, and the clip itself in one browser, screenshots
 both, and compares the mean colour of 16x16 blocks. Run once per browser engine:
 
-	uv run analysis/colour_screenshot.py CLIP.avif [CLIP.avif ...]
+	uv run analysis/stabilize/colour_screenshot.py CLIP.avif [CLIP.avif ...]
 
 Each clip needs its .json beside it and the photos where the .json's run found them (pass --photos DIR). Make
 clips with a long --fps (for example --fps 0.1) so the first frame is still showing when the screenshot is taken.

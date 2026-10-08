@@ -35,3 +35,7 @@ reinstall: clean
 # Initialize the database with schema
 init-db:
 	sqlite3 ~/.local/share/com.enframe.app/enframe.db < database.sql
+
+# Stabilize's gate: build, lint and test the crate, run every documented command and compare tracking with its baseline
+check-stabilize:
+	bash analysis/stabilize/check.sh

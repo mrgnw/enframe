@@ -1,6 +1,6 @@
 """Peak memory of one Rust prepare and render task per photo size, each in a fresh process.
 
-uv run analysis/rust_task_memory.py
+uv run analysis/stabilize/rust_task_memory.py
 Makes 12 MP and 48 MP AVIF, JPEG, PNG, HEIC and JPEG XL inputs from IMG_4698 once (out/large/), runs the task_memory
 check in the Rust test binary for each, and prints the cost over the process's starting memory with a
 fixed + per-pixel fit.
@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PIL import Image
 
-ROOT = Path(__file__).parent.parent
+ROOT = Path(__file__).parent.parent.parent
 SOURCE = ROOT / 'samples' / 'train clouds' / 'IMG_4698.avif'
 
 
@@ -42,7 +42,7 @@ def upscaled(size: tuple[int, int], kind: str) -> Path:
 
 build = subprocess.run(
 	['cargo', 'test', '--release', '--no-run', '--message-format=short'],
-	cwd=ROOT / 'rust',
+	cwd=ROOT / 'src-tauri' / 'stabilize',
 	capture_output=True,
 	text=True,
 )
@@ -54,7 +54,7 @@ for kind in ('avif', 'jpeg', 'png', 'heic8', 'heic10', 'jxl_lossless', 'jxl_loss
 		for photo in photos:
 			run = subprocess.run(
 				[binary, '--ignored', '--exact', 'checks::task_memory', '--nocapture'],
-				cwd=ROOT / 'rust',
+				cwd=ROOT / 'src-tauri' / 'stabilize',
 				env={'TASK_PHOTO': str(photo), 'TASK': task, 'PATH': '/usr/bin:/bin'},
 				capture_output=True,
 				text=True,

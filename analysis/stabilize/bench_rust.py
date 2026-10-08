@@ -1,8 +1,8 @@
 """Whole train clouds runs, interleaved across commands, through /usr/bin/time -l.
 
-uv run analysis/bench_rust.py ROUNDS NAME=COMMAND [NAME=COMMAND ...]
+uv run analysis/stabilize/bench_rust.py ROUNDS NAME=COMMAND [NAME=COMMAND ...]
 
-COMMAND runs the job from analysis/train_clouds_all.sh, e.g. rust=rust/target/release/pinframe. Each round runs
+COMMAND runs the job from analysis/stabilize/train_clouds_all.sh, e.g. rust=src-tauri/target/release/stabilize. Each round runs
 every command once, in a rotating order, so load on the shared machine falls on all of them alike. Prints
 the fastest and median wall, CPU (user + sys) and peak memory per command. Rust runs also write per-step
 profiles to out/bench-NAME.jsonl.
@@ -29,7 +29,7 @@ for r in range(rounds):
 			os.environ, BIN=f'/usr/bin/time -l {commands[name]}', PINFRAME_PROFILE=f'out/bench-{name}.jsonl'
 		)
 		run = subprocess.run(
-			['bash', 'analysis/train_clouds_all.sh', f'out/bench-{name}.avif'],
+			['bash', 'analysis/stabilize/train_clouds_all.sh', f'out/bench-{name}.avif'],
 			env=env,
 			capture_output=True,
 			text=True,

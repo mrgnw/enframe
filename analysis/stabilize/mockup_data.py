@@ -2,7 +2,7 @@
 
 The sidecar gives each photo's reference points, scale and source. The run log adds what the sidecar leaves
 out: each photo's pixel size and, for tracked photos, the feature count. Run after:
-BIN=rust/target/release/pinframe PAD=transparent analysis/train_clouds_all.sh /tmp/pin/all.json > /tmp/pin/all.log
+BIN=src-tauri/target/release/stabilize PAD=transparent analysis/stabilize/train_clouds_all.sh /tmp/pin/all.json > /tmp/pin/all.log
 """
 
 import json
@@ -10,11 +10,11 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 SIDECAR = Path('/tmp/pin/all.json')
 LOG = Path('/tmp/pin/all.log')
-RECTS = ROOT / 'mockups' / 'assets' / 'rects.json'
-OUT = ROOT / 'mockups' / 'assets' / 'photos.js'
+RECTS = ROOT / 'mockups' / 'stabilize' / 'assets' / 'rects.json'
+OUT = ROOT / 'mockups' / 'stabilize' / 'assets' / 'photos.js'
 LINE = re.compile(r'^(IMG_\d+)\.avif\s+(\d+)x(\d+)\s+anchor (\d+),(\d+)\s+scale [\d.]+\s+(.*)$')
 COUNT = 57
 TOLERANCE_PX = 1.0

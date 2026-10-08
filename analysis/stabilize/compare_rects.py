@@ -1,4 +1,4 @@
-"""Check a run's crop rects against a baseline: uv run analysis/compare_rects.py out/base.json out/all.json"""
+"""Check a run's crop rects against a baseline: uv run analysis/stabilize/compare_rects.py out/base.json out/all.json"""
 
 import json
 import sys

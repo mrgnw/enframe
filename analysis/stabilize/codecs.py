@@ -1,6 +1,6 @@
 """Encode the train clouds frames with each candidate codec: time, CPU, size and fidelity.
 
-FFMPEG=/opt/homebrew/bin/ffmpeg uv run analysis/codecs.py
+FFMPEG=/opt/homebrew/bin/ffmpeg uv run analysis/stabilize/codecs.py
 Renders the black-padded and transparent (--pad transparent) frame sets once into out/codecs/.
 """
 
@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageSequence
 
-ROOT = Path(__file__).parent.parent
+ROOT = Path(__file__).parent.parent.parent
 WORK = ROOT / 'out' / 'codecs'
 FPS = 4
 SAMPLE_EVERY = 4
@@ -82,7 +82,7 @@ def render_frames(name: str, pad: str) -> Path:
 		env = os.environ | {'PAD': pad}
 		cmd = [
 			'bash',
-			'analysis/train_clouds_all.sh',
+			'analysis/stabilize/train_clouds_all.sh',
 			str(WORK / f'{name}-render.mov'),
 			'--frames',
 			str(frames_dir),

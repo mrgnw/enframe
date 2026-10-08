@@ -36,3 +36,4 @@ scripts/lr_backup/
 # Stabilize: the train clouds samples (a local symlink) and check.sh's outputs
 /samples
 /out/
+/analysis/stabilize/.venv/

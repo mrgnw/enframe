@@ -2,7 +2,7 @@
 derivatives at the keypoint from the first-octave pyramid (out/IMG_4667.g*.f32, bit-exact with OpenCV's,
 from dump_pyramid.py) and count how many sizes each candidate solve reproduces exactly.
 
-uv run analysis/solve_probe.py"""
+uv run analysis/stabilize/solve_probe.py"""
 
 import json
 

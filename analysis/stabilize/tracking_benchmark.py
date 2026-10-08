@@ -4,18 +4,18 @@
 # ///
 """Score tracking: accuracy against known truth, and stability under tiny pixel changes.
 
-uv run analysis/tracking_benchmark.py [REPORT]
+uv run analysis/stabilize/tracking_benchmark.py [REPORT]
 
 Accuracy: synthetic sequences warped from train clouds photos with known shifts, crops, zooms (2-3x jumps like
 lens switches) and small rotations, so the true anchor in every frame is exact. Reports anchor error in
 frame pixels, scale error in percent, and LOST frames.
 
-Stability: the real train clouds job (analysis/train_clouds_all.sh marks) on the AVIF originals and on copies with
+Stability: the real train clouds job (analysis/stabilize/train_clouds_all.sh marks) on the AVIF originals and on copies with
 slightly different pixels. Reports how far each photo's anchor moves, in original pixels, and whether the
 LOST set changes.
 
 Runs the Rust CLI in JSON-only mode with a temporary --cache. Prints one summary line and writes the
-report (default out/tracking_benchmark.json). analysis/tracking_baseline.json is the committed report for
+report (default out/tracking_benchmark.json). analysis/stabilize/tracking_baseline.json is the committed report for
 main.
 """
 
@@ -32,10 +32,10 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageOps
 
-ROOT = Path(__file__).resolve().parent.parent
-BIN = ROOT / 'rust' / 'target' / 'release' / 'pinframe'
+ROOT = Path(__file__).resolve().parent.parent.parent
+BIN = ROOT / 'src-tauri' / 'target' / 'release' / 'stabilize'
 TRAIN_CLOUDS = ROOT / 'samples' / 'train clouds'
-TRAIN_CLOUDS_JOB = ROOT / 'analysis' / 'train_clouds_all.sh'
+TRAIN_CLOUDS_JOB = ROOT / 'analysis' / 'stabilize' / 'train_clouds_all.sh'
 DEFAULT_REPORT = ROOT / 'out' / 'tracking_benchmark.json'
 
 # Synthetic frames: 1024 px on the long edge, so the tracker runs SIFT at full frame size (TRACK_EDGE).
@@ -126,7 +126,7 @@ def box_points(box: tuple[float, float, float, float]) -> str:
 	return '/'.join(f'{px:.3f},{py:.3f}' for px, py in corners)
 
 
-def run_pinframe(photos: list[Path], marks: list[str], work: Path) -> list[dict]:
+def run_stabilize(photos: list[Path], marks: list[str], work: Path) -> list[dict]:
 	out = work / 'track.json'
 	cmd = [str(BIN), *map(str, photos), *marks, '--cache', str(work / 'cache'), '--out', str(out)]
 	subprocess.run(cmd, check=True, capture_output=True, text=True)
@@ -206,7 +206,7 @@ def accuracy_sequence(name: str, tmp: Path) -> dict:
 		sizes.append(frame.size)
 	z0 = zooms[0]
 	box = (truths[0][0] - bw * z0 / 2, truths[0][1] - bh * z0 / 2, bw * z0, bh * z0)
-	rows = run_pinframe(paths, ['--points', box_points(box)], work)
+	rows = run_stabilize(paths, ['--points', box_points(box)], work)
 	frames = []
 	for row, truth, zoom, (fw, fh) in zip(rows, truths, zooms, sizes, strict=True):
 		found = anchor_px(row, fw, fh)
@@ -243,7 +243,7 @@ def accuracy_summary(sequences: dict) -> dict:
 
 
 def train_clouds_marks(ext: str) -> list[str]:
-	"""--points, --at marks and --pad default from analysis/train_clouds_all.sh, with the photo extension swapped."""
+	"""--points, --at marks and --pad default from analysis/stabilize/train_clouds_all.sh, with the photo extension swapped."""
 	text = TRAIN_CLOUDS_JOB.read_text()
 	points = re.search(r'--points (\S+)', text).group(1)
 	ats = re.findall(r'^\s*--at (IMG_\d+)\.avif=(\S+)$', text, re.M)
@@ -268,7 +268,7 @@ def sips(fmt: str, options: list[str], ext: str):
 
 
 def imageio_avif(src: Path, dst_dir: Path) -> None:
-	"""The AVIF bytes with 'avif' brands relabelled 'mif1', so pinframe decodes them through ImageIO."""
+	"""The AVIF bytes with 'avif' brands relabelled 'mif1', so stabilize decodes them through ImageIO."""
 	data = bytearray(src.read_bytes())
 	head = data[:32].replace(b'avif', b'mif1')
 	assert head != data[:32], f'{src.name}: no avif brand in ftyp'
@@ -292,8 +292,8 @@ def pillow_png(noise: bool):
 
 
 # Name: (how to make one photo, extension). imageio_avif is the docs/rust.md trial: the same AVIF bytes,
-# decoded by ImageIO with rounding. sips decodes through ImageIO too, then writes 16-bit PNG (pinframe
-# truncates to 8 bits), HEIC or JPEG. Pillow decodes through libavif, bit-exact with pinframe's AVIF path.
+# decoded by ImageIO with rounding. sips decodes through ImageIO too, then writes 16-bit PNG (stabilize
+# truncates to 8 bits), HEIC or JPEG. Pillow decodes through libavif, bit-exact with stabilize's AVIF path.
 VARIANTS = {
 	'imageio_avif': (imageio_avif, 'heic'),
 	'imageio_png': (sips('png', [], 'png'), 'png'),
@@ -306,7 +306,7 @@ VARIANTS = {
 
 def train_clouds_run(photos: list[Path], ext: str, work: Path) -> dict:
 	work.mkdir()
-	rows = run_pinframe(photos, train_clouds_marks(ext), work)
+	rows = run_stabilize(photos, train_clouds_marks(ext), work)
 	sizes = {p.stem: oriented_size(p) for p in TRAIN_CLOUDS.glob('*.avif')}
 	result = {}
 	for row in rows:
@@ -393,8 +393,8 @@ def summary_line(report: dict) -> str:
 def main() -> None:
 	report_path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_REPORT
 	start = time.monotonic()
-	subprocess.run(['cargo', 'build', '--release', '-q'], cwd=ROOT / 'rust', check=True)
-	with tempfile.TemporaryDirectory(prefix='pinframe-bench-') as tmp_name:
+	subprocess.run(['cargo', 'build', '--release', '-q'], cwd=ROOT / 'src-tauri' / 'stabilize', check=True)
+	with tempfile.TemporaryDirectory(prefix='stabilize-bench-') as tmp_name:
 		tmp = Path(tmp_name)
 		with ThreadPoolExecutor() as pool:
 			futures = {name: pool.submit(accuracy_sequence, name, tmp) for name in SEQUENCES}
