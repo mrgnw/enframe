@@ -2,6 +2,7 @@
 // The preview and export screen (mockups/02-preview.html): the clip loops in the browser from the
 // sidecar's crop rects, the transport island sets fps and pad, the panel exports. Space plays and pauses.
 import { onMount } from 'svelte';
+import AppSwitch from '$lib/components/AppSwitch.svelte';
 import Clip from './Clip.svelte';
 import Export from './Export.svelte';
 import { FPS_PRESETS, type PadChoice } from './clip';
@@ -91,7 +92,7 @@ function keydown(e: KeyboardEvent) {
 	<main class="stage preview">
 		<div class="dock top">
 			<div class="island start">
-				<span class="wordmark">Stabilize</span>
+				<AppSwitch current="stabilize" responsive />
 				<span class="sep desk"></span>
 				<span class="muted desk">{session.name} · {n} photos</span>
 			</div>

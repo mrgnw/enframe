@@ -4,6 +4,7 @@
 // "loaded" and "points" states); `fix` is the marking loop. The features panel switches between the folder's
 // features, each with its own session.
 import { onMount } from 'svelte';
+import AppSwitch from '$lib/components/AppSwitch.svelte';
 import Filmstrip from './Filmstrip.svelte';
 import Features from './Features.svelte';
 import { Sequence } from './sequence.svelte';
@@ -135,7 +136,7 @@ function keydown(e: KeyboardEvent) {
 	<main class="stage" class:marking={session.stage === 'points'} class:tinted={session.hue !== 0} style:--hue="{session.hue}deg">
 		<div class="dock top">
 			<div class="island start">
-				<span class="wordmark desk">Stabilize</span>
+				<AppSwitch current="stabilize" responsive />
 				<span class="sep desk"></span>
 				{#if session.stage === 'fix'}
 					<span class="muted where"><b class="desk">{p.name} ·</b> {session.current + 1} / {session.photos.length}</span>
