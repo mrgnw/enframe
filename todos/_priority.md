@@ -4,5 +4,5 @@ The board is https://github.com/users/mrgnw/projects/10, and each card's issue c
 
 1. MVP, standalone: done (M1, M2, M3, spikes W1 and W2). `cd web && pnpm build && pnpm start`, then http://localhost:7341/.
 2. UI in enframe (E2 done): E2, E3, E4 and E6 done.
-3. One app: [R1](R1-e2e-parity.md) (running), then [R2](R2-retire-web-mvp.md).
+3. One app: R1 done; [R2](R2-retire-web-mvp.md) (running).
 4. Candidates, not yet cards: pinframe results into enframe's SQLite frames and focal points (E6 left it out); the README "Next steps" items (soft lock, full-frame mode).

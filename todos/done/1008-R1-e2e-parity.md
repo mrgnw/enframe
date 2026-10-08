@@ -1,3 +1,7 @@
+---
+branch: r1-e2e-parity (enframe)
+---
+
 # R1 · enframe e2e covers the pinframe web walkthrough
 
 Depends on: E6 · Blocks: R2 · Model: Opus · Size: M
@@ -22,6 +26,10 @@ Also: `pitchfork.toml` passes `--pinframe` (default `$HOME/dev/pinframe/rust/tar
 
 ## Done when
 
-- [ ] A table in the PR body maps each assertion of `web/e2e/walkthrough.spec.ts` to the enframe spec and test that covers it.
-- [ ] `bun run test:e2e` passes; screenshots of the new states in `captures/r1/`.
-- [ ] `pitchfork start serve` on the Mac comes up with the pinframe binary logged at boot.
+- [x] A table in the PR body maps each assertion of `web/e2e/walkthrough.spec.ts` to the enframe spec and test that covers it.
+- [x] `bun run test:e2e` passes; screenshots of the new states in `captures/r1/`.
+- [x] `pitchfork start serve` on the Mac comes up with the pinframe binary logged at boot.
+
+## Result
+
+enframe's `bun run test:e2e` (6 tests) covers every assertion of `web/e2e/walkthrough.spec.ts`; the coverage table is in the enframe PR. New tests: the refused edge click, a planted bad mark with Clear / Soft / Skip recovery (Clear only on the first photo, which returns to the Points step), soft marks by shift-click and `N` surviving a reload, autoplay, files on disk, back to Fix, phone layouts, and the export done state from a second browser reaching serve as `enframe.test` to prove Reveal shows only on a local instance. `pitchfork.toml` passes `--pinframe "${ENFRAME_PINFRAME:-$HOME/dev/pinframe/rust/target/release/pinframe}"` (pitchfork runs `run` through `sh -c`). No bugs found in the UI.
