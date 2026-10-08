@@ -254,6 +254,39 @@ export class Session {
 		void this.retrack();
 	}
 
+	/** The photo the first track's refusal named, if the document still has one: Clear/Skip need it by name. */
+	get failedPhoto(): string | null {
+		const m = /^([^:]+): point .+ is outside the/.exec(this.error);
+		return m && this.photos.some((p) => p.file === m[1]) ? m[1] : null;
+	}
+
+	/** A bad mark planted by hand: drop it and try again, or, for the first photo, redo its points. */
+	clearBadMark(file: string): void {
+		if (file === this.photos[0]?.file) {
+			this.marks = { ...this.marks, points: [] };
+			Object.assign(this.photos[0], { source: 'tracked', pts: [] });
+			this.current = 0;
+			this.stage = 'points';
+			this.error = '';
+			return;
+		}
+		delete this.marks.at?.[file];
+		this.marks.skip = this.marks.skip?.filter((f) => f !== file);
+		this.stage = 'tracking';
+		this.error = '';
+		void this.retrack();
+	}
+
+	/** A bad mark on a later photo: move it to `skip` instead of clearing it, and try again. */
+	skipBadMark(file: string): void {
+		if (file === this.photos[0]?.file) return;
+		delete this.marks.at?.[file];
+		(this.marks.skip ??= []).push(file);
+		this.stage = 'tracking';
+		this.error = '';
+		void this.retrack();
+	}
+
 	clearFixed(): void {
 		const fixed = [...this.fixList].filter((f) => this.photos.find((p) => p.file === f)?.source !== 'lost');
 		if (!fixed.length) return;

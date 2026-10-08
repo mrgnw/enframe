@@ -113,7 +113,8 @@
 .drop h1 b { color: var(--accent); font-weight: inherit; }
 .drop p { margin: 0 0 28px; max-width: 42ch; color: var(--muted); font-size: 16px; line-height: 1.55; }
 .drop .btn.primary { height: 40px; padding: 0 18px; font-size: 15px; }
-.drop form { display: flex; gap: 8px; justify-content: center; margin-bottom: 20px; }
+.drop form, .drop .actions { display: flex; gap: 8px; justify-content: center; margin-bottom: 20px; }
+.drop .actions .btn { height: 40px; padding: 0 18px; font-size: 15px; }
 .drop input {
 	width: min(360px, 60vw);
 	height: 40px;

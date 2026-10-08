@@ -102,7 +102,17 @@
 			<div>
 				<h1>Can't open <b>{folderName}</b></h1>
 				<p>{session.error}</p>
-				<a class="btn primary" href="/">Choose another folder</a>
+				{#if session.failedPhoto}
+					{@const bad = session.failedPhoto}
+					<div class="actions">
+						<button class="btn primary" onclick={() => session.clearBadMark(bad)}>Clear mark</button>
+						{#if bad !== session.photos[0]?.file}
+							<button class="btn" onclick={() => session.skipBadMark(bad)}>Skip photo</button>
+						{/if}
+					</div>
+				{:else}
+					<a class="btn primary" href="/">Choose another folder</a>
+				{/if}
 			</div>
 		</section>
 	</main>
