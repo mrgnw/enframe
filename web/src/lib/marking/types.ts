@@ -71,6 +71,9 @@ export const seen = (p: Photo) => p.source === 'tracked' || p.source === 'mark';
 
 export const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
+/** Whether every point lands inside the photo, matching the CLI's own `0 <= p < size` check. */
+export const inBounds = (pts: Point[]) => pts.every(([x, y]) => x >= 0 && x < 1 && y >= 0 && y < 1);
+
 /** A sidecar row as a `Photo`; sizes fall back to the sidecar's crop ratio until the log line is known. */
 export function fromSidecar(row: SidecarPhoto): Photo {
 	const feats = row.note ? /(\d+) features/.exec(row.note) : null;

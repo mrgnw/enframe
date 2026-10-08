@@ -11,6 +11,7 @@ import {
 	clamp,
 	fromSidecar,
 	HISTORY_MAX,
+	inBounds,
 	TOAST_MS,
 	TRAIL_DEFAULT,
 	TRAIL_MAX,
@@ -198,6 +199,7 @@ export class Session {
 		const p = this.photo;
 		const i = this.current;
 		if (p.source !== 'lost') return;
+		if (!inBounds(pts)) return this.showToast(`Part of the mark falls outside ${p.name}: not marked`, false);
 		this.remember();
 		Object.assign(p, { source: 'mark', pts, scale: this.zoom, feats: null });
 		this.setMark(p, pts, this.zoomTouched ? this.zoom : undefined);
@@ -228,7 +230,7 @@ export class Session {
 	/** On a marked photo a click adds a point, and a click on a point removes it. The stage stays put. */
 	editPoints(pts: Point[], text: string): void {
 		const p = this.photo;
-		if (p.source !== 'mark' || !pts.length) return;
+		if (p.source !== 'mark' || !pts.length || !inBounds(pts)) return;
 		clearTimeout(this.advanceTimer);
 		this.remember();
 		p.pts = pts;

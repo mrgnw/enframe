@@ -8,6 +8,7 @@
 .view { position: relative; display: grid; place-items: center; container-type: size; min-height: 0; }
 .photo { width: min(100cqw, 100cqh * var(--r)); aspect-ratio: var(--r); touch-action: manipulation; }
 .view.edit .photo { cursor: crosshair; }
+.photo.blocked { cursor: not-allowed; }
 .where { font-variant-numeric: tabular-nums; }
 .where b { color: var(--fg); font-weight: 600; }
 
@@ -83,6 +84,7 @@
 .trail .pt.skipped { stroke: var(--muted); stroke-width: 2; }
 .trail .pt.lost { stroke: rgba(255, 255, 255, 0.9); stroke-width: 2; }
 .trail .pt.ghost { stroke: var(--accent); stroke-width: 2; }
+.trail .pt.ghost.blocked { stroke: var(--lost); }
 .looking .patch { position: relative; overflow: hidden; flex: none; }
 .looking .patch .pt { stroke-width: 1.25; }
 .thumb.mark.listed::after { background: var(--accent); box-shadow: none; }

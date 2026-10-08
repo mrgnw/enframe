@@ -5,7 +5,7 @@
 	import { photoUrl } from './api';
 	import type { Session } from './session.svelte';
 	import { pointsSvg, trailSvg } from './trail';
-	import { HIT_PX, type Point } from './types';
+	import { HIT_PX, inBounds, type Point } from './types';
 
 	let { session, children }: { session: Session; children?: Snippet } = $props();
 
@@ -22,7 +22,14 @@
 			? trailSvg(session.photos, session.current, W, H, session.trailN, session.trailMode, session.just)
 			: pointsSvg(p.pts, session.just ? 'mark just' : 'mark', W, H)
 	);
-	const ghost = $derived(pointsSvg(session.ghost, 'ghost', W, H));
+	/** The ghost's points at the cursor, in `p`'s 0–1 units: where a click would place the mark. */
+	const ghostAt = $derived.by(() => {
+		const at = cursor;
+		return at ? session.ghost.map(([dx, dy]) => [at[0] + dx, at[1] + dy] as Point) : null;
+	});
+	/** The whole pattern must land inside the photo: a click here is refused, the ghost shows why. */
+	const blocked = $derived(p.source === 'lost' && !!ghostAt && !inBounds(ghostAt));
+	const ghost = $derived(pointsSvg(session.ghost, `ghost${blocked ? ' blocked' : ''}`, W, H));
 	const tag = $derived(
 		p.source === 'lost'
 			? 'estimated'
@@ -81,6 +88,7 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 	<div
 		class="photo"
+		class:blocked
 		bind:this={photoEl}
 		style:--r={ratio}
 		onclick={click}
