@@ -202,11 +202,13 @@ PINFRAME=~/dev/pinframe/rust/target/release/pinframe
 bun run serve --pinframe "$PINFRAME"
 ```
 
-- `POST /api/pinframe/track` `{folder, marks, pad?}` saves `marks` beside the folder as
-  `<folder>.pin.json`, tracks without rendering, using pinframe's feature cache, and
-  answers with the sidecar: each photo's crop, plus its size and the tracker's note.
-- `POST /api/pinframe/export` `{folder, marks, out?, pad?, fps?, frames?, vf?}` renders
-  the clip, `<folder>.avif` by default, and answers with server-sent events: `progress`
+- `POST /api/pinframe/track` `{folder, features, feature, pad?}` saves the document,
+  `features` (`[{name, marks}]`, one pinframe run each), beside the folder as
+  `<folder>.pin.json`, tracks the feature named `feature` without rendering, using
+  pinframe's feature cache, and answers with the sidecar: each photo's crop, plus its size
+  and the tracker's note. One run per folder: a newer request stops the one in flight.
+- `POST /api/pinframe/export` `{folder, features, feature, out?, pad?, fps?, frames?, vf?}`
+  renders the feature's clip, `<folder>-<feature>.avif` by default, and answers with server-sent events: `progress`
   `{line}` for each line pinframe prints, then `done` `{out, sidecar}` or `error`
   `{error, superseded?}`. A bad request still answers 400 or 403 before anything runs.
   Closing the connection stops the run.

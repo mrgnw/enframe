@@ -3,7 +3,7 @@
 // but a slow network can still deliver old answers out of order, so the sequence number decides).
 
 import { currentConnection, getImageSrc, isLocalInstance, listDirectory, readTextFile } from '$lib/bridge';
-import type { Marks, Sidecar } from './types';
+import { type Feature, FIRST_FEATURE, type Marks, type Sidecar } from './types';
 
 const PHOTO = /\.(avif|heic|heif|jxl|jpe?g|png)$/i;
 const MISSING = /\(os error 2\)/;
@@ -15,7 +15,8 @@ export const photoUrl = (folder: string, file: string) => getImageSrc(`${trimmed
 export interface Folder {
 	folder: string;
 	photos: string[];
-	marks: Marks | null;
+	/** Empty when the folder has no document yet. */
+	features: Feature[];
 }
 
 // Serve answers a missing file and one outside the roots alike, so absence is read from the parent's listing
@@ -28,17 +29,19 @@ async function absent(document: string): Promise<boolean> {
 	return listing !== null && !listing.entries.some((e) => e.name === name);
 }
 
-async function loadDocument(folder: string): Promise<Marks | null> {
+// A document from before features, `{marks}`, reads as one feature; the next save writes it in the new shape.
+async function loadDocument(folder: string): Promise<Feature[]> {
 	const document = `${trimmed(folder)}.pin.json`;
-	if (await absent(document)) return null;
+	if (await absent(document)) return [];
 	let text: string;
 	try {
 		text = await readTextFile(document);
 	} catch (e) {
-		if (MISSING.test((e as Error).message)) return null;
+		if (MISSING.test((e as Error).message)) return [];
 		throw e;
 	}
-	return (JSON.parse(text) as { marks: Marks }).marks;
+	const saved = JSON.parse(text) as { features?: Feature[]; marks?: Marks };
+	return saved.features ?? (saved.marks ? [{ name: FIRST_FEATURE, marks: saved.marks }] : []);
 }
 
 export async function loadFolder(folder: string): Promise<Folder> {
@@ -47,7 +50,7 @@ export async function loadFolder(folder: string): Promise<Folder> {
 		.filter((e) => !e.isDirectory && PHOTO.test(e.name))
 		.map((e) => e.name)
 		.sort();
-	return { folder, photos, marks: await loadDocument(folder) };
+	return { folder, photos, features: await loadDocument(folder) };
 }
 
 export class Stale extends Error {
@@ -83,30 +86,35 @@ export async function postTrack(body: object, newest: () => boolean): Promise<Si
 	}
 }
 
-let last: { folder: string; sidecar: Sidecar; sequence: number } | null = null;
+let last: { folder: string; feature: string; sidecar: Sidecar; sequence: number } | null = null;
 
-/** Tracks with `marks`; resolves with the sidecar, or rejects with `Stale` when a newer call was made. */
-export async function track(folder: string, marks: Marks): Promise<Sidecar> {
+/**
+ * Saves `features` and tracks the one named `feature`; resolves with its sidecar, or rejects with `Stale` when
+ * a newer call was made.
+ */
+export async function track(folder: string, features: Feature[], feature: string): Promise<Sidecar> {
 	const mine = ++sequence;
-	const sidecar = await postTrack({ folder, marks }, () => mine === sequence);
-	last = { folder, sidecar, sequence: mine };
+	const sidecar = await postTrack({ folder, features, feature }, () => mine === sequence);
+	last = { folder, feature, sidecar, sequence: mine };
 	return sidecar;
 }
 
-/** The marking screen's sidecar for `folder` (no pad), while no newer track has been asked for since. */
-export function lastSidecar(folder: string): Sidecar | null {
-	return last?.folder === folder && last.sequence === sequence ? last.sidecar : null;
+/** The marking screen's sidecar for `feature` (no pad), while no newer track has been asked for since. */
+export function lastSidecar(folder: string, feature: string): Sidecar | null {
+	return last?.folder === folder && last.feature === feature && last.sequence === sequence ? last.sidecar : null;
 }
 
-/** Tracks with `marks` and `pad` (the CLI's `--pad`, none when absent); `Stale` when a newer call was made. */
-export function trackPad(folder: string, marks: Marks, pad?: string): Promise<Sidecar> {
+/** `track` with `pad` (the CLI's `--pad`, none when absent); `Stale` when a newer call was made. */
+export function trackPad(folder: string, features: Feature[], feature: string, pad?: string): Promise<Sidecar> {
 	const mine = ++sequence;
-	return postTrack({ folder, marks, ...(pad && { pad }) }, () => mine === sequence);
+	return postTrack({ folder, features, feature, ...(pad && { pad }) }, () => mine === sequence);
 }
 
 export interface ExportRequest {
 	folder: string;
-	marks: Marks;
+	/** The whole document, saved; `feature` names the one exported. */
+	features: Feature[];
+	feature: string;
 	out: string;
 	pad?: string;
 	fps: number;

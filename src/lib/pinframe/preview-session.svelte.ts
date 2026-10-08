@@ -17,7 +17,7 @@ import {
 	type Format,
 	type PadChoice
 } from './clip';
-import type { Marks, SidecarPhoto } from './types';
+import type { Feature, SidecarPhoto } from './types';
 
 export type Stage = 'loading' | 'empty' | 'ready' | 'failed';
 
@@ -84,7 +84,8 @@ export class Preview {
 	exp = $state<Exporting>(idle());
 
 	bitmaps: (ImageBitmap | null)[] = [];
-	private marks: Marks = { points: [] };
+	private features: Feature[] = [];
+	private feature = '';
 	private generation = 0;
 	/** Whether the sidecar on screen was tracked with padding, so a pad change knows if it must re-track. */
 	private padded = false;
@@ -129,13 +130,14 @@ export class Preview {
 		}
 		this.absFolder = loaded.folder.replace(/(.)\/+$/, '$1');
 		this.outBase = this.absFolder;
-		if (!loaded.marks) {
+		if (!loaded.features.length) {
 			this.stage = 'empty';
 			return;
 		}
-		this.marks = loaded.marks;
+		this.features = loaded.features;
+		this.feature = loaded.features[0].name;
 		this.busy = true;
-		const handed = lastSidecar(this.folder);
+		const handed = lastSidecar(this.folder, this.feature);
 		if (!handed) return this.retrack();
 		await this.render(handed.photos, ++this.generation);
 		this.busy = false;
@@ -147,7 +149,7 @@ export class Preview {
 		this.busy = true;
 		this.tracking = true;
 		try {
-			const sidecar = await trackPad(this.folder, this.marks, padArg(this.pad, this.custom));
+			const sidecar = await trackPad(this.folder, this.features, this.feature, padArg(this.pad, this.custom));
 			this.tracking = false;
 			if (mine !== this.generation) return;
 			this.padded = this.pad !== 'none';
@@ -279,7 +281,8 @@ export class Preview {
 			const done = await exportClip(
 				{
 					folder: this.folder,
-					marks: this.marks,
+					features: this.features,
+					feature: this.feature,
 					out: this.out,
 					pad: padArg(this.pad, this.custom),
 					fps: this.fps,

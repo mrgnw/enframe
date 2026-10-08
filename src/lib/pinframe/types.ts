@@ -4,7 +4,7 @@
 export type Point = [number, number];
 export type Source = 'tracked' | 'mark' | 'soft' | 'lost' | 'skipped';
 
-/** The CLI's input, saved beside the folder as `<folder>.pin.json`; pixels of the oriented photo. */
+/** The CLI's input for one feature; pixels of the oriented photo. */
 export interface Marks {
 	points: Point[];
 	at?: Record<string, { points: Point[]; zoom?: number }>;
@@ -13,6 +13,14 @@ export interface Marks {
 	skip?: string[];
 	order?: 'time' | 'name';
 }
+
+/** One thing held still, and one CLI run; the document saved as `<folder>.pin.json` is a list of them. */
+export interface Feature {
+	name: string;
+	marks: Marks;
+}
+
+export const FIRST_FEATURE = 'Feature 1';
 
 /** One row of the sidecar, as /api/track returns it, with the size and note it adds from the run's log. */
 export interface SidecarPhoto {

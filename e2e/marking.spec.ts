@@ -77,7 +77,7 @@ function fingerprint(path: string): string {
 }
 
 const shot = (page: Page, name: string) => page.screenshot({ path: `${SHOTS}/${name}.png` });
-const readDoc = (): { marks: Marks } => JSON.parse(readFileSync(`${FOLDER}.pin.json`, 'utf8'));
+const readDoc = (): { marks: Marks } => JSON.parse(readFileSync(`${FOLDER}.pin.json`, 'utf8')).features[0];
 const count = async (page: Page) => ((await page.locator('.count').textContent()) ?? '').trim();
 
 async function settled(page: Page) {

@@ -17,6 +17,8 @@ import {
 	TRAIL_MAX,
 	TRAIL_MIN,
 	ZOOMS,
+	type Feature,
+	FIRST_FEATURE,
 	type Marks,
 	type Photo,
 	type Point,
@@ -57,7 +59,8 @@ export class Session {
 	scroll = $state({ serial: 0, jump: false });
 	/** The last sidecar's run ID, for anyone comparing results. */
 	run = $state('');
-	/** The document, exactly what /api/track gets. */
+	name = FIRST_FEATURE;
+	/** This feature's marks, exactly what the CLI gets. */
 	marks: Marks = { points: [] };
 
 	private trailLast = TRAIL_DEFAULT;
@@ -117,14 +120,16 @@ export class Session {
 			pts: [],
 			feats: null
 		}));
-		if (loaded.marks) {
+		const saved = loaded.features[0];
+		if (saved) {
+			this.name = saved.name;
 			// A photo deleted since the save would make the CLI reject the whole document: drop its entries.
 			const here = new Set(loaded.photos);
-			const { at, near, skip } = loaded.marks;
+			const { at, near, skip } = saved.marks;
 			const kept = (map: NonNullable<Marks['at']>) =>
 				Object.fromEntries(Object.entries(map).filter(([file]) => here.has(file)));
 			this.marks = {
-				...loaded.marks,
+				...saved.marks,
 				...(at && { at: kept(at) }),
 				...(near && { near: kept(near) }),
 				...(skip && { skip: skip.filter((file) => here.has(file)) })
@@ -351,7 +356,8 @@ export class Session {
 		const mine = ++this.latestTrack;
 		this.busy = true;
 		try {
-			this.apply(await track(this.folder, this.marks));
+			const document: Feature[] = [{ name: this.name, marks: this.marks }];
+			this.apply(await track(this.folder, document, this.name));
 		} catch (e) {
 			if (!(e instanceof Stale)) {
 				this.showToast(`Tracking failed: ${(e as Error).message}`, false);

@@ -1040,10 +1040,16 @@ echo "clip 10x20"
         }
     }
 
+    // A document of one feature, "f", with `marks`: the fields a run takes besides the folder.
+    fn feature(marks: &str) -> String {
+        format!("\"features\":[{{\"name\":\"f\",\"marks\":{marks}}}],\"feature\":\"f\"")
+    }
+
     fn track_request(folder: &FsPath, marks: &str) -> Request {
         let body = format!(
-            "{{\"folder\":{:?},\"marks\":{marks}}}",
-            text(folder.to_path_buf())
+            "{{\"folder\":{:?},{}}}",
+            text(folder.to_path_buf()),
+            feature(marks)
         );
         post_json("/api/pinframe/track", &body)
     }
@@ -1064,14 +1070,30 @@ echo "clip 10x20"
             "{\"points\":[[1,2]],\"skip\":\"b.png\"}",
             "{\"points\":[[1,2]],\"order\":\"sideways\"}",
         ];
+        let good = "{\"points\":[[1,2]]}";
+        let bad_features = [
+            format!("[{{\"name\":\"\",\"marks\":{good}}}]"),
+            format!("[{{\"name\":\"a/b\",\"marks\":{good}}}]"),
+            format!("[{{\"name\":\"f\",\"marks\":{good}}},{{\"name\":\"f\",\"marks\":{good}}}]"),
+            format!("[{{\"name\":\"f\",\"marks\":{good}}},{{\"name\":\"g\",\"marks\":{{}}}}]"),
+            format!("[{{\"name\":\"g\",\"marks\":{good}}}]"),
+        ];
+        for features in bad_features {
+            let body =
+                format!("{{\"folder\":{folder:?},\"features\":{features},\"feature\":\"f\"}}");
+            let (status, error) =
+                respond(app.clone(), post_json("/api/pinframe/track", &body)).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{features}: {error}");
+        }
         for marks in bad_marks {
-            let body = format!("{{\"folder\":{folder:?},\"marks\":{marks}}}");
+            let f = feature(marks);
+            let body = format!("{{\"folder\":{folder:?},{f}}}");
             let (status, error) =
                 respond(app.clone(), post_json("/api/pinframe/track", &body)).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "{marks}: {error}");
         }
 
-        let marks = "{\"points\":[[1,2]]}";
+        let f = feature(good);
         let inside = format!("{folder}/clip.avif");
         let outside = text(std::env::temp_dir().canonicalize().unwrap());
         let unwritable = sandbox.base.join("unwritable");
@@ -1081,37 +1103,33 @@ echo "clip 10x20"
         let rejected = [
             (
                 "track",
-                format!("{{\"folder\":{folder:?},\"marks\":{marks},\"pad\":\"red\"}}"),
+                format!("{{\"folder\":{folder:?},{f},\"pad\":\"red\"}}"),
                 StatusCode::BAD_REQUEST,
             ),
+            ("track", format!("{{{f}}}"), StatusCode::BAD_REQUEST),
             (
-                "track",
-                format!("{{\"marks\":{marks}}}"),
+                "export",
+                format!("{{\"folder\":{folder:?},{f},\"fps\":0}}"),
                 StatusCode::BAD_REQUEST,
             ),
             (
                 "export",
-                format!("{{\"folder\":{folder:?},\"marks\":{marks},\"fps\":0}}"),
-                StatusCode::BAD_REQUEST,
-            ),
-            (
-                "export",
-                format!("{{\"folder\":{folder:?},\"marks\":{marks},\"out\":{inside:?}}}"),
+                format!("{{\"folder\":{folder:?},{f},\"out\":{inside:?}}}"),
                 StatusCode::BAD_REQUEST,
             ),
             (
                 "track",
-                format!("{{\"folder\":{outside:?},\"marks\":{marks}}}"),
+                format!("{{\"folder\":{outside:?},{f}}}"),
                 StatusCode::FORBIDDEN,
             ),
             (
                 "track",
-                format!("{{\"folder\":{unwritable:?},\"marks\":{marks}}}"),
+                format!("{{\"folder\":{unwritable:?},{f}}}"),
                 StatusCode::FORBIDDEN,
             ),
             (
                 "export",
-                format!("{{\"folder\":{folder:?},\"marks\":{marks},\"out\":{beside_root:?}}}"),
+                format!("{{\"folder\":{folder:?},{f},\"out\":{beside_root:?}}}"),
                 StatusCode::FORBIDDEN,
             ),
         ];
@@ -1164,8 +1182,39 @@ echo "clip 10x20"
 
         let document = std::fs::read_to_string(sandbox.base.join("inbox/series.pin.json")).unwrap();
         let document: Value = serde_json::from_str(&document).unwrap();
-        assert_eq!(document["marks"]["points"], serde_json::json!([[2.0, 2.0]]));
+        assert_eq!(
+            document["features"][0]["marks"]["points"],
+            serde_json::json!([[2.0, 2.0]])
+        );
         assert_eq!(document["photos"], serde_json::json!(["a.png", "b.png"]));
+    }
+
+    #[tokio::test]
+    async fn a_run_tracks_the_feature_it_names_and_saves_them_all() {
+        let sandbox = Sandbox::new("pinframe_features");
+        let app = sandbox.app_with(Some(sandbox.fake_pinframe()));
+        let folder = sandbox.series();
+        let features = serde_json::json!([
+            { "name": "cloud", "marks": { "points": [[1, 1]] } },
+            { "name": "ridge", "marks": { "points": [[5, 6]], "skip": ["b.png"] } }
+        ]);
+        let body =
+            serde_json::json!({ "folder": text(folder), "features": features, "feature": "ridge" });
+
+        let (status, body) =
+            respond(app, post_json("/api/pinframe/track", &body.to_string())).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let sidecar: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(sidecar["run"], "5,6");
+
+        let document = std::fs::read_to_string(sandbox.base.join("inbox/series.pin.json")).unwrap();
+        let document: Value = serde_json::from_str(&document).unwrap();
+        assert_eq!(document["version"], 2);
+        assert_eq!(document["features"][0]["name"], "cloud");
+        assert_eq!(
+            document["features"][1]["marks"]["skip"],
+            serde_json::json!(["b.png"])
+        );
     }
 
     #[tokio::test]
@@ -1199,9 +1248,9 @@ echo "clip 10x20"
 
     fn export_request(folder: &FsPath, marks: &str) -> Request {
         let body = format!(
-            "{{\"folder\":{:?},\"marks\":{marks},\"out\":{:?}}}",
+            "{{\"folder\":{:?},{}}}",
             text(folder.to_path_buf()),
-            format!("{}.avif", folder.display())
+            feature(marks)
         );
         post_json("/api/pinframe/export", &body)
     }
@@ -1223,7 +1272,7 @@ echo "clip 10x20"
         );
         let data = body[done.unwrap()..].lines().nth(1).unwrap();
         let done: Value = serde_json::from_str(data.strip_prefix("data: ").unwrap()).unwrap();
-        assert_eq!(done["out"], format!("{}.avif", folder.display()));
+        assert_eq!(done["out"], format!("{}-f.avif", folder.display()));
         assert_eq!(done["sidecar"]["run"], "3,3");
         assert_eq!(done["sidecar"]["photos"][0]["width"], 10);
     }

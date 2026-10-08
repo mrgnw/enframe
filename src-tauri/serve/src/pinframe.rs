@@ -37,7 +37,8 @@ struct Folder {
 
 type Point = [f64; 2];
 
-// The document the marking UI edits, saved beside the folder as `<folder>.pin.json`. Its
+// One feature's marks. The document the marking UI edits is a list of named features,
+// saved beside the folder as `<folder>.pin.json`; each feature is one CLI run. The marks'
 // fields are the CLI's flags: `points` is `--points`, `at` and `near` map a photo to
 // `--at` and `--near`, `skip` is `--skip`, `order` is `--order`.
 #[derive(Deserialize, Serialize)]
@@ -51,6 +52,12 @@ pub struct Marks {
     skip: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     order: Option<Order>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct Feature {
+    name: String,
+    marks: Marks,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -70,7 +77,8 @@ enum Order {
 #[derive(Deserialize)]
 struct RunArgs {
     folder: String,
-    marks: Value,
+    features: Vec<Feature>,
+    feature: String,
     pad: Option<String>,
     out: Option<String>,
     fps: Option<f64>,
@@ -86,22 +94,40 @@ fn superseded() -> (StatusCode, String) {
     (StatusCode::CONFLICT, SUPERSEDED.to_string())
 }
 
-fn parse_marks(raw: Value) -> ApiResult<Marks> {
-    let marks: Marks = serde_json::from_value(raw).map_err(|e| bad(format!("marks: {e}")))?;
+fn check_marks(marks: &Marks) -> Result<(), String> {
     if marks.points.is_empty() {
-        return Err(bad("points: needs at least one point"));
+        return Err("points: needs at least one point".to_string());
     }
     for (key, map) in [("at", &marks.at), ("near", &marks.near)] {
         for (file, mark) in map {
             if mark.points.is_empty() {
-                return Err(bad(format!("{key} {file}: needs at least one point")));
+                return Err(format!("{key} {file}: needs at least one point"));
             }
             if mark.zoom.is_some_and(|zoom| zoom <= 0.0) {
-                return Err(bad(format!("{key} {file}: zoom must be a positive number")));
+                return Err(format!("{key} {file}: zoom must be a positive number"));
             }
         }
     }
-    Ok(marks)
+    Ok(())
+}
+
+// A name ends up in the default clip's file name, so it is plain and unique.
+fn check_features(features: &[Feature], feature: &str) -> ApiResult<usize> {
+    for (i, Feature { name, marks }) in features.iter().enumerate() {
+        if name.trim().is_empty() || name.contains('/') {
+            return Err(bad(format!(
+                "feature {name:?}: needs a name, without a slash"
+            )));
+        }
+        if features[..i].iter().any(|other| other.name == *name) {
+            return Err(bad(format!("feature {name}: the name is taken")));
+        }
+        check_marks(marks).map_err(|e| bad(format!("feature {name}: {e}")))?;
+    }
+    features
+        .iter()
+        .position(|other| other.name == feature)
+        .ok_or_else(|| bad(format!("feature {feature}: not in the document")))
 }
 
 fn parse_pad(raw: Option<String>) -> ApiResult<Option<String>> {
@@ -222,13 +248,17 @@ fn same_folder(a: &Path, b: &Path) -> bool {
     a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
 }
 
-fn document_text(folder: &Path, marks: &Marks, photos: &[PathBuf]) -> Result<Vec<u8>, String> {
+fn document_text(
+    folder: &Path,
+    features: &[Feature],
+    photos: &[PathBuf],
+) -> Result<Vec<u8>, String> {
     let names: Vec<String> = photos
         .iter()
         .filter_map(|photo| photo.file_name())
         .map(|name| name.to_string_lossy().into_owned())
         .collect();
-    let document = json!({ "version": 1, "folder": folder, "marks": marks, "photos": names });
+    let document = json!({ "version": 2, "folder": folder, "features": features, "photos": names });
     let mut bytes = Vec::new();
     let formatter = serde_json::ser::PrettyFormatter::with_indent(b"\t");
     let mut serializer = serde_json::Serializer::with_formatter(&mut bytes, formatter);
@@ -249,7 +279,8 @@ fn save_document(path: &Path, ticket: u64, bytes: &[u8]) -> Result<(), String> {
 struct Job {
     folder: PathBuf,
     document: PathBuf,
-    marks: Marks,
+    features: Vec<Feature>,
+    feature: usize,
     out: PathBuf,
     extra: Vec<String>,
 }
@@ -309,7 +340,7 @@ impl Pinframe {
         save_document(&job.document, ticket, document).map_err(crate::fail)?;
         let child = Command::new(binary)
             .args(photos)
-            .args(cli_args(&job.marks))
+            .args(cli_args(&job.features[job.feature].marks))
             .arg("--out")
             .arg(&job.out)
             .args(&job.extra)
@@ -350,7 +381,7 @@ impl Pinframe {
         let photos = blocking(move || list_photos(&folder))
             .await
             .map_err(|(_, e)| bad(e))?;
-        let document = document_text(&job.folder, &job.marks, &photos).map_err(crate::fail)?;
+        let document = document_text(&job.folder, &job.features, &photos).map_err(crate::fail)?;
         let (child, cancelled) = self.start(job, ticket, &document, &photos)?;
         Ok(Running {
             child,
@@ -429,8 +460,12 @@ struct Running {
     ticket: u64,
 }
 
-fn parse_args(body: Value) -> ApiResult<RunArgs> {
-    serde_json::from_value(body).map_err(|e| bad(format!("bad arguments: {e}")))
+// Every run saves the whole document and tracks the one feature it names.
+fn parse_args(body: Value) -> ApiResult<(RunArgs, usize)> {
+    let args: RunArgs =
+        serde_json::from_value(body).map_err(|e| bad(format!("bad arguments: {e}")))?;
+    let feature = check_features(&args.features, &args.feature)?;
+    Ok((args, feature))
 }
 
 // The folder must be readable and the document beside it writable.
@@ -461,8 +496,7 @@ pub async fn track(
     State(state): State<AppState>,
     Json(body): Json<Value>,
 ) -> ApiResult<Json<Value>> {
-    let args = parse_args(body)?;
-    let marks = parse_marks(args.marks)?;
+    let (args, feature) = parse_args(body)?;
     let pad = parse_pad(args.pad)?;
     let (folder, document) = confine_folder(&state, &args.folder)?;
     let out = track_output()?;
@@ -473,7 +507,8 @@ pub async fn track(
     let job = Job {
         folder,
         document,
-        marks,
+        features: args.features,
+        feature,
         out: out.clone(),
         extra,
     };
@@ -483,9 +518,9 @@ pub async fn track(
     sidecar.map(Json)
 }
 
-fn export_extra(state: &AppState, folder: &Path, args: RunArgs) -> ApiResult<Vec<String>> {
+fn export_extra(state: &AppState, folder: &Path, args: &mut RunArgs) -> ApiResult<Vec<String>> {
     let mut extra = Vec::new();
-    if let Some(pad) = parse_pad(args.pad)? {
+    if let Some(pad) = parse_pad(args.pad.take())? {
         extra.extend(["--pad".to_string(), pad]);
     }
     if let Some(fps) = args.fps {
@@ -494,7 +529,7 @@ fn export_extra(state: &AppState, folder: &Path, args: RunArgs) -> ApiResult<Vec
         }
         extra.extend(["--fps".to_string(), fps.to_string()]);
     }
-    if let Some(frames) = args.frames {
+    if let Some(frames) = args.frames.take() {
         let checked = state.roots.check_write(&frames).map_err(denied)?;
         if same_folder(&checked, folder) {
             return Err(bad(format!(
@@ -503,16 +538,21 @@ fn export_extra(state: &AppState, folder: &Path, args: RunArgs) -> ApiResult<Vec
         }
         extra.extend(["--frames".to_string(), text(checked)]);
     }
-    if let Some(vf) = args.vf {
+    if let Some(vf) = args.vf.take() {
         extra.extend(["--vf".to_string(), vf]);
     }
     Ok(extra)
 }
 
-// The clip defaults to `<folder>.avif`, and never lands inside the folder itself: the
-// next run would read it as a photo.
-fn export_out(state: &AppState, folder: &Path, out: Option<String>) -> ApiResult<PathBuf> {
-    let requested = out.unwrap_or_else(|| format!("{}.avif", folder.display()));
+// The clip defaults to `<folder>-<feature>.avif`, and never lands inside the folder
+// itself: the next run would read it as a photo.
+fn export_out(
+    state: &AppState,
+    folder: &Path,
+    feature: &str,
+    out: Option<String>,
+) -> ApiResult<PathBuf> {
+    let requested = out.unwrap_or_else(|| format!("{}-{feature}.avif", folder.display()));
     let checked = state.roots.check_write(&requested).map_err(denied)?;
     if checked
         .parent()
@@ -554,15 +594,15 @@ fn ending(result: ApiResult<Value>, out: &Path) -> Event {
 // runs, the answer is server-sent events: `progress` {line} per line it prints, then
 // `done` {out, sidecar} or `error` {error, superseded?}. A client that leaves stops it.
 pub async fn export(State(state): State<AppState>, Json(body): Json<Value>) -> ApiResult<Response> {
-    let mut args = parse_args(body)?;
-    let marks = parse_marks(std::mem::take(&mut args.marks))?;
+    let (mut args, feature) = parse_args(body)?;
     let (folder, document) = confine_folder(&state, &args.folder)?;
-    let out = export_out(&state, &folder, args.out.take())?;
-    let extra = export_extra(&state, &folder, args)?;
+    let out = export_out(&state, &folder, &args.feature, args.out.take())?;
+    let extra = export_extra(&state, &folder, &mut args)?;
     let job = Job {
         folder,
         document,
-        marks,
+        features: args.features,
+        feature,
         out: out.clone(),
         extra,
     };
@@ -636,7 +676,7 @@ mod tests {
 
     #[test]
     fn marks_become_the_cli_flags() {
-        let marks = parse_marks(json!({
+        let marks: Marks = serde_json::from_value(json!({
             "points": [[675, 345], [985.5, 345]],
             "at": { "b.avif": { "points": [[1, 2]], "zoom": 2.5 } },
             "near": { "c.avif": { "points": [[3, 4]] } },
