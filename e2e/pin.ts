@@ -1,7 +1,7 @@
 // What the pinframe walkthroughs share: the config's throwaway folder, the train clouds job's known marks, and
 // the moves on the marking screen (read the photo on screen, click a point given in photo pixels, fix the lost
 // photos one by one).
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page } from '@playwright/test';
 
@@ -39,6 +39,16 @@ export function scriptMarks(): Required<Pick<Marks, 'points' | 'at'>> {
 
 /** The saved document's features; a read that catches the file mid-rename is retried by the caller's poll. */
 export const readFeatures = (): Feature[] => JSON.parse(readFileSync(DOCUMENT, 'utf8')).features;
+
+/** Writes the folder's document by hand, as one feature: what a person or another tool could leave there. */
+export const plantDocument = (marks: Marks) =>
+	writeFileSync(DOCUMENT, `${JSON.stringify({ version: 2, features: [{ name: 'Feature 1', marks }] }, null, '\t')}\n`);
+
+/** A screenshot of a state the R1 parity tests added, in captures/r1/. */
+export async function capture(page: Page, name: string) {
+	mkdirSync('captures/r1', { recursive: true });
+	await page.screenshot({ path: `captures/r1/${name}.png` });
+}
 
 export const count = async (page: Page) => ((await page.locator('.count').textContent()) ?? '').trim();
 

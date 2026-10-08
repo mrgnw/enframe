@@ -7,6 +7,7 @@ import { mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import {
+	capture,
 	clickPhoto,
 	count,
 	current,
@@ -15,6 +16,8 @@ import {
 	type Marks,
 	PINFRAME_REPO,
 	photoReady,
+	photoSize,
+	plantDocument,
 	readFeatures,
 	scriptMarks,
 	settled,
@@ -110,6 +113,9 @@ test('marking: points, track, fix the lost photos, clear the fix list', async ({
 	await clickPhoto(page, 2, 2);
 	await expect(page.locator('.photo')).toHaveClass(/blocked/);
 	await expect(page.locator('.toast')).toContainText('outside');
+	await expect(page.locator('.trail.ghost .pt.blocked')).not.toHaveCount(0);
+	await expect(page.locator('.looking .label', { hasText: 'Looking for' })).toBeVisible();
+	await capture(page, '1-edge-refused');
 	expect(first in (readDoc().marks.at ?? {})).toBe(false);
 	await page.keyboard.press('ArrowRight');
 	await page.keyboard.press('ArrowLeft');
@@ -154,4 +160,112 @@ test('marking: points, track, fix the lost photos, clear the fix list', async ({
 	console.log(`last sidecar ${last?.run}: ${JSON.stringify(sources)}`);
 	expect(sources.lost ?? 0).toBe(0);
 	expect(errors).toEqual([]);
+});
+
+test('a saved mark outside its photo opens to Clear, Soft mark and Skip', async ({ page }) => {
+	const known = scriptMarks();
+	const bad = Object.keys(known.at)[0];
+	const plant = () =>
+		plantDocument({ ...known, at: { ...known.at, [bad]: { points: [[-346, 200], ...known.at[bad].points] } } });
+	const open = async (named: string) => {
+		await page.goto(`/pin?folder=${encodeURIComponent(FOLDER)}`);
+		await expect(page.locator('.drop p')).toContainText(`${named}: point -346,200 is outside`, { timeout: 120_000 });
+	};
+	const retracked = async () => {
+		await expect(page.locator('.count')).toBeVisible({ timeout: 120_000 });
+		await settled(page);
+		return readDoc().marks;
+	};
+
+	plant();
+	await open(bad);
+	await expect(page.locator('.drop .actions button')).toHaveText(['Clear mark', 'Soft mark', 'Skip photo']);
+	await capture(page, '2-bad-mark');
+	await page.click('button:text("Clear mark")');
+	expect(bad in ((await retracked()).at ?? {})).toBe(false);
+
+	plant();
+	await open(bad);
+	await page.click('button:text("Skip photo")');
+	const skipped = await retracked();
+	expect(bad in (skipped.at ?? {})).toBe(false);
+	expect(skipped.skip).toContain(bad);
+
+	// Soft mark keeps the points inside the photo, moved from `at` to `near`.
+	plant();
+	await open(bad);
+	await page.click('button:text("Soft mark")');
+	const softened = await retracked();
+	expect(bad in (softened.at ?? {})).toBe(false);
+	expect(softened.near?.[bad]).toEqual(known.at[bad]);
+
+	// On the first photo the points are the reference: only Clear, which goes back to the Points step.
+	plantDocument({ ...known, points: [[-346, 200], ...known.points.slice(1)] });
+	await open('IMG_4667.avif');
+	await expect(page.locator('.drop .actions button')).toHaveText(['Clear mark']);
+	await capture(page, '3-bad-first-mark');
+	await page.click('button:text("Clear mark")');
+	await expect(page.locator('.stage.marking')).toBeVisible();
+	await photoReady(page, 'IMG_4667.avif');
+	for (const [x, y] of known.points) await clickPhoto(page, x, y);
+	await page.keyboard.press('Enter');
+	const placed = (await retracked()).points;
+	expect(placed).toHaveLength(known.points.length);
+	placed.forEach(([x, y], i) => {
+		expect(Math.abs(x - known.points[i][0])).toBeLessThan(2);
+		expect(Math.abs(y - known.points[i][1])).toBeLessThan(2);
+	});
+});
+
+test('a soft mark on a lost photo is placed, cleared and kept across a reload', async ({ page }) => {
+	plantDocument(scriptMarks());
+	type Sidecar = { photos: { file: string; source: string }[] };
+	/** The source the next sidecar gives `file`, after `act` posts the document. */
+	const sourceAfter = async (file: string, act: () => Promise<unknown>) => {
+		const response = page.waitForResponse((r) => r.url().endsWith('/api/pinframe/track') && r.ok());
+		await act();
+		const sidecar = (await (await response).json()) as Sidecar;
+		return sidecar.photos.find((r) => r.file === file)?.source;
+	};
+	const back = async (file: string) => {
+		for (let i = 0; i < 10 && (await current(page)) !== file; i++) await page.keyboard.press('Shift+Tab');
+		expect(await current(page)).toBe(file);
+	};
+
+	// A document with the script's marks opens already tracked, on the first photo it leaves lost.
+	const opened = page.waitForResponse((r) => r.url().endsWith('/api/pinframe/track') && r.ok());
+	await page.goto(`/pin?folder=${encodeURIComponent(FOLDER)}`);
+	const lost = ((await (await opened).json()) as Sidecar).photos.filter((r) => r.source === 'lost').map((r) => r.file);
+	expect(lost.length).toBeGreaterThan(0);
+	await expect(page.locator('.count')).toHaveText(`${lost.length} to fix`);
+	await settled(page);
+	const file = await current(page);
+	expect(file).toBe(lost[0]);
+	await photoReady(page, file);
+
+	// Shift-click places a soft mark where a click would place a mark.
+	const [w, h] = await photoSize(page);
+	await page.keyboard.down('Shift');
+	const placed = await sourceAfter(file, () => clickPhoto(page, w / 2, h / 2));
+	await page.keyboard.up('Shift');
+	expect(placed).toBe('soft');
+	expect(readDoc().marks.near?.[file]).toBeDefined();
+	expect(file in (readDoc().marks.at ?? {})).toBe(false);
+	await settled(page);
+	await back(file);
+	await expect(page.locator('.ptag.soft')).toContainText('soft mark');
+	await capture(page, '4-soft-mark');
+
+	expect(await sourceAfter(file, () => page.keyboard.press('Backspace'))).toBe('lost');
+	expect(readDoc().marks.near?.[file]).toBeUndefined();
+	await settled(page);
+
+	// N accepts the estimate as a soft mark; a reload keeps it.
+	expect(await sourceAfter(file, () => page.keyboard.press('n'))).toBe('soft');
+	await settled(page);
+	expect(await sourceAfter(file, () => page.reload())).toBe('soft');
+	await settled(page);
+	expect(readDoc().marks.near?.[file]).toBeDefined();
+	await expect(page.locator('.thumb.soft')).toHaveCount(1);
+	await capture(page, '5-soft-mark-reloaded');
 });
