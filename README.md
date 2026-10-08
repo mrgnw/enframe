@@ -2,6 +2,8 @@
 
 Image framing tool for setting focal points and crops with Lightroom integration.
 
+Changes are recorded in [CHANGELOG.md](CHANGELOG.md).
+
 ## Features
 
 ### Implemented ✅
