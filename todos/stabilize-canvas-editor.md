@@ -1,3 +1,6 @@
+---
+issue: 23
+---
 # Stabilize: a canvas editor on the marking screen
 
 From the 2026-10-08 conversation on over-zoomed frames. The same-size rule (every photo scaled so the feature keeps its size) stays; what is missing is seeing and shaping the canvas while matching, not after.
