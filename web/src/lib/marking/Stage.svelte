@@ -15,7 +15,7 @@
 	let cursor = $state<Point | null>(null);
 
 	const p = $derived(session.photo);
-	const editable = $derived(session.stage === 'points' || p.source === 'lost' || p.source === 'mark');
+	const editable = $derived(session.stage === 'points' || p.source === 'lost' || p.source === 'mark' || p.source === 'soft');
 	const ratio = $derived(p.w && p.h ? p.w / p.h : 4 / 3);
 	const overlay = $derived(
 		session.stage === 'fix'
@@ -37,6 +37,8 @@
 				? 'skipped · estimated'
 				: p.source === 'mark'
 					? `your mark · ${p.scale.toFixed(2)}×`
+					: p.source === 'soft'
+						? `soft mark · ${p.scale.toFixed(2)}×`
 					: `${p.feats} features · ${p.scale.toFixed(2)}×`
 	);
 
@@ -64,7 +66,7 @@
 		}
 		if (p.source === 'tracked' || p.source === 'skipped') return;
 		if (p.source === 'lost') {
-			session.mark(session.ghost.map(([dx, dy]) => [n[0] + dx, n[1] + dy]));
+			session.mark(session.ghost.map(([dx, dy]) => [n[0] + dx, n[1] + dy]), e.shiftKey);
 			return;
 		}
 		const hit = p.pts.findIndex(([x, y]) => Math.hypot((x - n[0]) * W, (y - n[1]) * H) <= HIT_PX);

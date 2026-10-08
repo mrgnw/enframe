@@ -120,10 +120,12 @@ export class Session {
 		if (loaded.marks) {
 			// A photo deleted since the save would make the CLI reject the whole document: drop its entries.
 			const here = new Set(loaded.photos);
-			const { at, skip } = loaded.marks;
+			const { at, near, skip } = loaded.marks;
+			const kept = (map: NonNullable<Marks['at']>) => Object.fromEntries(Object.entries(map).filter(([file]) => here.has(file)));
 			this.marks = {
 				...loaded.marks,
-				...(at && { at: Object.fromEntries(Object.entries(at).filter(([file]) => here.has(file))) }),
+				...(at && { at: kept(at) }),
+				...(near && { near: kept(near) }),
 				...(skip && { skip: skip.filter((file) => here.has(file)) })
 			};
 			this.stage = 'tracking';
@@ -165,22 +167,22 @@ export class Session {
 		return pts.map(([x, y]) => [round(x * p.w), round(y * p.h)]);
 	}
 
-	private setMark(p: Photo, pts: Point[], zoom: number | undefined): void {
+	private setMark(p: Photo, pts: Point[], zoom: number | undefined, soft = false): void {
 		if (p === this.photos[0]) {
 			this.marks.points = this.px(p, pts);
 			return;
 		}
-		this.marks.at ??= {};
-		const previous = this.marks.at[p.file];
-		this.marks.at[p.file] = {
+		const previous = this.marks.at?.[p.file] ?? this.marks.near?.[p.file];
+		this.unmark(p);
+		(this.marks[soft ? 'near' : 'at'] ??= {})[p.file] = {
 			points: this.px(p, pts),
 			...((zoom ?? previous?.zoom) !== undefined && { zoom: zoom ?? previous?.zoom })
 		};
-		this.marks.skip = this.marks.skip?.filter((f) => f !== p.file);
 	}
 
 	private unmark(p: Photo): void {
 		delete this.marks.at?.[p.file];
+		delete this.marks.near?.[p.file];
 		this.marks.skip = this.marks.skip?.filter((f) => f !== p.file);
 	}
 
@@ -194,17 +196,20 @@ export class Session {
 		if (this.history.length > HISTORY_MAX) this.history.shift();
 	}
 
-	/** A mark shows where it landed, with an undo, then moves on to the next lost photo. */
-	mark(pts: Point[]): void {
+	/**
+	 * A mark shows where it landed, with an undo, then moves on to the next lost photo. A soft mark places
+	 * the photo the same way, but tracking carries on from the photo before it.
+	 */
+	mark(pts: Point[], soft = false): void {
 		const p = this.photo;
 		const i = this.current;
 		if (p.source !== 'lost') return;
 		if (!inBounds(pts)) return this.showToast(`Part of the mark falls outside ${p.name}: not marked`, false);
 		this.remember();
-		Object.assign(p, { source: 'mark', pts, scale: this.zoom, feats: null });
-		this.setMark(p, pts, this.zoomTouched ? this.zoom : undefined);
+		Object.assign(p, { source: soft ? 'soft' : 'mark', pts, scale: this.zoom, feats: null });
+		this.setMark(p, pts, this.zoomTouched ? this.zoom : undefined, soft);
 		this.pop();
-		this.showToast(`Marked ${p.name}`);
+		this.showToast(`${soft ? 'Soft-marked' : 'Marked'} ${p.name}`);
 		void this.retrack();
 		this.advanceTimer = setTimeout(() => {
 			if (this.current === i) this.advance();
@@ -230,21 +235,22 @@ export class Session {
 	/** On a marked photo a click adds a point, and a click on a point removes it. The stage stays put. */
 	editPoints(pts: Point[], text: string): void {
 		const p = this.photo;
-		if (p.source !== 'mark' || !pts.length || !inBounds(pts)) return;
+		if (!(p.source === 'mark' || p.source === 'soft') || !pts.length || !inBounds(pts)) return;
 		clearTimeout(this.advanceTimer);
 		this.remember();
 		p.pts = pts;
-		this.setMark(p, pts, undefined);
+		this.setMark(p, pts, undefined, p.source === 'soft');
 		this.showToast(`${text} ${p.name}`);
 		void this.retrack();
 	}
 
 	clearMark(): void {
 		const p = this.photo;
-		if (!(p.source === 'mark' || p.source === 'skipped') || this.current === 0) return;
+		if (p.source === 'tracked' || p.source === 'lost' || this.current === 0) return;
 		clearTimeout(this.advanceTimer);
 		this.remember();
-		this.showToast(`${p.source === 'mark' ? 'Cleared mark on' : 'Unskipped'} ${p.name}`);
+		const done = { mark: 'Cleared mark on', soft: 'Cleared soft mark on', skipped: 'Unskipped' }[p.source];
+		this.showToast(`${done} ${p.name}`);
 		Object.assign(p, { source: 'lost', feats: p.feats ?? 0 });
 		this.unmark(p);
 		this.fixList.add(p.file);
@@ -272,6 +278,7 @@ export class Session {
 			return;
 		}
 		delete this.marks.at?.[file];
+		delete this.marks.near?.[file];
 		this.marks.skip = this.marks.skip?.filter((f) => f !== file);
 		this.stage = 'tracking';
 		this.error = '';
@@ -282,7 +289,30 @@ export class Session {
 	skipBadMark(file: string): void {
 		if (file === this.photos[0]?.file) return;
 		delete this.marks.at?.[file];
+		delete this.marks.near?.[file];
 		(this.marks.skip ??= []).push(file);
+		this.stage = 'tracking';
+		this.error = '';
+		void this.retrack();
+	}
+
+	/** The failed photo's points that lie inside it, by the size the refusal names: what a soft mark keeps. */
+	get failedInside(): Point[] {
+		const file = this.failedPhoto;
+		const size = / outside the (\d+)x(\d+) photo/.exec(this.error);
+		const mark = file ? (this.marks.at?.[file] ?? this.marks.near?.[file]) : undefined;
+		if (!file || file === this.photos[0]?.file || !size || !mark) return [];
+		const [w, h] = [Number(size[1]), Number(size[2])];
+		return mark.points.filter(([x, y]) => x >= 0 && x < w && y >= 0 && y < h);
+	}
+
+	/** A bad mark on a later photo: keep its points inside the photo as a soft mark, and try again. */
+	softBadMark(file: string): void {
+		const points = this.failedInside;
+		const zoom = (this.marks.at?.[file] ?? this.marks.near?.[file])?.zoom;
+		if (!points.length) return;
+		delete this.marks.at?.[file];
+		(this.marks.near ??= {})[file] = { points, ...(zoom !== undefined && { zoom }) };
 		this.stage = 'tracking';
 		this.error = '';
 		void this.retrack();

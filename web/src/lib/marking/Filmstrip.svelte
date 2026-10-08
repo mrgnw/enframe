@@ -36,7 +36,9 @@
 		const state =
 			p.source === 'mark'
 				? `your mark${listed ? ' · in fix list' : ''}`
-				: p.source === 'skipped'
+				: p.source === 'soft'
+					? `soft mark · not tracked from${listed ? ' · in fix list' : ''}`
+					: p.source === 'skipped'
 					? `skipped · feature hidden${listed ? ' · in fix list' : ''}`
 					: p.source === 'lost'
 						? `lost · ${p.feats} features · estimated`
@@ -99,7 +101,7 @@
 	onwheel={wheel}
 >
 	{#each session.photos as p, i (p.file)}
-		{@const listed = session.fixList.has(p.file) && (p.source === 'mark' || p.source === 'skipped')}
+		{@const listed = session.fixList.has(p.file) && (p.source === 'mark' || p.source === 'soft' || p.source === 'skipped')}
 		{@const cls = session.stage === 'points' ? (i === 0 ? 'mark' : 'pending') : p.source}
 		<a
 			class="thumb {cls}"

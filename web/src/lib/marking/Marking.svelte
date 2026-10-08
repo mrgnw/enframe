@@ -23,7 +23,8 @@
 	const p = $derived(session.photo);
 	const lost = $derived(p?.source === 'lost');
 	const skipped = $derived(p?.source === 'skipped');
-	const editable = $derived(lost || p?.source === 'mark');
+	const soft = $derived(p?.source === 'soft');
+	const editable = $derived(lost || soft || p?.source === 'mark');
 	const folderName = $derived(folder.replace(/\/+$/, '').split('/').pop() ?? folder);
 	const patch = $derived(
 		session.stage === 'fix' && (editable || skipped)
@@ -36,7 +37,7 @@
 				? 'Click to add a point · click a point to remove it'
 				: 'Click points on the feature to hold still'
 			: lost
-				? 'Click the cloud to place its points · scroll to change zoom'
+				? 'Click the cloud to place its points · shift-click for a soft mark · scroll to change zoom'
 				: skipped
 					? 'Skipped: the feature is hidden here, so the clip uses the estimate'
 					: 'Click to add a point · click a point to remove it'
@@ -84,6 +85,7 @@
 		} else if (e.key === 'Enter' && lost) session.mark(p.pts);
 		else if (e.key === 'Backspace' || e.key === 'Delete') session.clearMark();
 		else if (e.key === 's') session.skip();
+		else if (e.key === 'n' && lost) session.mark(p.pts, true);
 		else if (e.key === 't') session.toggleTrail();
 		else if (e.key === ']') session.stepZoom(1);
 		else if (e.key === '[') session.stepZoom(-1);
@@ -106,6 +108,9 @@
 					{@const bad = session.failedPhoto}
 					<div class="actions">
 						<button class="btn primary" onclick={() => session.clearBadMark(bad)}>Clear mark</button>
+						{#if session.failedInside.length}
+							<button class="btn" title="Keep the points inside the photo as a soft mark: it places the photo, but tracking carries on from the photo before it." onclick={() => session.softBadMark(bad)}>Soft mark</button>
+						{/if}
 						{#if bad !== session.photos[0]?.file}
 							<button class="btn" onclick={() => session.skipBadMark(bad)}>Skip photo</button>
 						{/if}
@@ -201,12 +206,18 @@
 								<span class="more">
 									{#if phone}tap where it is now{:else}click where it is now<br />or <kbd>⏎</kbd> to accept the estimate{/if}
 								</span>
+								<button class="btn" title="Too hazy to place precisely: accept the estimate as a soft mark, or shift-click where it is. The photo is placed there, but tracking carries on from the photo before it." onclick={() => session.mark(p.pts, true)}>
+									Soft mark <kbd class="desk">N</kbd>
+								</button>
 								<button class="btn" title="The feature is hidden in this photo (a building, trees). The clip keeps it at the estimate." onclick={() => session.skip()}>
 									Skip, hidden here <kbd class="desk">S</kbd>
 								</button>
 							{:else if skipped}
 								Skipped<b>feature hidden</b>
 								<button class="btn" onclick={() => session.clearMark()}>Unskip <kbd class="desk">⌫</kbd></button>
+							{:else if soft}
+								Soft mark<b>{p.pts.length} points · {p.scale.toFixed(2)}× · not tracked from</b>
+								<button class="btn" onclick={() => session.clearMark()}>Clear mark <kbd class="desk">⌫</kbd></button>
 							{:else}
 								Your mark<b>{p.pts.length} points · {p.scale.toFixed(2)}×</b>
 								{#if session.current > 0}

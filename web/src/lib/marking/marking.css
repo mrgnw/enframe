@@ -63,6 +63,7 @@
 }
 .ptag.lost, .ptag.skipped { background: rgba(0, 0, 0, 0.6); color: rgba(255, 255, 255, 0.8); }
 .ptag.tracked { background: rgba(0, 0, 0, 0.6); color: var(--accent); }
+.ptag.soft { background: color-mix(in oklab, var(--accent) 55%, rgba(0, 0, 0, 0.6)); }
 
 .trail .halo { stroke: rgba(0, 0, 0, 0.7); }
 .trail .line { stroke-width: 2.5; stroke-linecap: round; }
@@ -73,6 +74,7 @@
 .trail .after { stroke: var(--after); }
 .trail .dot.tracked { fill: currentColor; stroke: rgba(0, 0, 0, 0.6); stroke-width: 1.5; }
 .trail .dot.mark { stroke-width: 2.25; }
+.trail .dot.soft { stroke-width: 1.5; opacity: 0.55; }
 .trail .dot.lost { stroke-width: 1.5; stroke-dasharray: 2 2; fill: rgba(0, 0, 0, 0.35); }
 .trail .before.dot { color: var(--before); }
 .trail .after.dot { color: var(--after); }
@@ -80,6 +82,7 @@
 @keyframes flow { from { stroke-dashoffset: var(--o); } to { stroke-dashoffset: calc(var(--o) - 30px); } }
 @media (prefers-reduced-motion: reduce) { .trail .flow { animation: none; } }
 .trail .pt.tracked { opacity: 0.85; }
+.trail .pt.soft { fill-opacity: 0.4; }
 .trail .pt.lost, .trail .pt.skipped, .trail .pt.ghost { fill: rgba(0, 0, 0, 0.5); stroke-dasharray: 3 2; }
 .trail .pt.skipped { stroke: var(--muted); stroke-width: 2; }
 .trail .pt.lost { stroke: rgba(255, 255, 255, 0.9); stroke-width: 2; }
@@ -88,6 +91,8 @@
 .looking .patch { position: relative; overflow: hidden; flex: none; }
 .looking .patch .pt { stroke-width: 1.25; }
 .thumb.mark.listed::after { background: var(--accent); box-shadow: none; }
+.thumb.soft::after { box-shadow: inset 0 0 0 1.5px var(--accent); opacity: 0.55; }
+.thumb.soft.listed::after { background: var(--accent); box-shadow: none; }
 .thumb.skipped::after { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted); }
 .thumb.skipped.listed::after { background: var(--muted); box-shadow: none; }
 .btn.clear-fixed { background: rgba(255, 255, 255, 0.08); }

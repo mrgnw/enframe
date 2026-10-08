@@ -2,12 +2,14 @@
 // Points on screen are normalized 0–1 to the photo; the document sends the CLI pixels.
 
 export type Point = [number, number];
-export type Source = 'tracked' | 'mark' | 'lost' | 'skipped';
+export type Source = 'tracked' | 'mark' | 'soft' | 'lost' | 'skipped';
 
 /** The CLI's input, saved beside the folder as `<folder>.pin.json`; pixels of the oriented photo. */
 export interface Marks {
 	points: Point[];
 	at?: Record<string, { points: Point[]; zoom?: number }>;
+	/** Soft marks: placed there, but the tracker carries on from the last photo before them (`--near`). */
+	near?: Record<string, { points: Point[]; zoom?: number }>;
 	skip?: string[];
 	order?: 'time' | 'name';
 }

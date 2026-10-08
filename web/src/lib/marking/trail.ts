@@ -8,7 +8,7 @@ export const pointsSvg = (pts: Point[], cls: string, W: number, H: number) =>
 	pts
 		.map(
 			([x, y]) =>
-				`<circle class="pt ${cls}" cx="${x * W}" cy="${y * H}" r="${cls.startsWith('mark') ? 5.5 : cls === 'tracked' ? 4.5 : 6}"/>`
+				`<circle class="pt ${cls}" cx="${x * W}" cy="${y * H}" r="${cls.startsWith('mark') || cls.startsWith('soft') ? 5.5 : cls === 'tracked' ? 4.5 : 6}"/>`
 		)
 		.join('');
 
@@ -107,7 +107,7 @@ export function trailSvg(
 		if (k === 0) continue;
 		const side: Side = k < 0 ? 'before' : 'after';
 		const d = Math.abs(k);
-		const r = q.source === 'mark' ? 5.5 : 4;
+		const r = q.source === 'mark' || q.source === 'soft' ? 5.5 : 4;
 		dots += `<g opacity="${fade(d).toFixed(2)}"><circle class="dot-halo" cx="${x}" cy="${y}" r="${r + 2.5}"/><circle class="dot ${side} ${q.source}" cx="${x}" cy="${y}" r="${r}" style="color:${stepColour(side, d)}${q.source === 'tracked' ? '' : ';stroke:currentColor'}"/></g>`;
 	}
 	return `<defs>${defs}</defs>${lines}${flows}${dots}${own}`;
