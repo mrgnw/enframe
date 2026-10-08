@@ -2,6 +2,11 @@
 
 pinframe's Rust CLI is the only implementation: `bash analysis/check.sh` passes 19 of 19 on `main` (build, lint, tests, every README command, AVIF/HEIC/JXL/JPEG/PNG input, colour labels, valid outputs, train clouds exactly equal to `analysis/tracking_baseline.json`). Everything left is below, as small task cards in `todos/`.
 
+## Where things live
+
+- **The spec** of a card is its file in `todos/`; **its status** is its GitHub issue (the Issue column below). Open the issue when the card starts, close it when the card is merged, and name the branch after the card as before. A card whose code lands in enframe has its issue in [mrgnw/enframe](https://github.com/mrgnw/enframe/issues) and is a sub-issue of [pinframe#2](https://github.com/mrgnw/pinframe/issues/2), the cross-repo view of the integration.
+- Finished cards keep their file under `todos/done/`; the Done list below is the index.
+
 ## How work runs
 
 1. **One card, one branch, one thread.** Each card in `todos/` is sized for one agent session. Its branch is named after it (for example `e1-sidecar-points`).
@@ -40,13 +45,13 @@ One coordinating thread runs the plan; agents do the card work. The coordinator 
 
 ## Cards
 
-| Card | What | Depends on | Touches | Model | Size |
-|-|-|-|-|-|-|
-| [M4](todos/M4-marks-in-bounds.md) | Marks stay inside the photo | — | `web/src/lib/marking/`, `web/e2e/` | Sonnet | S |
-| [E2](todos/E2-serve-endpoint.md) | enframe-serve endpoint that runs pinframe | enframe phase-2 | enframe repo | Opus | M |
-| [E3](todos/E3-marking-screen.md) | Marking screen in enframe | E2 | enframe repo | Opus | L |
-| [E4](todos/E4-preview-export.md) | Preview and export screen in enframe | E3 | enframe repo | Sonnet | M |
-| [E6](todos/E6-multiple-features.md) | Several features per sequence, one clip each | E3 | enframe repo | Opus | L |
+| Card | Issue | What | Depends on | Touches | Model | Size |
+|-|-|-|-|-|-|-|
+| [M4](todos/M4-marks-in-bounds.md) | [pinframe#1](https://github.com/mrgnw/pinframe/issues/1) | Marks stay inside the photo | — | `web/src/lib/marking/`, `web/e2e/` | Sonnet | S |
+| [E2](todos/E2-serve-endpoint.md) | [enframe#6](https://github.com/mrgnw/enframe/issues/6) | enframe-serve endpoint that runs pinframe | enframe phase-2 | enframe repo | Opus | M |
+| [E3](todos/E3-marking-screen.md) | [enframe#7](https://github.com/mrgnw/enframe/issues/7) | Marking screen in enframe | E2 | enframe repo | Opus | L |
+| [E4](todos/E4-preview-export.md) | [enframe#8](https://github.com/mrgnw/enframe/issues/8) | Preview and export screen in enframe | E3 | enframe repo | Sonnet | M |
+| [E6](todos/E6-multiple-features.md) | [enframe#9](https://github.com/mrgnw/enframe/issues/9) | Several features per sequence, one clip each | E3 | enframe repo | Opus | L |
 
 Done: [B3](todos/done/1006-B3-heic10-cost.md), [E1](todos/done/1006-E1-sidecar-points.md), [A1](todos/done/1006-A1-tracking-benchmark.md), [B1](todos/done/1006-B1-colour.md), [F1](todos/done/1006-F1-python-reference.md), [B2](todos/done/1006-B2-capture-time-order.md), [A4](todos/done/1006-A4-search-window.md), [A5a](todos/done/1006-A5a-points-tracker.md), [D2](todos/done/1006-D2-build-downloads.md), [A5b](todos/done/1006-A5b-points-syntax.md) (design: [A5](todos/done/1006-A5-reference-points.md)), [A2](todos/done/1006-A2-tracker-sensitivity.md), [A3](todos/done/1006-A3-track-edge.md) (kept 1024), [B4](todos/done/1006-B4-zoom-from-exif.md), [A6](todos/done/1006-A6-skip-photos.md), [B5](todos/done/1006-B5-exif-followups.md), [E5](todos/done/1006-E5-marking-mockup.md), [D1](todos/done/1006-D1-linux-build.md), [M1](todos/done/1007-M1-serve.md), [M2](todos/done/1007-M2-marking-live.md), [M3](todos/done/1007-M3-preview-export.md), spikes [W1](todos/done/1007-W1-browser-tests.md) (browser tests, opt-in) and [W2](todos/done/1007-W2-clip-done-state.md) (the clip in the done state).
 

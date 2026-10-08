@@ -1,6 +1,7 @@
 # E6 · Several features per sequence
 
 Depends on: E3 · Model: Opus · Size: L
+Issue: https://github.com/mrgnw/enframe/issues/9
 Touches: enframe repo (the framer's frames and selection, the sequence document), `rust/` only if the CLI gains a multiplexer
 
 ## Goal

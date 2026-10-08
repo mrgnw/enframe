@@ -1,6 +1,7 @@
 # M4 · Marks stay inside the photo
 
 Depends on: — · Model: Sonnet · Size: S
+Issue: https://github.com/mrgnw/pinframe/issues/1
 Touches: `web/src/lib/marking/` (`session.svelte.ts`, `Stage.svelte`, `trail.ts`), `web/e2e/walkthrough.spec.ts`
 
 ## Problem

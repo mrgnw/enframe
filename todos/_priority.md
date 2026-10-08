@@ -1,6 +1,6 @@
 # Priority
 
-Work top to bottom. Run at most two at once, and only a pair the plan marks safe. See [PLAN.md](../PLAN.md) for the rules.
+Each card's issue carries its status (see PLAN.md, "Where things live"); the integration's cross-repo view is https://github.com/mrgnw/pinframe/issues/2. Work top to bottom. Run at most two at once, and only a pair the plan marks safe. See [PLAN.md](../PLAN.md) for the rules.
 
 1. MVP, standalone: done (M1, M2, M3, spikes W1 and W2). `cd web && pnpm build && pnpm start`, then http://localhost:7341/.
 2. [M4](M4-marks-in-bounds.md): marks stay inside the photo (a defect found by W1).
