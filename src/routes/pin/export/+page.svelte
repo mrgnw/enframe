@@ -1,11 +1,13 @@
 <script lang="ts">
-// `/pin/export?folder=PATH`: the clip playing from the folder's saved document, and the export panel.
+// `/pin/export?folder=PATH&feature=NAME`: the feature's clip playing from the folder's saved document (the first
+// feature without a name), and the export panel.
 import { page } from '$app/state';
 import Preview from '$lib/pinframe/Preview.svelte';
 import '$lib/pinframe/pin.css';
 import '$lib/pinframe/marking.css';
 
 const folder = $derived(page.url.searchParams.get('folder'));
+const feature = $derived(page.url.searchParams.get('feature'));
 </script>
 
 <svelte:head>
@@ -15,7 +17,7 @@ const folder = $derived(page.url.searchParams.get('folder'));
 <div class="pinframe">
 	{#if folder}
 		{#key folder}
-			<Preview {folder} />
+			<Preview {folder} {feature} />
 		{/key}
 	{:else}
 		<main class="stage">

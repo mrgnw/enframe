@@ -11,11 +11,11 @@ import './pin.css';
 import './marking.css';
 import './preview.css';
 
-let { folder }: { folder: string } = $props();
+let { folder, feature = null }: { folder: string; feature?: string | null } = $props();
 
 // The page re-creates this component when the folder changes (`{#key folder}`), so initial values are right.
 // svelte-ignore state_referenced_locally
-const session = new Preview(folder);
+const session = new Preview(folder, feature);
 onMount(() => {
 	void session.load();
 	return () => session.dispose();
@@ -132,7 +132,7 @@ function keydown(e: KeyboardEvent) {
 			<span class="lbl">pad</span>
 			<div class="swatches" id="pad" role="group" aria-label="Padding">
 				{#each PADS as { v, title } (v)}
-					<button class="swatch {v}" class:on={session.pad === v} {title} aria-label={title} disabled={session.exp.status === 'running'} onclick={() => session.setPad(v)}></button>
+					<button class="swatch {v}" class:on={session.pad === v} {title} aria-label={title} disabled={session.exporting} onclick={() => session.setPad(v)}></button>
 				{/each}
 				<label class="swatch custom" class:on={session.pad === 'custom'} title="Any colour">
 					<input
@@ -140,7 +140,7 @@ function keydown(e: KeyboardEvent) {
 						id="custom"
 						value={session.custom}
 						aria-label="Custom padding colour"
-						disabled={session.exp.status === 'running'}
+						disabled={session.exporting}
 						oninput={(e) => session.setPad('custom', e.currentTarget.value)}
 					/>
 				</label>

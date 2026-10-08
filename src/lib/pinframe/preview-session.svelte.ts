@@ -1,7 +1,8 @@
 // The preview session: the folder's saved document, the sidecar for the chosen pad (the marking screen's
 // own when it hands one over), the frames drawn from it, and the export. Pad colour and fps change the
 // drawing at once; switching pad between none and a colour changes the crop rects, so that re-tracks (the
-// old frames stay up until the new ones are drawn).
+// old frames stay up until the new ones are drawn). Each feature has its own destination and export; picking
+// one re-tracks it, and "Export all" runs them one after another, since the server runs one per folder.
 
 import { canReveal, exportClip, type Folder, lastSidecar, loadFolder, photoUrl, Stale, trackPad } from './api';
 import {
@@ -79,19 +80,45 @@ export class Preview {
 	custom = $state('#4b8bf5');
 	format = $state<Format>('avif');
 	frames = $state(false);
-	/** The out path without its extension; the format adds that. */
-	outBase = $state('');
-	exp = $state<Exporting>(idle());
+	features = $state.raw<Feature[]>([]);
+	/** The feature on screen, an index into `features`. */
+	selected = $state(0);
+	/** Per feature: the out path without its extension; the format adds that. */
+	outBases = $state<string[]>([]);
+	/** Per feature. */
+	exps = $state<Exporting[]>([]);
 
 	bitmaps: (ImageBitmap | null)[] = [];
-	private features: Feature[] = [];
-	private feature = '';
+	/** The feature the marking screen was on, shown first. */
+	private readonly wanted: string | null;
 	private generation = 0;
 	/** Whether the sidecar on screen was tracked with padding, so a pad change knows if it must re-track. */
 	private padded = false;
 
-	constructor(folder: string) {
+	constructor(folder: string, feature: string | null = null) {
 		this.folder = folder;
+		this.wanted = feature;
+	}
+
+	get feature(): string {
+		return this.features[this.selected]?.name ?? '';
+	}
+
+	get outBase(): string {
+		return this.outBases[this.selected] ?? '';
+	}
+
+	set outBase(base: string) {
+		this.outBases[this.selected] = base;
+	}
+
+	get exp(): Exporting {
+		return this.exps[this.selected] ?? idle();
+	}
+
+	/** An export is running for some feature: the server runs one per folder, so nothing else may track. */
+	get exporting(): boolean {
+		return this.exps.some((e) => e.status === 'running');
 	}
 
 	get rows(): SidecarPhoto[] {
@@ -112,7 +139,11 @@ export class Preview {
 
 	/** The clip's path: the field's path with the format's extension. */
 	get out(): string {
-		return `${stripExt(this.outBase.trim())}.${this.format}`;
+		return this.outOf(this.selected);
+	}
+
+	private outOf(i: number): string {
+		return `${stripExt(this.outBases[i].trim())}.${this.format}`;
 	}
 
 	get name(): string {
@@ -129,18 +160,33 @@ export class Preview {
 			return;
 		}
 		this.absFolder = loaded.folder.replace(/(.)\/+$/, '$1');
-		this.outBase = this.absFolder;
 		if (!loaded.features.length) {
 			this.stage = 'empty';
 			return;
 		}
+		const one = loaded.features.length === 1;
 		this.features = loaded.features;
-		this.feature = loaded.features[0].name;
+		this.outBases = loaded.features.map((f) => (one ? this.absFolder : `${this.absFolder}-${f.name}`));
+		this.exps = loaded.features.map(idle);
+		this.selected = Math.max(0, loaded.features.findIndex((f) => f.name === this.wanted));
+		await this.show();
+	}
+
+	/** Draws the feature on screen: from the marking screen's sidecar when it handed one over, else by tracking. */
+	private async show(): Promise<void> {
 		this.busy = true;
-		const handed = lastSidecar(this.folder, this.feature);
+		const handed = this.pad === 'none' ? lastSidecar(this.folder, this.feature) : null;
 		if (!handed) return this.retrack();
+		this.padded = false;
 		await this.render(handed.photos, ++this.generation);
 		this.busy = false;
+	}
+
+	/** Puts another feature on screen; not while an export runs, since its track would stop that export. */
+	async select(i: number): Promise<void> {
+		if (i === this.selected || !this.features[i] || this.exporting) return;
+		this.selected = i;
+		await this.show();
 	}
 
 	/** Tracks with the current pad, then draws the frames from the sidecar that comes back. */
@@ -158,7 +204,7 @@ export class Preview {
 			if (e instanceof Stale || mine !== this.generation) return;
 			this.tracking = false;
 			if (this.view) {
-				this.exp = { ...idle(), status: 'failed', error: (e as Error).message };
+				this.exps[this.selected] = { ...idle(), status: 'failed', error: (e as Error).message };
 			} else {
 				this.stage = 'failed';
 				this.error = (e as Error).message;
@@ -263,44 +309,61 @@ export class Preview {
 
 	// ---- export ----
 
+	/** Format, pad and frames are shared, so a change clears every feature's result. */
 	resetExport(): void {
-		if (this.exp.status !== 'running') this.exp = idle();
+		if (!this.exporting) this.exps = this.features.map(idle);
 	}
 
 	async export(): Promise<void> {
-		if (this.exp.status === 'running' || !this.view) return;
-		const base = stripExt(this.outBase.trim());
+		if (!this.exporting) await this.exportFeature(this.selected);
+	}
+
+	/** Every feature's clip, one after another; a failure stops the rest. */
+	async exportAll(): Promise<void> {
+		if (this.exporting) return;
+		this.resetExport();
+		for (let i = 0; i < this.features.length; i++) {
+			await this.exportFeature(i);
+			if (this.exps[i].status !== 'done') return;
+		}
+	}
+
+	private async exportFeature(i: number): Promise<void> {
+		if (!this.view || !this.outBases[i].trim()) return;
+		const base = stripExt(this.outBases[i].trim());
+		const out = this.outOf(i);
 		const started = Date.now();
 		const total = this.view.rows.length;
 		// pinframe prints its lines in bursts: nothing while it tracks, every photo's line when tracking ends,
 		// then the clip's size when encoding starts. So the bar creeps toward the end of the phase it is in.
 		let cap = 0.45;
-		this.exp = { ...idle(), status: 'running', progress: 0.03, text: `Tracking ${total} photos…` };
-		const creep = setInterval(() => (this.exp.progress += (cap - this.exp.progress) * 0.06), 400);
+		this.exps[i] = { ...idle(), status: 'running', progress: 0.03, text: `Tracking ${total} photos…` };
+		const exp = this.exps[i];
+		const creep = setInterval(() => (exp.progress += (cap - exp.progress) * 0.06), 400);
 		try {
 			const done = await exportClip(
 				{
 					folder: this.folder,
 					features: this.features,
-					feature: this.feature,
-					out: this.out,
+					feature: this.features[i].name,
+					out,
 					pad: padArg(this.pad, this.custom),
 					fps: this.fps,
 					...(this.frames && { frames: `${base} frames` })
 				},
 				(line) => {
 					if (PHOTO_LINE.test(line)) {
-						this.exp.progress = Math.max(this.exp.progress, 0.5);
-						this.exp.text = 'Tracked, starting the encode…';
+						exp.progress = Math.max(exp.progress, 0.5);
+						exp.text = 'Tracked, starting the encode…';
 					} else if (line.startsWith('clip ')) {
 						cap = 0.95;
-						this.exp.progress = Math.max(this.exp.progress, 0.55);
-						this.exp.text = `Encoding ${total} frames at ${line.slice(5)}…`;
+						exp.progress = Math.max(exp.progress, 0.55);
+						exp.text = `Encoding ${total} frames at ${line.slice(5)}…`;
 					}
 				}
 			);
 			const size = clipSize(done.sidecar.photos);
-			this.exp = {
+			this.exps[i] = {
 				...idle(),
 				status: 'done',
 				progress: 1,
@@ -310,7 +373,7 @@ export class Preview {
 				reveal: canReveal()
 			};
 		} catch (e) {
-			this.exp = { ...idle(), status: 'failed', error: (e as Error).message };
+			this.exps[i] = { ...idle(), status: 'failed', error: (e as Error).message };
 		} finally {
 			clearInterval(creep);
 		}

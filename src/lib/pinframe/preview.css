@@ -365,3 +365,47 @@
 		}
 	}
 }
+
+/* several features: the picker's names, Export all beside Export, and every exported clip */
+
+.pinframe {
+	.export #feature {
+		flex-wrap: wrap;
+		justify-content: flex-end;
+	}
+	.export .buttons {
+		display: flex;
+		gap: 6px;
+	}
+	.export .buttons .btn {
+		flex: 1;
+		justify-content: center;
+	}
+	.export .clips {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		margin: 0;
+		padding: 8px 0 0;
+		border-top: 1px solid var(--border);
+		list-style: none;
+		font-size: 12px;
+	}
+	.export .clips li {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 2px 8px;
+	}
+	.export .clips .where {
+		flex-basis: 100%;
+		order: 1;
+		color: var(--muted);
+		word-break: break-all;
+	}
+	.export .clips a {
+		color: var(--accent);
+		text-decoration: none;
+		font-weight: 600;
+	}
+}
