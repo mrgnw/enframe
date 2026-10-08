@@ -75,6 +75,8 @@ pub struct Marks {
 	pub at: Vec<String>,
 	/// File names of photos whose feature is hidden (`--skip`).
 	pub skip: Vec<String>,
+	/// `PHOTO=x,y[/x,y]...[@zoom]` per soft-marked photo: placed there, but not tracked from (`--near`).
+	pub near: Vec<String>,
 }
 
 impl Marks {
@@ -85,8 +87,13 @@ impl Marks {
 
 	/// Adds a mark on the photo with this file name.
 	pub fn with_at(mut self, photo: &str, mark: &Mark) -> Marks {
-		let zoom = mark.zoom.map(|zoom| format!("@{zoom}")).unwrap_or_default();
-		self.at.push(format!("{photo}={}{zoom}", points_text(&mark.points)));
+		self.at.push(mark_text(photo, mark));
+		self
+	}
+
+	/// Adds a soft mark on the photo with this file name.
+	pub fn with_near(mut self, photo: &str, mark: &Mark) -> Marks {
+		self.near.push(mark_text(photo, mark));
 		self
 	}
 
@@ -95,6 +102,12 @@ impl Marks {
 		self.skip.push(photo.to_string());
 		self
 	}
+}
+
+/// `PHOTO=x,y/x,y...[@zoom]`.
+fn mark_text(photo: &str, mark: &Mark) -> String {
+	let zoom = mark.zoom.map(|zoom| format!("@{zoom}")).unwrap_or_default();
+	format!("{photo}={}{zoom}", points_text(&mark.points))
 }
 
 /// `x,y/x,y...`. An `f64` prints as the shortest text that parses back to it, so nothing is lost.
@@ -257,13 +270,15 @@ fn read_profiles(paths: &[PathBuf]) -> Result<Vec<Profile>, String> {
 	paths.iter().map(|p| decode::profile(p).map_err(|e| format!("{}: {e}", p.display()))).collect()
 }
 
-/// --points and every --at, by photo index, checked against the photo sizes.
+/// --points, every --at and every --near, by photo index, checked against the photo sizes, and which of
+/// them are soft (--near).
 fn read_marks(
 	points: Option<&str>,
 	ats: &[String],
+	nears: &[String],
 	paths: &[PathBuf],
 	sizes: &[(u32, u32)],
-) -> Result<Vec<Option<Mark>>, String> {
+) -> Result<(Vec<Option<Mark>>, Vec<bool>), String> {
 	let names: Vec<String> = paths.iter().map(|p| file_name(p)).collect();
 	// ponytail: no point drawing (anchor.py opens an OpenCV window); --points is required here
 	let (first_points, first_zoom) =
@@ -273,24 +288,30 @@ fn read_marks(
 	}
 	let mut marks: Vec<Option<Mark>> = vec![None; paths.len()];
 	marks[0] = Some(Mark { points: first_points, zoom: None });
-	for at in ats {
+	let mut soft = vec![false; paths.len()];
+	for (flag, at) in ats.iter().map(|at| ("--at", at)).chain(nears.iter().map(|near| ("--near", near))) {
 		let Some((name, value)) = at.split_once('=').filter(|(n, _)| names.iter().any(|m| m == n)) else {
-			return Err(format!("--at {at}: expected PHOTO=x,y with PHOTO one of the photo file names"));
+			return Err(format!("{flag} {at}: expected PHOTO=x,y with PHOTO one of the photo file names"));
 		};
 		let i = names.iter().position(|m| m == name).unwrap();
 		if marks[i].is_some() {
-			let why = if i == 0 { "use --points for the first photo" } else { "marked twice" };
-			return Err(format!("--at {name}: {why}"));
+			let why = match (i, flag) {
+				(0, "--at") => "use --points for the first photo",
+				(0, _) => "the first photo cannot be soft-marked",
+				_ => "marked twice",
+			};
+			return Err(format!("{flag} {name}: {why}"));
 		}
-		let (points, zoom) = parse_points(&format!("--at {name}"), value)?;
+		let (points, zoom) = parse_points(&format!("{flag} {name}"), value)?;
 		marks[i] = Some(Mark { points, zoom });
+		soft[i] = flag == "--near";
 	}
 	for (i, mark) in marks.iter().enumerate() {
 		if let Some(m) = mark {
 			check_points(&names[i], &m.points, sizes[i])?;
 		}
 	}
-	Ok(marks)
+	Ok((marks, soft))
 }
 
 /// Every `--skip`, by photo index, matched to a photo file name like `--at`. A skipped photo may not also
@@ -306,7 +327,7 @@ fn read_skips(skips: &[String], paths: &[PathBuf], marks: &[Option<Mark>]) -> Re
 			return Err(format!("--skip {name}: the first photo cannot be skipped"));
 		}
 		if marks[i].is_some() {
-			return Err(format!("--skip {name}: already marked with --at"));
+			return Err(format!("--skip {name}: already marked with --at or --near"));
 		}
 		if flags[i] {
 			return Err(format!("--skip {name}: skipped twice"));
@@ -828,8 +849,11 @@ pub fn track(job: &Job, log: &mut dyn FnMut(&str)) -> Result<Tracked, String> {
 				}
 			}
 			let sizes = read_sizes(&paths)?;
-			let marks = read_marks(job.marks.points.as_deref(), &job.marks.at, &paths, &sizes)?;
+			let (marks, soft) =
+				read_marks(job.marks.points.as_deref(), &job.marks.at, &job.marks.near, &paths, &sizes)?;
+			// track() places a skipped photo with a mark at it, without tracking from it: a soft mark.
 			let skips = read_skips(&job.marks.skip, &paths, &marks)?;
+			let skips: Vec<bool> = skips.into_iter().zip(soft).map(|(skip, soft)| skip || soft).collect();
 			if let Some(dir) = output.and_then(|o| o.frames.as_ref()) {
 				std::fs::create_dir_all(dir).map_err(|e| format!("--frames {}: {e}", dir.display()))?;
 				let has_png = std::fs::read_dir(dir).unwrap().flatten().any(|e| suffix(&e.path()) == "png");
@@ -1174,17 +1198,21 @@ mod tests {
 			[&["b.avif"], &["c.avif=1,1"], &["a.avif=1,1"], &["b.avif=1,1", "b.avif=2,2"], &["b.avif=500,1"]];
 		for ats in bad_ats {
 			let ats: Vec<String> = ats.iter().map(|a| a.to_string()).collect();
-			assert!(read_marks(Some("1,1/9,9"), &ats, &two, &[photo, photo]).is_err(), "{ats:?}");
+			assert!(read_marks(Some("1,1/9,9"), &ats, &[], &two, &[photo, photo]).is_err(), "{ats:?}");
 		}
-		let marks = read_marks(Some("1,1/9,9"), &["b.avif=5,5".into()], &two, &[photo, photo]).unwrap();
+		let (marks, _) =
+			read_marks(Some("1,1/9,9"), &["b.avif=5,5".into()], &[], &two, &[photo, photo]).unwrap();
 		assert_eq!(marks[0], Some(Mark { points: vec![(1.0, 1.0), (9.0, 9.0)], zoom: None }));
 		assert_eq!(marks[1], Some(Mark { points: vec![(5.0, 5.0)], zoom: None }));
-		assert!(read_marks(None, &[], &two, &[photo, photo]).is_err(), "--points is required");
-		assert!(read_marks(Some("1,1@2.0"), &[], &two, &[photo, photo]).is_err(), "--points takes no zoom");
-		let box_err = read_marks(Some("0,0,10,10"), &[], &two, &[photo, photo]).unwrap_err();
+		assert!(read_marks(None, &[], &[], &two, &[photo, photo]).is_err(), "--points is required");
+		assert!(
+			read_marks(Some("1,1@2.0"), &[], &[], &two, &[photo, photo]).is_err(),
+			"--points takes no zoom"
+		);
+		let box_err = read_marks(Some("0,0,10,10"), &[], &[], &two, &[photo, photo]).unwrap_err();
 		assert!(box_err.contains("quarter"), "{box_err}");
 		let box_at_err =
-			read_marks(Some("1,1"), &["b.avif=0,0,10,10".into()], &two, &[photo, photo]).unwrap_err();
+			read_marks(Some("1,1"), &["b.avif=0,0,10,10".into()], &[], &two, &[photo, photo]).unwrap_err();
 		assert!(box_at_err.contains("quarter"), "{box_at_err}");
 	}
 
@@ -1192,11 +1220,21 @@ mod tests {
 	fn marks_built_from_points_read_back_exactly() {
 		let first = [(940.0, 637.5), (1140.1, 0.1 + 0.2)];
 		let at = Mark { points: vec![(1.0 / 3.0, 2.0f64.sqrt()), (99.75, 1e-7)], zoom: Some(1.0 / 7.0) };
-		let marks = Marks::new(&first).with_at("b.avif", &at).with_skip("c.avif");
-		let paths = [PathBuf::from("a.avif"), PathBuf::from("b.avif"), PathBuf::from("c.avif")];
-		let read = read_marks(marks.points.as_deref(), &marks.at, &paths, &[(2000, 2000); 3]).unwrap();
-		assert_eq!(read, [Some(Mark { points: first.to_vec(), zoom: None }), Some(at), None]);
-		assert_eq!(read_skips(&marks.skip, &paths, &read).unwrap(), [false, false, true]);
+		let near = Mark { points: vec![(5.5, 6.25)], zoom: None };
+		let marks = Marks::new(&first).with_at("b.avif", &at).with_skip("c.avif").with_near("d.avif", &near);
+		let paths = ["a.avif", "b.avif", "c.avif", "d.avif"].map(PathBuf::from);
+		let (read, soft) =
+			read_marks(marks.points.as_deref(), &marks.at, &marks.near, &paths, &[(2000, 2000); 4]).unwrap();
+		assert_eq!(read, [Some(Mark { points: first.to_vec(), zoom: None }), Some(at), None, Some(near)]);
+		assert_eq!(soft, [false, false, false, true]);
+		assert_eq!(read_skips(&marks.skip, &paths, &read).unwrap(), [false, false, true, false]);
+		for nears in [["a.avif=1,1"], ["b.avif=1,1"], ["d.avif=3000,1"]] {
+			let nears = nears.map(String::from);
+			assert!(
+				read_marks(marks.points.as_deref(), &marks.at, &nears, &paths, &[(2000, 2000); 4]).is_err()
+			);
+		}
+		assert!(read_skips(&["d.avif".into()], &paths, &read).is_err(), "a soft-marked photo is not skipped");
 	}
 
 	/// A `w`x`h` RGB PNG cut at `(x, y)` from a fixed field of blurred noise, so SIFT finds features and

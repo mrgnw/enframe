@@ -6,8 +6,8 @@ use pinframe::{BOX_REMOVED, Job, Order, Output};
 use std::path::PathBuf;
 
 const USAGE: &str = "usage: pinframe PHOTO... --points x,y[/x,y]... [--at PHOTO=x,y[/x,y]...[@zoom]]...
-				[--skip PHOTO]... [--pad COLOUR] [--fps N] [--out CLIP-or-JSON] [--frames DIR]
-				[--vf FILTERS] [--cache DIR|--no-cache] [--order time|name]";
+				[--near PHOTO=x,y[/x,y]...[@zoom]]... [--skip PHOTO]... [--pad COLOUR] [--fps N]
+				[--out CLIP-or-JSON] [--frames DIR] [--vf FILTERS] [--cache DIR|--no-cache] [--order time|name]";
 
 /// Stops on input or photos pinframe cannot use: a message and exit code 1.
 fn fail(message: &str) -> ! {
@@ -26,6 +26,7 @@ fn parse_args() -> Job {
 			"--box" => fail(&format!("{BOX_REMOVED}\n{USAGE}")),
 			"--at" => job.marks.at.push(value()),
 			"--skip" => job.marks.skip.push(value()),
+			"--near" => job.marks.near.push(value()),
 			"--pad" => job.pad = Some(value()),
 			"--fps" => output.fps = value().parse().unwrap_or_else(|_| fail("--fps must be a number")),
 			"--out" => output.out = PathBuf::from(value()),

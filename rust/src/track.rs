@@ -60,6 +60,7 @@ pub enum Source {
 	Mark,
 	Lost,
 	Skipped,
+	Soft,
 }
 
 impl Source {
@@ -69,6 +70,7 @@ impl Source {
 			Source::Mark => "mark",
 			Source::Lost => "lost",
 			Source::Skipped => "skipped",
+			Source::Soft => "soft",
 		}
 	}
 }
@@ -496,7 +498,8 @@ fn lens_scale(focal_35mm: Option<f64>, (w, h): (u32, u32)) -> Option<f64> {
 /// user's mark on photo i, and photo 0 needs one.
 /// `focals[i]` is photo i's 35 mm focal length, when its EXIF has one. `skips[i]` marks a photo whose
 /// feature is hidden: it is never matched, and stays at an estimated position like a lost photo, but the
-/// next photo is still matched against the last found photo, as after a lost photo.
+/// next photo is still matched against the last found photo, as after a lost photo. A skipped photo with
+/// a mark is a soft mark: it is placed at the mark, but tracking goes on as if it were lost.
 pub fn track(
 	photos: impl Iterator<Item = Result<Photo, String>>,
 	sizes: &[(u32, u32)],
@@ -523,24 +526,28 @@ pub fn track(
 	for (i, photo) in photos.enumerate() {
 		let photo = photo?;
 		count += 1;
-		if skips[i] {
-			assert!(marks[i].is_none(), "a skipped photo must not have a mark");
-			path.push(Hit { source: Source::Skipped, note: "skipped".to_string(), ..hit(&points, scale, k) });
-			continue;
-		}
 		let source;
 		let note;
 		let lens = lens_scale(focals[i], sizes[i]);
 		let lens_change = last_lens.zip(lens).map(|(last, now)| now / last);
-		if let Some(mark) = &marks[i] {
-			assert!(!mark.points.is_empty(), "a mark needs a point");
-			points = mark.points.iter().map(|&(x, y)| (x * k, y * k)).collect();
-			radius = area_radius(&points, &photo.features.keypoints);
-			scale = match (mark.zoom, lens_change) {
-				(Some(zoom), _) => zoom,
-				(None, Some(change)) => scale * change,
-				(None, None) => scale,
+		if skips[i] {
+			let skipped = match &marks[i] {
+				Some(mark) => Hit {
+					source: Source::Soft,
+					note: "your soft mark".to_string(),
+					..hit(&mark_points(mark, k), mark_scale(mark, lens_change, scale), k)
+				},
+				None => {
+					Hit { source: Source::Skipped, note: "skipped".to_string(), ..hit(&points, scale, k) }
+				}
 			};
+			path.push(skipped);
+			continue;
+		}
+		if let Some(mark) = &marks[i] {
+			points = mark_points(mark, k);
+			radius = area_radius(&points, &photo.features.keypoints);
+			scale = mark_scale(mark, lens_change, scale);
 			(source, note) = (Source::Mark, "your mark".to_string());
 		} else {
 			let tolerance = RANSAC_TOLERANCE * area_width(&points, radius);
@@ -584,6 +591,21 @@ pub fn track(
 	}
 	assert_eq!(count, sizes.len(), "every photo must be tracked");
 	Ok(path)
+}
+
+/// A mark's points on the downscaled photo.
+fn mark_points(mark: &Mark, k: f64) -> Vec<(f64, f64)> {
+	assert!(!mark.points.is_empty(), "a mark needs a point");
+	mark.points.iter().map(|&(x, y)| (x * k, y * k)).collect()
+}
+
+/// A mark's zoom: the one typed, else the last found photo's times the lens change, else the last found.
+fn mark_scale(mark: &Mark, lens_change: Option<f64>, scale: f64) -> f64 {
+	match (mark.zoom, lens_change) {
+		(Some(zoom), _) => zoom,
+		(None, Some(change)) => scale * change,
+		(None, None) => scale,
+	}
 }
 
 /// A found photo's hit from the downscaled point set: the anchor is the points' mean.
@@ -876,6 +898,30 @@ mod tests {
 		assert_eq!(path[1].source, Source::Skipped);
 		assert_eq!(path[2].source, Source::Tracked, "tracks from IMG_4720's features, not the skipped one");
 		assert!((path[2].x - 406.0).abs() < 1e-3 && (path[2].y - 377.0).abs() < 1e-3);
+	}
+
+	#[test]
+	fn a_soft_mark_places_its_photo_and_tracking_goes_on_as_if_it_were_lost() {
+		let first = Some(Mark { points: vec![(400.0, 375.0)], zoom: None });
+		let soft = Some(Mark { points: vec![(500.0, 300.0), (520.0, 310.0)], zoom: Some(2.0) });
+		let sizes = vec![(1024, 768); 4];
+		let run = |marks: &[Option<Mark>], skips: &[bool]| {
+			let features = [
+				scattered(40, 0.0, 0.0),
+				Features::default(),
+				scattered(40, 6.0, 2.0),
+				scattered(40, 9.0, 4.0),
+			];
+			let photos = features.into_iter().map(|features| Ok(Photo { small: (1024, 768), features }));
+			let path = track(photos, &sizes, 1.0, marks, &[None; 4], skips).unwrap();
+			path.into_iter().map(|h| (h.x, h.y, h.scale, h.source, h.points)).collect::<Vec<_>>()
+		};
+		let lost = run(&[first.clone(), None, None, None], &[false; 4]);
+		let softened = run(&[first, soft, None, None], &[false, true, false, false]);
+		assert_eq!(lost[1].3, Source::Lost);
+		assert_eq!(softened[1], (510.0, 305.0, 2.0, Source::Soft, vec![(500.0, 300.0), (520.0, 310.0)]));
+		assert_eq!(softened[2..], lost[2..]);
+		assert_eq!(softened[3].3, Source::Tracked);
 	}
 
 	#[test]
