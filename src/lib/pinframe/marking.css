@@ -1,0 +1,431 @@
+/* The marking screen's own styles, from mockups/01-marking.html and 00-start.html, on top of pin.css. */
+
+.pinframe {
+	--before: #b49cff;
+	--after: #3fd8c4;
+
+	.stage {
+		grid-template-rows: minmax(0, 1fr);
+		place-items: stretch;
+	}
+	.view {
+		position: relative;
+		display: grid;
+		place-items: center;
+		container-type: size;
+		min-height: 0;
+	}
+	.photo {
+		width: min(100cqw, 100cqh * var(--r));
+		aspect-ratio: var(--r);
+		touch-action: manipulation;
+	}
+	.view.edit .photo {
+		cursor: crosshair;
+	}
+	.photo.blocked {
+		cursor: not-allowed;
+	}
+	.where {
+		font-variant-numeric: tabular-nums;
+	}
+	.where b {
+		color: var(--fg);
+		font-weight: 600;
+	}
+
+	.looking {
+		height: auto;
+		padding: 8px;
+		border-radius: 14px;
+		gap: 10px;
+		align-items: flex-start;
+	}
+	.looking .label {
+		padding: 4px 6px 0 0;
+		font-size: 12px;
+		color: var(--muted);
+		line-height: 1.35;
+	}
+	.looking .label b {
+		display: block;
+		color: var(--fg);
+		font-weight: 600;
+		font-size: 13px;
+	}
+	.looking .btn {
+		margin-top: 6px;
+		display: flex;
+		width: fit-content;
+		height: 26px;
+		padding: 0 10px;
+		background: rgba(255, 255, 255, 0.08);
+		font-size: 12px;
+	}
+
+	.tools {
+		gap: 4px;
+		font-variant-numeric: tabular-nums;
+	}
+	.tools .val {
+		font: 600 15px / 1 var(--display);
+		min-width: 2.4ch;
+		text-align: center;
+	}
+	.tools .val.off {
+		font: 500 13px / 1 var(--body);
+		color: var(--muted);
+	}
+	.tools .btn.icon {
+		width: 26px;
+		height: 26px;
+		font-size: 15px;
+		color: var(--muted);
+	}
+	.legend {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		color: var(--muted);
+		font-size: 12px;
+		margin-right: 2px;
+	}
+	.legend i {
+		width: 7px;
+		height: 7px;
+		border-radius: 999px;
+	}
+	.legend .b {
+		background: var(--before);
+	}
+	.legend .a {
+		background: var(--after);
+		margin-left: 4px;
+	}
+
+	.nav {
+		gap: 2px;
+		padding: 0 4px;
+	}
+	.nav .btn.icon {
+		font-size: 17px;
+	}
+
+	.overlay-msg {
+		position: absolute;
+		bottom: 72px;
+		left: 50%;
+		translate: -50% 0;
+		z-index: 6;
+		white-space: nowrap;
+	}
+	.hint {
+		padding: 6px 12px;
+		border-radius: 999px;
+		background: rgba(0, 0, 0, 0.55);
+		color: rgba(255, 255, 255, 0.85);
+		font-size: 13px;
+		pointer-events: none;
+	}
+	.toast {
+		position: absolute;
+		gap: 8px;
+		padding: 0 5px 0 14px;
+		animation: rise 0.25s var(--ease);
+	}
+	.toast .btn {
+		background: rgba(255, 255, 255, 0.1);
+	}
+
+	.ptag {
+		position: absolute;
+		translate: -50% calc(-100% - 12px);
+		padding: 1px 6px;
+		border-radius: 4px;
+		background: var(--accent);
+		color: var(--accent-fg);
+		font-size: 11px;
+		font-weight: 600;
+		white-space: nowrap;
+		pointer-events: none;
+	}
+	.ptag.lost,
+	.ptag.skipped {
+		background: rgba(0, 0, 0, 0.6);
+		color: rgba(255, 255, 255, 0.8);
+	}
+	.ptag.tracked {
+		background: rgba(0, 0, 0, 0.6);
+		color: var(--accent);
+	}
+	.ptag.soft {
+		background: color-mix(in oklab, var(--accent) 55%, rgba(0, 0, 0, 0.6));
+	}
+
+	.trail .halo {
+		stroke: rgba(0, 0, 0, 0.7);
+	}
+	.trail .line {
+		stroke-width: 2.5;
+		stroke-linecap: round;
+	}
+	.trail .line.halo {
+		stroke-width: 6.5;
+	}
+	.trail .dot-halo {
+		fill: rgba(0, 0, 0, 0.6);
+	}
+	.trail .dashed {
+		stroke-dasharray: 4 4;
+		stroke-linecap: butt;
+	}
+	.trail .before {
+		stroke: var(--before);
+	}
+	.trail .after {
+		stroke: var(--after);
+	}
+	.trail .dot.tracked {
+		fill: currentColor;
+		stroke: rgba(0, 0, 0, 0.6);
+		stroke-width: 1.5;
+	}
+	.trail .dot.mark {
+		stroke-width: 2.25;
+	}
+	.trail .dot.soft {
+		stroke-width: 1.5;
+		opacity: 0.55;
+	}
+	.trail .dot.lost {
+		stroke-width: 1.5;
+		stroke-dasharray: 2 2;
+		fill: rgba(0, 0, 0, 0.35);
+	}
+	.trail .before.dot {
+		color: var(--before);
+	}
+	.trail .after.dot {
+		color: var(--after);
+	}
+	.trail .flow {
+		stroke-width: 6;
+		stroke-linecap: round;
+		stroke-dasharray: 16 14;
+		opacity: 0.9;
+		filter: blur(6px);
+		animation: flow 1.6s linear infinite;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.trail .flow {
+			animation: none;
+		}
+	}
+	.trail .pt.tracked {
+		opacity: 0.85;
+	}
+	.trail .pt.soft {
+		fill-opacity: 0.4;
+	}
+	.trail .pt.lost,
+	.trail .pt.skipped,
+	.trail .pt.ghost {
+		fill: rgba(0, 0, 0, 0.5);
+		stroke-dasharray: 3 2;
+	}
+	.trail .pt.skipped {
+		stroke: var(--muted);
+		stroke-width: 2;
+	}
+	.trail .pt.lost {
+		stroke: rgba(255, 255, 255, 0.9);
+		stroke-width: 2;
+	}
+	.trail .pt.ghost {
+		stroke: var(--accent);
+		stroke-width: 2;
+	}
+	.trail .pt.ghost.blocked {
+		stroke: var(--lost);
+	}
+	.looking .patch {
+		position: relative;
+		overflow: hidden;
+		flex: none;
+	}
+	.looking .patch .pt {
+		stroke-width: 1.25;
+	}
+	.thumb.mark.listed::after {
+		background: var(--accent);
+		box-shadow: none;
+	}
+	.thumb.soft::after {
+		box-shadow: inset 0 0 0 1.5px var(--accent);
+		opacity: 0.55;
+	}
+	.thumb.soft.listed::after {
+		background: var(--accent);
+		box-shadow: none;
+	}
+	.thumb.skipped::after {
+		background: transparent;
+		box-shadow: inset 0 0 0 1.5px var(--muted);
+	}
+	.thumb.skipped.listed::after {
+		background: var(--muted);
+		box-shadow: none;
+	}
+	.btn.clear-fixed {
+		background: rgba(255, 255, 255, 0.08);
+	}
+
+	/* the Points step (00-start.html) and the folder picker */
+	.stage.marking .photo {
+		cursor: crosshair;
+	}
+	.filmstrip.empty {
+		min-height: 84px;
+	}
+	.filmstrip .thumb.pending {
+		opacity: 0.5;
+	}
+	.filmstrip .thumb.pending::after {
+		background: var(--faint);
+	}
+	.thumb .blank {
+		display: block;
+		height: 56px;
+		border-radius: 5px;
+		background: var(--surface-solid);
+	}
+	.drop {
+		display: grid;
+		place-items: center;
+		text-align: center;
+		width: min(640px, calc(100% - 80px));
+		padding: 72px 40px;
+		border: 1.5px dashed var(--faint);
+		border-radius: 20px;
+		justify-self: center;
+		align-self: center;
+	}
+	.drop h1 {
+		margin: 0 0 12px;
+		font: 600 40px / 1.05 var(--display);
+		letter-spacing: -0.03em;
+	}
+	.drop h1 b {
+		color: var(--accent);
+		font-weight: inherit;
+	}
+	.drop p {
+		margin: 0 0 28px;
+		max-width: 42ch;
+		color: var(--muted);
+		font-size: 16px;
+		line-height: 1.55;
+	}
+	.drop .btn.primary {
+		height: 40px;
+		padding: 0 18px;
+		font-size: 15px;
+	}
+	.drop form,
+	.drop .actions {
+		display: flex;
+		gap: 8px;
+		justify-content: center;
+		margin-bottom: 20px;
+	}
+	.drop .actions .btn {
+		height: 40px;
+		padding: 0 18px;
+		font-size: 15px;
+	}
+	.drop input {
+		width: min(360px, 60vw);
+		height: 40px;
+		padding: 0 14px;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		background: rgba(255, 255, 255, 0.05);
+	}
+	.drop small {
+		display: block;
+		margin-top: 20px;
+		color: var(--faint);
+		font-size: 12px;
+	}
+	.drop .sample {
+		margin-top: 16px;
+		color: var(--muted);
+		font-size: 13px;
+	}
+	.drop .sample a {
+		color: var(--accent);
+		text-decoration: none;
+	}
+
+	@media (max-width: 700px) {
+		.stage {
+			grid-template-rows: auto minmax(0, 1fr) auto;
+		}
+		.stage.marking {
+			grid-template-rows: auto minmax(0, 1fr);
+		}
+		.view {
+			padding: 0 8px;
+		}
+		.looking {
+			padding: 6px;
+			gap: 8px;
+			align-items: center;
+		}
+		.looking .patch {
+			width: 48px;
+			height: 42px;
+		}
+		.looking .label {
+			padding: 0;
+		}
+		.looking .label .more {
+			display: none;
+		}
+		.looking .btn {
+			margin-top: 2px;
+		}
+		.overlay-msg {
+			bottom: auto;
+			top: 8px;
+		}
+		.tools .btn.icon {
+			width: 32px;
+			height: 32px;
+		}
+		.thumb .blank {
+			height: 48px;
+		}
+		.drop {
+			padding: 48px 20px;
+		}
+		.drop h1 {
+			font-size: 32px;
+		}
+	}
+}
+
+@keyframes rise {
+	from {
+		opacity: 0;
+		translate: -50% 6px;
+	}
+}
+@keyframes flow {
+	from {
+		stroke-dashoffset: var(--o);
+	}
+	to {
+		stroke-dashoffset: calc(var(--o) - 30px);
+	}
+}
