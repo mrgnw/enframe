@@ -18,7 +18,13 @@ import {
 	type Format,
 	type PadChoice
 } from './clip';
-import type { Feature, SidecarPhoto } from './types';
+import type { Canvas, Feature, SidecarPhoto } from './types';
+
+/** One step of the zoom buttons, as a factor on the photo's scale. */
+const ZOOM_STEP = 1.25;
+const ZOOM_MIN = 0.05;
+const ZOOM_MAX = 50;
+const CANVAS_MAX = 16384;
 
 export type Stage = 'loading' | 'empty' | 'ready' | 'failed';
 
@@ -78,6 +84,8 @@ export class Preview {
 	fps = $state(FPS_DEFAULT);
 	pad = $state<PadChoice>('none');
 	custom = $state('#4b8bf5');
+	/** The clip's size when the user set one; null sizes it to the crop. */
+	canvas = $state<Canvas | null>(null);
 	format = $state<Format>('avif');
 	frames = $state(false);
 	features = $state.raw<Feature[]>([]);
@@ -150,6 +158,28 @@ export class Preview {
 		return baseName(this.folder);
 	}
 
+	/** The clip's size on screen: the canvas the user typed, else the crop's own. */
+	get size(): { w: number; h: number } | null {
+		if (this.canvas) return { w: this.canvas[0], h: this.canvas[1] };
+		return this.view?.clip ?? null;
+	}
+
+	private get zooms(): Record<string, number> {
+		return this.features[this.selected]?.marks.zoom ?? {};
+	}
+
+	/** The scale the frame on screen is shown at: the user's, else what tracking found. */
+	get zoom(): number {
+		const row = this.rows[this.frame];
+		return row ? (this.zooms[row.file] ?? row.scale) : 1;
+	}
+
+	/** The frame on screen has a scale of the user's. */
+	get zoomed(): boolean {
+		const row = this.rows[this.frame];
+		return !!row && this.zooms[row.file] !== undefined;
+	}
+
 	async load(): Promise<void> {
 		let loaded: Folder;
 		try {
@@ -168,14 +198,17 @@ export class Preview {
 		this.features = loaded.features;
 		this.outBases = loaded.features.map((f) => (one ? this.absFolder : `${this.absFolder}-${f.name}`));
 		this.exps = loaded.features.map(idle);
-		this.selected = Math.max(0, loaded.features.findIndex((f) => f.name === this.wanted));
+		this.selected = Math.max(
+			0,
+			loaded.features.findIndex((f) => f.name === this.wanted)
+		);
 		await this.show();
 	}
 
 	/** Draws the feature on screen: from the marking screen's sidecar when it handed one over, else by tracking. */
 	private async show(): Promise<void> {
 		this.busy = true;
-		const handed = this.pad === 'none' ? lastSidecar(this.folder, this.feature) : null;
+		const handed = this.pad === 'none' && !this.canvas ? lastSidecar(this.folder, this.feature) : null;
 		if (!handed) return this.retrack();
 		this.padded = false;
 		await this.render(handed.photos, ++this.generation);
@@ -195,7 +228,13 @@ export class Preview {
 		this.busy = true;
 		this.tracking = true;
 		try {
-			const sidecar = await trackPad(this.folder, this.features, this.feature, padArg(this.pad, this.custom));
+			const sidecar = await trackPad(
+				this.folder,
+				this.features,
+				this.feature,
+				padArg(this.pad, this.custom),
+				this.canvas
+			);
 			this.tracking = false;
 			if (mine !== this.generation) return;
 			this.padded = this.pad !== 'none';
@@ -218,7 +257,7 @@ export class Preview {
 	 * as they come; a later one replaces the frames on screen only when all are drawn.
 	 */
 	private async render(rows: SidecarPhoto[], mine: number): Promise<void> {
-		const clip = clipSize(rows);
+		const clip = clipSize(rows, this.canvas);
 		const size = previewSize(clip);
 		const next: (ImageBitmap | null)[] = rows.map(() => null);
 		const first = this.view === null;
@@ -307,6 +346,42 @@ export class Preview {
 		this.resetExport();
 	}
 
+	// ---- canvas and zoom: both change the rects, so they re-track ----
+
+	/** Sizes the clip to `w` by `h` pixels, rounded to even; null goes back to the crop's own size. */
+	async setCanvas(w: number | null, h: number | null): Promise<void> {
+		if (this.exporting) return;
+		const even = (v: number | null) =>
+			v === null || !Number.isFinite(v) ? null : Math.max(2, Math.min(CANVAS_MAX, Math.round(v / 2) * 2));
+		const [cw, ch] = [even(w), even(h)];
+		const canvas: Canvas | null = cw && ch ? [cw, ch] : null;
+		if (JSON.stringify(canvas) === JSON.stringify(this.canvas)) return;
+		this.canvas = canvas;
+		this.resetExport();
+		await this.retrack();
+	}
+
+	/** Shows the frame on screen at `scale` in the clip; null goes back to what tracking found. */
+	async setZoom(scale: number | null): Promise<void> {
+		const row = this.rows[this.frame];
+		if (!row || this.exporting) return;
+		if (scale !== null && !(Number.isFinite(scale) && scale > 0)) return;
+		const zoom = { ...this.zooms };
+		if (scale === null) delete zoom[row.file];
+		else zoom[row.file] = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(scale * 100) / 100));
+		this.features = this.features.map((f, i) => {
+			if (i !== this.selected) return f;
+			const { zoom: _, ...marks } = f.marks;
+			return { ...f, marks: Object.keys(zoom).length ? { ...marks, zoom } : marks };
+		});
+		this.resetExport();
+		await this.retrack();
+	}
+
+	stepZoom(dir: 1 | -1): Promise<void> {
+		return this.setZoom(this.zoom * ZOOM_STEP ** dir);
+	}
+
 	// ---- export ----
 
 	/** Format, pad and frames are shared, so a change clears every feature's result. */
@@ -348,6 +423,7 @@ export class Preview {
 					feature: this.features[i].name,
 					out,
 					pad: padArg(this.pad, this.custom),
+					...(this.canvas && { canvas: this.canvas }),
 					fps: this.fps,
 					...(this.frames && { frames: `${base} frames` })
 				},
@@ -362,7 +438,7 @@ export class Preview {
 					}
 				}
 			);
-			const size = clipSize(done.sidecar.photos);
+			const size = clipSize(done.sidecar.photos, this.canvas);
 			this.exps[i] = {
 				...idle(),
 				status: 'done',

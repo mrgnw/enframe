@@ -180,7 +180,7 @@ test('features: mark two features, switch, reload, export all, match the CLI', a
 	await expect(page.locator('#feature button.on')).toHaveText(RIDGE);
 	await page.click('#feature button:has-text("Feature 1")');
 	await expect(page.locator('.export .field .path')).toHaveValue(`${FOLDER}-Feature 1`);
-	await expect(page.locator('#size')).toHaveText(/^\d+×\d+$/, { timeout: 120_000 });
+	await expect(page.locator('#canvas-w')).toHaveValue(/^\d+$/, { timeout: 120_000 });
 	await page.click('#export-all');
 	await expect(page.locator('#progress')).toBeVisible();
 	await shot(page, '6-exporting-all');

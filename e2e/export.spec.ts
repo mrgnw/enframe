@@ -61,7 +61,7 @@ const rects = (rows: Row[]) => rows.map(({ file, x, y, w, h, source }) => ({ fil
 const shot = (page: Page, name: string) => page.screenshot({ path: `${SHOTS}/${name}.png` });
 
 async function drawn(page: Page) {
-	await expect(page.locator('#size')).toHaveText(/^\d+×\d+$/);
+	await expect(page.locator('#canvas-w')).toHaveValue(/^\d+$/);
 	await expect(page.locator('#transport.busy')).toHaveCount(0);
 }
 

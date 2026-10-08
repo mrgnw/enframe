@@ -1,7 +1,7 @@
 // The clip, drawn in the browser. The sidecar is the contract: each photo's row says which part of it is the
 // frame, and `placeFrame` does what the CLI's `place()` does with it, onto a canvas the size of the clip.
 
-import type { SidecarPhoto } from './types';
+import type { Canvas, SidecarPhoto } from './types';
 
 export type PadChoice = 'none' | 'black' | 'white' | 'transparent' | 'custom';
 export type Format = 'avif' | 'mp4' | 'mov' | 'webm';
@@ -21,8 +21,9 @@ const median = (values: number[]) => {
 /** Rounds half to even, as the CLI does. */
 const roundEven = (v: number) => (v % 1 === 0.5 ? 2 * Math.round(v / 2) : Math.round(v));
 
-/** The clip's size in pixels, as the CLI sizes it: the first crop at the typical photo's scale, even. */
-export function clipSize(rows: SidecarPhoto[]): { w: number; h: number } {
+/** The clip's size in pixels: the canvas when one is set, else as the CLI sizes it, the first crop at the typical photo's scale, even. */
+export function clipSize(rows: SidecarPhoto[], canvas: Canvas | null = null): { w: number; h: number } {
+	if (canvas) return { w: canvas[0], h: canvas[1] };
 	const first = rows[0];
 	if (!first.width || !first.height) throw new Error('the sidecar has no photo sizes');
 	const typical = median(rows.map((r) => r.scale));

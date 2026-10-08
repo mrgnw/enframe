@@ -111,6 +111,24 @@ function keydown(e: KeyboardEvent) {
 		<div class="island bc transport" class:busy={session.busy} id="transport">
 			<button class="btn icon" id="play" title="Play / pause (Space)" onclick={() => (session.playing = !session.playing)}>{session.playing ? '❚❚' : '▶'}</button>
 			<span class="frame"><b id="frame-n">{session.frame + 1}</b> / {n}</span>
+			<span class="lbl" title="This photo's scale in the clip, relative to the first photo. Smaller shows more of it.">zoom</span>
+			<button class="btn icon" title="Show this photo smaller" disabled={session.exporting} onclick={() => session.stepZoom(-1)}>−</button>
+			<input
+				id="zoom"
+				class="num"
+				type="number"
+				min={0.05}
+				max={50}
+				step="0.05"
+				value={+session.zoom.toFixed(2)}
+				aria-label="This photo's scale in the clip"
+				disabled={session.exporting}
+				onchange={(e) => session.setZoom(e.currentTarget.valueAsNumber)}
+			/>
+			<button class="btn icon" title="Show this photo larger" disabled={session.exporting} onclick={() => session.stepZoom(1)}>+</button>
+			{#if session.zoomed}
+				<button class="btn auto" id="zoom-auto" title="Back to the scale tracking found" disabled={session.exporting} onclick={() => session.setZoom(null)}>auto</button>
+			{/if}
 			<span class="sep"></span>
 			<label for="fps-n">fps</label>
 			<div class="seg" id="fps">
@@ -146,9 +164,39 @@ function keydown(e: KeyboardEvent) {
 					/>
 				</label>
 			</div>
-			<span class="muted size" id="size">
-				{#if session.tracking}Tracking…{:else if session.busy}Drawing {session.drawn}/{n}{:else}{session.view?.clip.w}×{session.view?.clip.h}{/if}
+			<span class="sep"></span>
+			<span class="lbl" title="The clip's size in pixels. Photos keep their scale; a larger canvas shows more around the feature.">canvas</span>
+			<span class="size" id="size">
+				<input
+					id="canvas-w"
+					class="num wide"
+					type="number"
+					min="2"
+					max="16384"
+					step="2"
+					value={session.size?.w ?? ''}
+					aria-label="Clip width in pixels"
+					disabled={session.exporting}
+					onchange={(e) => session.setCanvas(e.currentTarget.valueAsNumber, session.size?.h ?? null)}
+				/>
+				<span class="muted">×</span>
+				<input
+					id="canvas-h"
+					class="num wide"
+					type="number"
+					min="2"
+					max="16384"
+					step="2"
+					value={session.size?.h ?? ''}
+					aria-label="Clip height in pixels"
+					disabled={session.exporting}
+					onchange={(e) => session.setCanvas(session.size?.w ?? null, e.currentTarget.valueAsNumber)}
+				/>
+				{#if session.canvas}
+					<button class="btn auto" id="canvas-auto" title="Back to the crop's own size" disabled={session.exporting} onclick={() => session.setCanvas(null, null)}>auto</button>
+				{/if}
 			</span>
+			<span class="muted state" id="state">{#if session.tracking}Tracking…{:else if session.busy}Drawing {session.drawn}/{n}{/if}</span>
 			<div class="bar"></div>
 		</div>
 

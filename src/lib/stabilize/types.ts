@@ -11,8 +11,12 @@ export interface Marks {
 	/** Soft marks: placed there, but the tracker carries on from the last photo before them (`--near`). */
 	near?: Record<string, { points: Point[]; zoom?: number }>;
 	skip?: string[];
+	/** Per photo, the scale it is shown at in the clip instead of what tracking found (`--zoom`). */
+	zoom?: Record<string, number>;
 	order?: 'time' | 'name';
 }
+
+export type Canvas = [number, number];
 
 /** One thing held still, and one CLI run; the document saved as `<folder>.stabilize.json` is a list of them. */
 export interface Feature {

@@ -126,14 +126,15 @@ export class Session {
 		if (saved) {
 			// A photo deleted since the save would make the CLI reject the whole document: drop its entries.
 			const here = new Set(files);
-			const { at, near, skip } = saved;
-			const kept = (map: NonNullable<Marks['at']>) =>
+			const { at, near, skip, zoom } = saved;
+			const kept = <T>(map: Record<string, T>) =>
 				Object.fromEntries(Object.entries(map).filter(([file]) => here.has(file)));
 			this.marks = {
 				...saved,
 				...(at && { at: kept(at) }),
 				...(near && { near: kept(near) }),
-				...(skip && { skip: skip.filter((file) => here.has(file)) })
+				...(skip && { skip: skip.filter((file) => here.has(file)) }),
+				...(zoom && { zoom: kept(zoom) })
 			};
 			this.stage = 'tracking';
 		} else {

@@ -109,8 +109,25 @@
 		outline: 1px solid var(--accent);
 	}
 	.transport .size {
-		min-width: 9ch;
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
 		font-variant-numeric: tabular-nums;
+	}
+	.transport .num.wide {
+		width: 60px;
+	}
+	.transport .auto {
+		height: 26px;
+		padding: 0 8px;
+		font-size: 12px;
+	}
+	.transport .state {
+		font-size: 12px;
+		min-width: 0;
+	}
+	.transport .state:empty {
+		display: none;
 	}
 	.swatches {
 		display: flex;
