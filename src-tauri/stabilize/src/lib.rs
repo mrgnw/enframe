@@ -78,6 +78,8 @@ pub struct Marks {
 	pub skip: Vec<String>,
 	/// `PHOTO=x,y[/x,y]...[@zoom]` per soft-marked photo: placed there, but not tracked from (`--near`).
 	pub near: Vec<String>,
+	/// `PHOTO=scale` per photo shown at that scale in the clip, whatever tracking found (`--zoom`).
+	pub zoom: Vec<String>,
 }
 
 impl Marks {
@@ -101,6 +103,12 @@ impl Marks {
 	/// Skips the photo with this file name.
 	pub fn with_skip(mut self, photo: &str) -> Marks {
 		self.skip.push(photo.to_string());
+		self
+	}
+
+	/// Shows the photo with this file name at `scale` in the clip.
+	pub fn with_zoom(mut self, photo: &str, scale: f64) -> Marks {
+		self.zoom.push(format!("{photo}={scale}"));
 		self
 	}
 }
@@ -148,6 +156,9 @@ pub struct Job {
 	/// Padding where a crop leaves its photo: `transparent`, `black`, `white` or `#rrggbb` (`--pad`).
 	/// Without it, every crop stays inside its photo.
 	pub pad: Option<String>,
+	/// The clip's width and height in pixels (`--canvas WxH`), both even. Without it, the clip is the
+	/// crop at the typical photo's scale.
+	pub canvas: Option<(u32, u32)>,
 	/// The feature cache's folder (`--cache`); the platform's cache folder when not given.
 	pub cache: Option<PathBuf>,
 	/// Neither read nor write the feature cache (`--no-cache`).
@@ -344,6 +355,47 @@ fn read_skips(skips: &[String], paths: &[PathBuf], marks: &[Option<Mark>]) -> Re
 		flags[i] = true;
 	}
 	Ok(flags)
+}
+
+/// Every `--zoom PHOTO=scale`, by photo index: the scale the photo is shown at in the clip.
+fn read_zooms(zooms: &[String], paths: &[PathBuf]) -> Result<Vec<Option<f64>>, String> {
+	let names: Vec<String> = paths.iter().map(|p| file_name(p)).collect();
+	let mut scales = vec![None; paths.len()];
+	for zoom in zooms {
+		let Some((name, value)) = zoom.split_once('=').filter(|(n, _)| names.iter().any(|m| m == n)) else {
+			return Err(format!(
+				"--zoom {zoom}: expected PHOTO=scale with PHOTO one of the photo file names"
+			));
+		};
+		let i = names.iter().position(|m| m == name).unwrap();
+		let scale: f64 =
+			value.trim().parse().map_err(|_| format!("--zoom {name}: {value} is not a number"))?;
+		if scale.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
+			return Err(format!("--zoom {name}: the scale must be positive"));
+		}
+		if scales[i].is_some() {
+			return Err(format!("--zoom {name}: given twice"));
+		}
+		scales[i] = Some(scale);
+	}
+	Ok(scales)
+}
+
+/// `WxH`, both even and positive.
+pub fn parse_canvas(text: &str) -> Result<(u32, u32), String> {
+	let bad = || format!("--canvas {text}: expected WIDTHxHEIGHT, like 1920x1080");
+	let (w, h) = text.split_once('x').ok_or_else(bad)?;
+	let canvas = (w.parse().map_err(|_| bad())?, h.parse().map_err(|_| bad())?);
+	check_canvas(canvas)?;
+	Ok(canvas)
+}
+
+/// Even sizes keep yuv420p happy.
+pub fn check_canvas((w, h): (u32, u32)) -> Result<(), String> {
+	if w == 0 || h == 0 || w % 2 != 0 || h % 2 != 0 {
+		return Err(format!("--canvas {w}x{h}: width and height must be even and positive"));
+	}
+	Ok(())
 }
 
 fn parse_fill(value: &str) -> Result<Vec<u8>, String> {
@@ -843,7 +895,7 @@ pub struct Tracked {
 pub fn track(job: &Job, log: &mut dyn FnMut(&str)) -> Result<Tracked, String> {
 	let output = job.output.as_ref();
 	let clip = output.is_some_and(|o| suffix(&o.out) != "json");
-	let (paths, sizes, marks, skips, focals, fill, k, resources, cache, profiles) =
+	let (paths, sizes, marks, skips, zooms, focals, fill, k, resources, cache, profiles) =
 		step("check input and plan resources", || -> Result<_, String> {
 			let (paths, focals, order) = order_photos(job.photos.clone(), job.order)?;
 			log(&format!("order: {order}"));
@@ -868,6 +920,10 @@ pub fn track(job: &Job, log: &mut dyn FnMut(&str)) -> Result<Tracked, String> {
 			// track() places a skipped photo with a mark at it, without tracking from it: a soft mark.
 			let skips = read_skips(&job.marks.skip, &paths, &marks)?;
 			let skips: Vec<bool> = skips.into_iter().zip(soft).map(|(skip, soft)| skip || soft).collect();
+			let zooms = read_zooms(&job.marks.zoom, &paths)?;
+			if let Some(canvas) = job.canvas {
+				check_canvas(canvas)?;
+			}
 			if let Some(dir) = output.and_then(|o| o.frames.as_ref()) {
 				std::fs::create_dir_all(dir).map_err(|e| format!("--frames {}: {e}", dir.display()))?;
 				let has_png = std::fs::read_dir(dir).unwrap().flatten().any(|e| suffix(&e.path()) == "png");
@@ -908,7 +964,7 @@ pub fn track(job: &Job, log: &mut dyn FnMut(&str)) -> Result<Tracked, String> {
 				Some(cache::FeatureCache::new(root)?)
 			};
 			let profiles = if clip { read_profiles(&paths)? } else { vec![] };
-			Ok((paths, sizes, marks, skips, focals, fill, k, resources, cache, profiles))
+			Ok((paths, sizes, marks, skips, zooms, focals, fill, k, resources, cache, profiles))
 		})?;
 	let keep = clip.then(|| Keep::new(resources.keep_bytes));
 	let path = step("decode, find features, track", || {
@@ -941,8 +997,13 @@ pub fn track(job: &Job, log: &mut dyn FnMut(&str)) -> Result<Tracked, String> {
 		})
 	})?;
 	let (path, sources, size) = step("plan the crop", || -> Result<_, String> {
-		let path = track::fill_lost(path, &sizes)?;
-		let (sources, size) = track::plan(&path, &sizes, fill.is_some())?;
+		let mut path = track::fill_lost(path, &sizes)?;
+		for (hit, zoom) in path.iter_mut().zip(&zooms) {
+			if let Some(scale) = zoom {
+				hit.scale = *scale;
+			}
+		}
+		let (sources, size) = track::plan(&path, &sizes, fill.is_some(), job.canvas)?;
 		Ok((path, sources, size))
 	})?;
 	for ((p, &(fw, fh)), hit) in paths.iter().zip(&sizes).zip(&path) {
@@ -1201,6 +1262,21 @@ mod tests {
 		assert!(parse_points("--points", "1,2@0").is_err(), "zoom must be positive");
 		assert!(parse_points("--points", "1,2@-1").is_err(), "zoom must be positive");
 		assert!(parse_points("--points", "1,2@x").is_err(), "@ without a number");
+	}
+
+	#[test]
+	fn zooms_and_canvas_parse_and_refuse_bad_input() {
+		let paths = [PathBuf::from("a.avif"), PathBuf::from("b.avif")];
+		assert_eq!(read_zooms(&["b.avif=0.5".into()], &paths).unwrap(), vec![None, Some(0.5)]);
+		assert_eq!(read_zooms(&["a.avif=2".into()], &paths).unwrap(), vec![Some(2.0), None]);
+		for bad in ["c.avif=1", "a.avif", "a.avif=0", "a.avif=-1", "a.avif=x"] {
+			assert!(read_zooms(&[bad.into()], &paths).is_err(), "{bad}");
+		}
+		assert!(read_zooms(&["a.avif=1".into(), "a.avif=2".into()], &paths).is_err(), "twice");
+		assert_eq!(parse_canvas("1920x1080"), Ok((1920, 1080)));
+		for bad in ["1920", "1920x", "x1080", "1921x1080", "1920x0", "-2x2", "1920X1080"] {
+			assert!(parse_canvas(bad).is_err(), "{bad}");
+		}
 	}
 
 	#[test]

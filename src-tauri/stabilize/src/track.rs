@@ -671,9 +671,10 @@ fn median(values: &[f64]) -> f64 {
 
 pub type Rect = (f64, f64, f64, f64);
 
-/// Same-size crop holding every anchor at one spot, in first-photo scale. Unpadded, the largest crop
-/// every photo fills; padded, each side takes the median margin.
-fn crop_rects(sizes: &[(f64, f64)], anchors: &[(f64, f64)], pad: bool) -> Result<Vec<Rect>, String> {
+/// The frame every photo is cut to, in first-photo scale: the anchor sits `left` from its left edge and
+/// `top` from its top edge, and it is `width` by `height`. Unpadded, the largest frame every photo fills;
+/// padded, each side takes the median margin.
+fn crop_frame(sizes: &[(f64, f64)], anchors: &[(f64, f64)], pad: bool) -> Result<Rect, String> {
 	let pick = |values: Vec<f64>| {
 		if pad { median(&values) } else { values.into_iter().fold(f64::INFINITY, f64::min) }
 	};
@@ -689,31 +690,52 @@ fn crop_rects(sizes: &[(f64, f64)], anchors: &[(f64, f64)], pad: bool) -> Result
 			"the anchor wanders too far: only a {cw}x{ch} crop fits every photo; mark lost photos or use --pad"
 		));
 	}
-	let rects: Vec<Rect> = anchors.iter().map(|&(x, y)| (x - left, y - top, cw as f64, ch as f64)).collect();
-	if !pad {
-		for (&(fw, fh), &(rx, ry, rw, rh)) in sizes.iter().zip(&rects) {
-			assert!(-1e-6 <= rx && -1e-6 <= ry && rx + rw <= fw + 1e-6 && ry + rh <= fh + 1e-6);
-		}
-	}
-	Ok(rects)
+	Ok((left, top, cw as f64, ch as f64))
 }
 
-/// The crop of each photo in its own pixels, and the clip size.
-pub fn plan(path: &[Hit], sizes: &[(u32, u32)], pad: bool) -> Result<(Vec<Rect>, (u32, u32)), String> {
+/// The first photo, in first-photo scale, that the frame leaves: the rect overhangs its edge.
+fn overhangs(sizes: &[(f64, f64)], rects: &[Rect]) -> Option<usize> {
+	sizes.iter().zip(rects).position(|(&(fw, fh), &(rx, ry, rw, rh))| {
+		!(-1e-6 <= rx && -1e-6 <= ry && rx + rw <= fw + 1e-6 && ry + rh <= fh + 1e-6)
+	})
+}
+
+/// The crop of each photo in its own pixels, and the clip size: the frame at the typical photo's scale,
+/// so one zoomed-out shot doesn't shrink the rest, or `canvas` pixels. A canvas keeps that scale and the
+/// anchor's place in the frame, and shows more or less around it.
+pub fn plan(
+	path: &[Hit],
+	sizes: &[(u32, u32)],
+	pad: bool,
+	canvas: Option<(u32, u32)>,
+) -> Result<(Vec<Rect>, (u32, u32)), String> {
 	let scaled_sizes: Vec<(f64, f64)> =
 		sizes.iter().zip(path).map(|(&(w, h), hit)| (w as f64 / hit.scale, h as f64 / hit.scale)).collect();
 	let anchors: Vec<(f64, f64)> = path.iter().map(|hit| (hit.x / hit.scale, hit.y / hit.scale)).collect();
-	let rects = crop_rects(&scaled_sizes, &anchors, pad)?;
+	let (left, top, cw, ch) = crop_frame(&scaled_sizes, &anchors, pad)?;
+	let typical = median(&path.iter().map(|h| h.scale).collect::<Vec<_>>());
+	let even = |v: f64| ((v * typical / 2.0).round_ties_even() * 2.0) as u32;
+	let (left, top, cw, ch, size) = match canvas {
+		None => (left, top, cw, ch, (even(cw), even(ch))),
+		Some((w, h)) => {
+			let (fw, fh) = (w as f64 / typical, h as f64 / typical);
+			(left * fw / cw, top * fh / ch, fw, fh, (w, h))
+		}
+	};
+	let rects: Vec<Rect> = anchors.iter().map(|&(x, y)| (x - left, y - top, cw, ch)).collect();
+	if !pad && let Some(i) = overhangs(&scaled_sizes, &rects) {
+		let Some((w, h)) = canvas else { unreachable!("the unpadded frame fits every photo") };
+		return Err(format!(
+			"--canvas {w}x{h}: photo {} does not fill it; use --pad or a smaller canvas",
+			i + 1
+		));
+	}
 	let sources = rects
 		.iter()
 		.zip(path)
 		.map(|(&(x, y, w, h), hit)| (x * hit.scale, y * hit.scale, w * hit.scale, h * hit.scale))
 		.collect();
-	// Size the clip at the typical photo's scale, so one zoomed-out shot doesn't shrink the rest.
-	let typical = median(&path.iter().map(|h| h.scale).collect::<Vec<_>>());
-	let (cw, ch) = (rects[0].2, rects[0].3);
-	let even = |v: f64| ((v * typical / 2.0).round_ties_even() * 2.0) as u32;
-	Ok((sources, (even(cw), even(ch))))
+	Ok((sources, size))
 }
 
 #[cfg(test)]
@@ -937,6 +959,30 @@ mod tests {
 			(10.0, 20.0, 1.5, Source::Lost)
 		);
 		assert_eq!(filled[1].points, vec![(8.5, 20.0), (11.5, 20.0)]);
+	}
+
+	#[test]
+	fn a_canvas_keeps_the_scale_and_the_anchors_place() {
+		let hit =
+			|x, y, scale| Hit { x, y, scale, source: Source::Tracked, note: String::new(), points: vec![] };
+		// Two 200x200 photos; in first-photo scale the second is 100x100 with its anchor at the same (80, 40).
+		let path = vec![hit(80.0, 40.0, 1.0), hit(160.0, 80.0, 2.0)];
+		let sizes = [(200, 200), (200, 200)];
+		let (auto, size) = plan(&path, &sizes, false, None).unwrap();
+		assert_eq!(size, (150, 150), "a 100x100 frame at the typical scale, 1.5");
+		assert_eq!(auto[0], (0.0, 0.0, 100.0, 100.0));
+		// A 60x30 canvas is 40x20 at scale 1.5, with the anchor still 80% in from the left and 40% from the top.
+		let (rects, size) = plan(&path, &sizes, false, Some((60, 30))).unwrap();
+		assert_eq!(size, (60, 30));
+		assert_eq!(rects[0], (48.0, 32.0, 40.0, 20.0));
+		assert_eq!(
+			rects[1],
+			(96.0, 64.0, 80.0, 40.0),
+			"the second photo, at scale 2, gives twice the pixels"
+		);
+		let err = plan(&path, &sizes, false, Some((400, 30))).unwrap_err();
+		assert!(err.contains("--canvas 400x30") && err.contains("--pad"), "{err}");
+		assert_eq!(plan(&path, &sizes, true, Some((400, 30))).unwrap().1, (400, 30));
 	}
 
 	/// `count` keypoints on a ring at `distance` around (cx, cy).

@@ -392,7 +392,7 @@ fn retrack_bench() {
 			&sizes,
 		)
 		.unwrap();
-		std::hint::black_box(crate::track::plan(&path, &sizes, true).unwrap());
+		std::hint::black_box(crate::track::plan(&path, &sizes, true, None).unwrap());
 		best = best.min(started.elapsed());
 	}
 	println!("retrack_bench: track + plan of {} photos from features in memory: {best:?}", paths.len());
