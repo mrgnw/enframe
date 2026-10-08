@@ -2,15 +2,21 @@ use crate::{ApiResult, AppState, blocking, denied, text};
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
+use axum::response::sse::{Event, Sse};
+use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
+use std::convert::Infallible;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
-use tokio::process::Command;
-use tokio::sync::oneshot;
+use std::task::{Context, Poll};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::{Child, Command};
+use tokio::sync::{mpsc, oneshot};
 
 const PHOTO_EXTENSIONS: [&str; 7] = ["avif", "heic", "heif", "jxl", "jpg", "jpeg", "png"];
 const SUPERSEDED: &str = "superseded by a newer run for this folder";
@@ -335,7 +341,9 @@ impl Pinframe {
         }
     }
 
-    async fn run(&self, what: &str, job: &Job) -> ApiResult<String> {
+    // Claims the folder and spawns pinframe. A request superseded before this point
+    // answers 409 like any other.
+    async fn spawn(&self, job: &Job) -> ApiResult<Running> {
         self.configured()?;
         let ticket = self.claim(&job.folder);
         let folder = job.folder.clone();
@@ -344,23 +352,81 @@ impl Pinframe {
             .map_err(|(_, e)| bad(e))?;
         let document = document_text(&job.folder, &job.marks, &photos).map_err(crate::fail)?;
         let (child, cancelled) = self.start(job, ticket, &document, &photos)?;
-        let output = tokio::select! {
-            output = child.wait_with_output() => output.map_err(crate::fail)?,
-            _ = cancelled => return Err(superseded()),
+        Ok(Running {
+            child,
+            cancelled,
+            ticket,
+        })
+    }
+
+    // Hands every line pinframe prints to `on_line` and answers with its stdout. Dropping
+    // the future kills the run.
+    async fn wait(
+        &self,
+        what: &str,
+        folder: &Path,
+        mut running: Running,
+        mut on_line: impl FnMut(&str),
+    ) -> ApiResult<String> {
+        let stdout = running
+            .child
+            .stdout
+            .take()
+            .ok_or_else(|| crate::fail("no stdout"))?;
+        let stderr = running
+            .child
+            .stderr
+            .take()
+            .ok_or_else(|| crate::fail("no stderr"))?;
+        let mut stdout = BufReader::new(stdout).lines();
+        let mut stderr = BufReader::new(stderr).lines();
+        let mut printed = String::new();
+        let mut detail = None;
+        let (mut out_open, mut err_open) = (true, true);
+        while out_open || err_open {
+            tokio::select! {
+                line = stdout.next_line(), if out_open => match line.map_err(crate::fail)? {
+                    Some(line) => {
+                        on_line(&line);
+                        printed.push_str(&line);
+                        printed.push('\n');
+                    }
+                    None => out_open = false,
+                },
+                line = stderr.next_line(), if err_open => match line.map_err(crate::fail)? {
+                    Some(line) => {
+                        on_line(&line);
+                        if !line.trim().is_empty() {
+                            detail = Some(line);
+                        }
+                    }
+                    None => err_open = false,
+                },
+                _ = &mut running.cancelled => return Err(superseded()),
+            }
+        }
+        let status = tokio::select! {
+            status = running.child.wait() => status.map_err(crate::fail)?,
+            _ = &mut running.cancelled => return Err(superseded()),
         };
-        self.finish(&job.folder, ticket)?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let detail = stderr
-                .lines()
-                .rev()
-                .find(|line| !line.trim().is_empty())
-                .map(str::to_string)
-                .unwrap_or_else(|| output.status.to_string());
+        self.finish(folder, running.ticket)?;
+        if !status.success() {
+            let detail = detail.unwrap_or_else(|| status.to_string());
             return Err(crate::fail(format!("{what}: {detail}")));
         }
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+        Ok(printed)
     }
+
+    async fn run(&self, what: &str, job: &Job) -> ApiResult<String> {
+        let running = self.spawn(job).await?;
+        self.wait(what, &job.folder, running, |_| {}).await
+    }
+}
+
+struct Running {
+    child: Child,
+    cancelled: oneshot::Receiver<()>,
+    ticket: u64,
 }
 
 fn parse_args(body: Value) -> ApiResult<RunArgs> {
@@ -459,10 +525,35 @@ fn export_out(state: &AppState, folder: &Path, out: Option<String>) -> ApiResult
     Ok(checked)
 }
 
-pub async fn export(
-    State(state): State<AppState>,
-    Json(body): Json<Value>,
-) -> ApiResult<Json<Value>> {
+// ponytail: unbounded, since pinframe prints a line per photo and a few more.
+struct Events(mpsc::UnboundedReceiver<Event>);
+
+impl futures_core::Stream for Events {
+    type Item = Result<Event, Infallible>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.0.poll_recv(cx).map(|event| event.map(Ok))
+    }
+}
+
+fn event(name: &str, data: Value) -> Event {
+    Event::default().event(name).data(data.to_string())
+}
+
+fn ending(result: ApiResult<Value>, out: &Path) -> Event {
+    match result {
+        Ok(sidecar) => event("done", json!({ "out": out, "sidecar": sidecar })),
+        Err((status, error)) if status == StatusCode::CONFLICT => {
+            event("error", json!({ "error": error, "superseded": true }))
+        }
+        Err((_, error)) => event("error", json!({ "error": error })),
+    }
+}
+
+// Bad requests and a run superseded before it starts answer with a status; once pinframe
+// runs, the answer is server-sent events: `progress` {line} per line it prints, then
+// `done` {out, sidecar} or `error` {error, superseded?}. A client that leaves stops it.
+pub async fn export(State(state): State<AppState>, Json(body): Json<Value>) -> ApiResult<Response> {
     let mut args = parse_args(body)?;
     let marks = parse_marks(std::mem::take(&mut args.marks))?;
     let (folder, document) = confine_folder(&state, &args.folder)?;
@@ -475,9 +566,54 @@ pub async fn export(
         out: out.clone(),
         extra,
     };
-    let stdout = state.pinframe.run("export", &job).await?;
-    let sidecar = read_sidecar(&out.with_extension("json"), &stdout).map_err(crate::fail)?;
-    Ok(Json(json!({ "out": out, "sidecar": sidecar })))
+    let running = state.pinframe.spawn(&job).await?;
+    let (events, receiver) = mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        let progress = events.clone();
+        let run = state.pinframe.wait("export", &job.folder, running, |line| {
+            let _ = progress.send(event("progress", json!({ "line": line })));
+        });
+        let result = tokio::select! {
+            result = run => result,
+            _ = events.closed() => return,
+        };
+        let sidecar = result.and_then(|stdout| {
+            read_sidecar(&out.with_extension("json"), &stdout).map_err(crate::fail)
+        });
+        let _ = events.send(ending(sidecar, &out));
+    });
+    Ok(Sse::new(Events(receiver)).into_response())
+}
+
+#[derive(Deserialize)]
+struct RevealArgs {
+    path: String,
+}
+
+// Shows a file in Finder on the machine serve runs on.
+pub async fn reveal(
+    State(state): State<AppState>,
+    Json(body): Json<Value>,
+) -> ApiResult<StatusCode> {
+    if !cfg!(target_os = "macos") {
+        return Err((
+            StatusCode::NOT_IMPLEMENTED,
+            "reveal needs serve to run on macOS".to_string(),
+        ));
+    }
+    let args: RevealArgs =
+        serde_json::from_value(body).map_err(|e| bad(format!("bad arguments: {e}")))?;
+    let path = state.roots.check_read(&args.path).map_err(denied)?;
+    let status = Command::new("open")
+        .arg("-R")
+        .arg(&path)
+        .status()
+        .await
+        .map_err(crate::fail)?;
+    if !status.success() {
+        return Err(crate::fail(format!("open -R: {status}")));
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[cfg(test)]

@@ -657,6 +657,7 @@ fn router(state: AppState, web: &FsPath) -> Router {
         .route("/api/upload", post(upload))
         .route("/api/pinframe/track", post(pinframe::track))
         .route("/api/pinframe/export", post(pinframe::export))
+        .route("/api/pinframe/reveal", post(pinframe::reveal))
         .route("/api/{command}", post(api))
         .route("/img/{*path}", get(img))
         .fallback_service(spa)
@@ -1015,8 +1016,9 @@ while [ $# -gt 0 ]; do
     shift
 done
 sleep 0.4
-printf '{"run":"%s","clip":null,"photos":[{"file":"a.png"}]}' "$points" > "$out"
+printf '{"run":"%s","clip":null,"photos":[{"file":"a.png"}]}' "$points" > "${out%.*}.json"
 echo "a.png  10x20  anchor 1,2  scale 1.00  your mark"
+echo "clip 10x20"
 "#;
 
     impl Sandbox {
@@ -1193,6 +1195,98 @@ echo "a.png  10x20  anchor 1,2  scale 1.00  your mark"
         assert_eq!(last.0, StatusCode::OK, "{}", last.1);
         let sidecar: Value = serde_json::from_str(&last.1).unwrap();
         assert_eq!(sidecar["run"], "5,5");
+    }
+
+    fn export_request(folder: &FsPath, marks: &str) -> Request {
+        let body = format!(
+            "{{\"folder\":{:?},\"marks\":{marks},\"out\":{:?}}}",
+            text(folder.to_path_buf()),
+            format!("{}.avif", folder.display())
+        );
+        post_json("/api/pinframe/export", &body)
+    }
+
+    #[tokio::test]
+    async fn export_streams_each_line_then_the_result() {
+        let sandbox = Sandbox::new("pinframe_export");
+        let app = sandbox.app_with(Some(sandbox.fake_pinframe()));
+        let folder = sandbox.series();
+
+        let (status, body) = respond(app, export_request(&folder, "{\"points\":[[3,3]]}")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let progress = body.find("event: progress\ndata: {\"line\":\"a.png  10x20");
+        let clip = body.find("event: progress\ndata: {\"line\":\"clip 10x20\"}");
+        let done = body.find("event: done\n");
+        assert!(
+            progress < clip && clip < done && progress.is_some(),
+            "{body}"
+        );
+        let data = body[done.unwrap()..].lines().nth(1).unwrap();
+        let done: Value = serde_json::from_str(data.strip_prefix("data: ").unwrap()).unwrap();
+        assert_eq!(done["out"], format!("{}.avif", folder.display()));
+        assert_eq!(done["sidecar"]["run"], "3,3");
+        assert_eq!(done["sidecar"]["photos"][0]["width"], 10);
+    }
+
+    #[tokio::test]
+    async fn a_newer_run_ends_the_export_stream_with_superseded() {
+        let sandbox = Sandbox::new("pinframe_export_supersede");
+        let app = sandbox.app_with(Some(sandbox.fake_pinframe()));
+        let folder = sandbox.series();
+
+        let first = tokio::spawn(respond(
+            app.clone(),
+            export_request(&folder, "{\"points\":[[1,1]]}"),
+        ));
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let (status, body) = respond(app, track_request(&folder, "{\"points\":[[2,2]]}")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+
+        let (status, body) = first.await.unwrap();
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert!(body.contains("event: error\n"), "{body}");
+        assert!(body.contains("\"superseded\":true"), "{body}");
+        assert!(!body.contains("event: done"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn reveal_only_shows_files_inside_the_read_roots() {
+        let sandbox = Sandbox::new("pinframe_reveal");
+        let app = sandbox.app();
+        let outside = text(std::env::temp_dir().canonicalize().unwrap());
+        let expected = if cfg!(target_os = "macos") {
+            [StatusCode::BAD_REQUEST, StatusCode::FORBIDDEN]
+        } else {
+            [StatusCode::NOT_IMPLEMENTED; 2]
+        };
+        let requests = ["{}".to_string(), format!("{{\"path\":{outside:?}}}")];
+        for (body, expected) in requests.iter().zip(expected) {
+            let (status, error) =
+                respond(app.clone(), post_json("/api/pinframe/reveal", body)).await;
+            assert_eq!(status, expected, "{body}: {error}");
+        }
+    }
+
+    // The done state shows the clip and links its sidecar through /img.
+    #[tokio::test]
+    async fn img_serves_a_clip_and_its_sidecar_with_their_types() {
+        let sandbox = Sandbox::new("pinframe_clip");
+        let app = sandbox.app();
+        for (name, kind) in [
+            ("clip.avif", "image/avif"),
+            ("clip.mp4", "video/mp4"),
+            ("clip.webm", "video/webm"),
+            ("clip.mov", "video/quicktime"),
+            ("clip.json", "application/json"),
+        ] {
+            let path = sandbox.base.join(name);
+            std::fs::write(&path, b"x").unwrap();
+            let uri = format!("/img/{}", text(path).trim_start_matches('/'));
+            let request = Request::builder().uri(uri).body(Body::empty()).unwrap();
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{name}");
+            assert_eq!(response.headers()[header::CONTENT_TYPE], kind, "{name}");
+        }
     }
 
     const PINFRAME: &str = "/Users/user/dev/pinframe/rust/target/release/pinframe";

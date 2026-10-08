@@ -206,12 +206,20 @@ bun run serve --pinframe "$PINFRAME"
   `<folder>.pin.json`, tracks without rendering, using pinframe's feature cache, and
   answers with the sidecar: each photo's crop, plus its size and the tracker's note.
 - `POST /api/pinframe/export` `{folder, marks, out?, pad?, fps?, frames?, vf?}` renders
-  the clip, `<folder>.avif` by default, and answers `{out, sidecar}`.
+  the clip, `<folder>.avif` by default, and answers with server-sent events: `progress`
+  `{line}` for each line pinframe prints, then `done` `{out, sidecar}` or `error`
+  `{error, superseded?}`. A bad request still answers 400 or 403 before anything runs.
+  Closing the connection stops the run.
+- `POST /api/pinframe/reveal` `{path}` shows a file inside a read root in Finder
+  (`open -R`). Off macOS it answers 501.
+
+The finished clip and its `.json` sidecar are read through `/img/{path}`, like photos.
 
 `marks` is `{points, at?, near?, skip?, order?}`, the CLI's `--points`, `--at`, `--near`,
 `--skip` and `--order`. The folder must be inside a read root, and the document, the clip
 and `frames` inside a write root. One run per folder: a newer request cancels the one in
-flight, which answers 409, so the newest mark is the only one that gets a result.
+flight, which answers 409 (an export already streaming ends with `error`
+`{superseded: true}` instead), so the newest mark is the only one that gets a result.
 
 #### On a Linux host
 
