@@ -1,6 +1,6 @@
 # E4 · Preview and export screen in enframe
 
-Depends on: E3 · Model: Sonnet · Size: M
+Depends on: E3 · Model: Opus · Size: M
 Issue: https://github.com/mrgnw/enframe/issues/8
 Touches: the enframe repo
 
