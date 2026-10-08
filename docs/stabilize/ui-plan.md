@@ -177,6 +177,8 @@ Controls, all in one island:
 
 - **Pad**: none, black, white, transparent, custom colour. "None" shrinks the crop (the CLI default); any other value overhangs. Transparent is drawn on a checkerboard.
 - **fps**: 2, 4, 8, 12, or a number field. Default 4.
+- **Zoom**: the frame on screen's scale in the clip, a stepper and a field, with "auto" to go back to what tracking found (`--zoom`). Saved in the document's marks. For a photo the tracker magnified because its feature was small.
+- **Canvas**: the clip's width and height, typed in place of the size readout, with "auto" for the crop's own size (`--canvas`). Photos keep their scale; a larger canvas shows more around the feature, and needs a pad.
 - **Format**: `.avif` (default; keeps transparency, plays in a browser as an image), `.mp4`, `.mov` (ProRes 4444 when transparent), `.webm`. The format list greys out formats that cannot carry transparency when pad is transparent, with the reason on hover.
 - **Also save PNG frames** checkbox (`--frames`).
 - **Out**: a path field defaulting to `<folder>/<folder>.avif`. The sidecar is written beside it; the UI says so in one line.

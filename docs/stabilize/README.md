@@ -52,6 +52,12 @@ By default the crop shrinks until every photo fills it. `--pad` lets it overhang
 src-tauri/target/release/stabilize "samples/train clouds"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --points 535,985/805,985/535,1075/805,1075 --pad transparent --out out/portrait.avif
 ```
 
+Every photo is scaled so the feature stays the same size, so a photo where the feature is small is magnified and shows only a patch of itself. `--zoom PHOTO=scale` shows that photo at `scale` (relative to the first photo, like a mark's `@zoom`) whatever tracking found; tracking and the estimates for lost photos are unchanged. `--canvas WxH` sets the clip's size in pixels, both even: photos keep their scale and the anchor keeps its place in the frame, so a larger canvas shows more around the feature. A canvas larger than the crop every photo fills needs `--pad`:
+
+```sh
+src-tauri/target/release/stabilize "samples/train clouds"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --points 535,985/805,985/535,1075/805,1075 --zoom IMG_4720.avif=1.5 --canvas 1536x1536 --pad black --out out/canvas.avif
+```
+
 The extension of `--out` picks the format. The default, `.avif`, is an animated AVIF that keeps transparency and plays in browsers as an image. On the 57-photo train clouds clip it encodes as fast as ProRes, and the file is 9 MB instead of 109 MB. Through ffmpeg, `.mp4` writes H.264, `.mov` writes ProRes 4444 when transparent (for video editors), and `.webm` writes VP9.
 
 Colour stays as the photos have it. Stabilize keeps their pixel values and labels the clip, the `--frames` PNGs and the ffmpeg outputs with their colour profile, so the Display P3 photos from an iPhone stay Display P3. A set mixing sRGB and Display P3 photos becomes Display P3: the sRGB photos are converted, which loses nothing, since Display P3 holds every sRGB colour. Unlabelled photos count as sRGB. A photo with any other profile, such as Adobe RGB, stops the run with its name.

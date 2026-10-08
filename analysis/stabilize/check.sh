@@ -36,6 +36,7 @@ check 'cargo test' cargo test --release --manifest-path src-tauri/Cargo.toml -p 
 check 'README: heart.avif' $P "$G"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --out $OUT/heart.avif
 check 'README: turbines.avif' $P "${TURBINES[@]}" "${MARKS[@]}" --out $OUT/turbines.avif
 check 'README: padded portrait.avif' $P "$G"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --points 535,985/805,985/535,1075/805,1075 --pad transparent --out $OUT/portrait.avif
+check 'README: --zoom and --canvas' $P "$G"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --points 535,985/805,985/535,1075/805,1075 --zoom IMG_4720.avif=1.5 --canvas 1536x1536 --pad black --out $OUT/canvas.avif
 check 'README: JSON only' $P "$G"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --out $OUT/track.json
 check 'README: --cache' $P "$G"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --cache $OUT/cache --out $OUT/cached.json
 check 'README: .mp4 with --vf' $P "${TURBINES[@]}" "${MARKS[@]}" --vf deflicker,tpad=stop_mode=clone:stop_duration=2 --out $OUT/turbines.mp4
