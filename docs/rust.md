@@ -314,9 +314,21 @@ cd rust && cargo test --release -- --include-ignored --test-threads=1 --nocaptur
 - **Platforms.** The Rust code is portable (no intrinsics). Free-memory and core-count queries are macOS-only (`host_statistics64`) and need Linux and Windows versions. The OpenCV backend would need OpenCV built for every target, which is the main argument for the own port or kornia.
 - **The web build** stays without pinframe, as `docs/wasm.md` concluded. The Rust core could compile to WASM later (no threads assumed in the algorithm), but libavif would need an Emscripten build, and nothing was measured here.
 
+## Library
+
+The crate is a library plus the `pinframe` CLI over it, so `enframe-serve` can track in-process (`cargo doc --open` in `rust/` has the details):
+
+- `pinframe::track(&job, &mut log)` checks a `Job` (the photos, their `Marks` and the CLI's other options, typed), tracks and plans the crop, and returns a `Tracked`. A job with no `output` only tracks: nothing is written but feature cache entries.
+- `Tracked::sidecar(run, clip)` gives the `.json` sidecar's data; `Sidecar::to_json()` its bytes. `Tracked::write(&mut log)` renders and publishes the job's clip and sidecar, as the CLI does.
+- Errors are the CLI's messages, as `String`s; nothing exits the process. Progress lines go to `log`, which the CLI prints.
+- Marks are kept in the CLI's text form so they are checked in the same order with the same messages; `Marks::new(points).with_at(photo, &mark).with_skip(photo)` builds them from points, and the text reads back to the same `f64`s.
+
+Measured on a 4-core Linux container (2026-10-08): an in-process re-track of the 57 train clouds photos with a warm feature cache takes 1.05 s, 1.02 s of it matching; the same CLI run takes 1.1 to 1.3 s. The 145 ms above is the M4 Pro's track and plan from features in memory (`retrack_bench` in `rust/src/checks.rs`).
+
 ## Files
 
-- `rust/src/main.rs`: CLI (same flags as `anchor.py` except box drawing), input checks, resource planning, pipeline, outputs.
+- `rust/src/lib.rs`: the library: input checks, resource planning, pipeline, outputs.
+- `rust/src/main.rs`: the CLI (same flags as `anchor.py` except box drawing), a thin layer over the library.
 - `rust/src/avif.rs`: libavif decode and encode, libyuv-exact YUV to RGB, RGB to YUV for the encoder.
 - `rust/src/colour.rs`: colour profiles from ICC and nclx, sRGB to Display P3.
 - `rust/src/pixels.rs`: orientation, OpenCV-exact gray and INTER_AREA.
