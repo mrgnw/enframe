@@ -42,3 +42,8 @@ screenshots = ["dep:xcap", "dep:enigo"]
 
 [profile.release.package.stabilize]
 debug = 1
+
+[profile.dev.package.stabilize]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false

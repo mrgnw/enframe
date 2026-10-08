@@ -87,10 +87,10 @@ test('features: mark two features, switch, reload, export all, match the CLI', a
 	const tracks: string[] = [];
 	let refused = 0;
 	page.on('request', (r) => {
-		if (r.url().endsWith('/api/pinframe/track')) tracks.push(JSON.parse(r.postData() ?? '{}').feature);
+		if (r.url().endsWith('/api/stabilize/track')) tracks.push(JSON.parse(r.postData() ?? '{}').feature);
 	});
 	page.on('response', async (r) => {
-		if (r.url().endsWith('/api/pinframe/track') && /fewer than two photos/.test(await r.text().catch(() => ''))) {
+		if (r.url().endsWith('/api/stabilize/track') && /fewer than two photos/.test(await r.text().catch(() => ''))) {
 			refused++;
 		}
 	});

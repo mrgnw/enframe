@@ -1,4 +1,4 @@
-use crate::{ApiResult, AppState, blocking, denied, text};
+use crate::{ApiResult, AppState, blocking, denied};
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -10,37 +10,60 @@ use std::collections::{BTreeMap, HashMap};
 use std::convert::Infallible;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::process::Stdio;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::{Child, Command};
-use tokio::sync::{mpsc, oneshot};
+use tokio::process::Command;
+use tokio::sync::mpsc;
 
 const PHOTO_EXTENSIONS: [&str; 7] = ["avif", "heic", "heif", "jxl", "jpg", "jpeg", "png"];
 const SUPERSEDED: &str = "superseded by a newer run for this folder";
 
+// The tracker, called on a blocking thread with each progress line it reports. Tests
+// stand in for it.
+pub type Run = fn(::stabilize::Job, &mut dyn FnMut(&str)) -> Result<::stabilize::Sidecar, String>;
+
+// Tracks, then writes the clip and sidecar when the job has an output.
+pub fn run(
+    job: ::stabilize::Job,
+    log: &mut dyn FnMut(&str),
+) -> Result<::stabilize::Sidecar, String> {
+    let tracked = ::stabilize::track(&job, log)?;
+    match job.output {
+        Some(_) => tracked.write(log),
+        None => Ok(tracked.sidecar(&::stabilize::run_id(), None)),
+    }
+}
+
 // One run per folder. Tickets are global, so a ticket is never reused once a folder's
-// entry is dropped, and only the newest ticket for a folder may write or spawn.
-pub struct Pinframe {
-    binary: Option<PathBuf>,
+// entry is dropped, and only the newest ticket for a folder may write or run.
+pub struct Stabilize {
+    run: Run,
     tickets: AtomicU64,
     folders: Mutex<HashMap<PathBuf, Folder>>,
 }
 
-// Dropping `cancel` is what stops the run holding the other end.
+// Setting `cancel` stops the run holding the other end at its next photo.
 struct Folder {
     ticket: u64,
-    cancel: Option<oneshot::Sender<()>>,
+    cancel: Arc<AtomicBool>,
+}
+
+// Dropping the request's future, when the client leaves, stops its run.
+struct CancelOnDrop(Arc<AtomicBool>);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
 }
 
 type Point = [f64; 2];
 
 // One feature's marks. The document the marking UI edits is a list of named features,
-// saved beside the folder as `<folder>.pin.json`; each feature is one CLI run. The marks'
-// fields are the CLI's flags: `points` is `--points`, `at` and `near` map a photo to
-// `--at` and `--near`, `skip` is `--skip`, `order` is `--order`.
+// saved beside the folder as `<folder>.pin.json`; each feature is one tracker run. The
+// marks' fields are the tracker's: `points` is the first photo's, `at` and `near` map a
+// photo to its mark and soft mark, `skip` lists hidden photos, `order` is the order.
 #[derive(Deserialize, Serialize)]
 pub struct Marks {
     points: Vec<Point>,
@@ -143,35 +166,36 @@ fn parse_pad(raw: Option<String>) -> ApiResult<Option<String>> {
     Err(bad("pad must be transparent, black, white or #rrggbb"))
 }
 
-fn format_points(points: &[Point]) -> String {
-    points
-        .iter()
-        .map(|[x, y]| format!("{x},{y}"))
-        .collect::<Vec<_>>()
-        .join("/")
+fn points(points: &[Point]) -> Vec<(f64, f64)> {
+    points.iter().map(|&[x, y]| (x, y)).collect()
 }
 
-fn cli_args(marks: &Marks) -> Vec<String> {
-    let mut args = vec!["--points".to_string(), format_points(&marks.points)];
-    for (flag, map) in [("--at", &marks.at), ("--near", &marks.near)] {
-        for (file, mark) in map {
-            let zoom = mark.zoom.map(|zoom| format!("@{zoom}")).unwrap_or_default();
-            args.push(flag.to_string());
-            args.push(format!("{file}={}{zoom}", format_points(&mark.points)));
-        }
+fn tracker_mark(mark: &Mark) -> ::stabilize::Mark {
+    ::stabilize::Mark {
+        points: points(&mark.points),
+        zoom: mark.zoom,
+    }
+}
+
+fn tracker_marks(marks: &Marks) -> ::stabilize::Marks {
+    let mut tracker = ::stabilize::Marks::new(&points(&marks.points));
+    for (file, mark) in &marks.at {
+        tracker = tracker.with_at(file, &tracker_mark(mark));
+    }
+    for (file, mark) in &marks.near {
+        tracker = tracker.with_near(file, &tracker_mark(mark));
     }
     for file in &marks.skip {
-        args.push("--skip".to_string());
-        args.push(file.clone());
+        tracker = tracker.with_skip(file);
     }
-    if let Some(order) = marks.order {
-        args.push("--order".to_string());
-        args.push(match order {
-            Order::Time => "time".to_string(),
-            Order::Name => "name".to_string(),
-        });
+    tracker
+}
+
+fn tracker_order(order: Option<Order>) -> ::stabilize::Order {
+    match order {
+        Some(Order::Name) => ::stabilize::Order::Name,
+        Some(Order::Time) | None => ::stabilize::Order::Time,
     }
-    args
 }
 
 // Symlinks are not followed: a link inside a read root may point anywhere.
@@ -199,8 +223,8 @@ fn list_photos(folder: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(photos)
 }
 
-// `IMG_4669.avif  2048x1536  anchor 1040,725  scale 2.50  38 features`: the line the CLI
-// prints per photo. Columns are two spaces apart, so a name may hold single spaces.
+// `IMG_4669.avif  2048x1536  anchor 1040,725  scale 2.50  38 features`: the line the
+// tracker reports per photo. Columns are two spaces apart, so a name may hold single spaces.
 fn photo_line(line: &str) -> Option<(&str, u64, u64, &str)> {
     let (file, rest) = line.split_once("  ")?;
     let (size, rest) = rest.split_once("  ")?;
@@ -221,8 +245,8 @@ fn photo_line(line: &str) -> Option<(&str, u64, u64, &str)> {
 }
 
 // The sidecar carries neither a photo's oriented size nor the tracker's note; the log does.
-fn annotate(mut sidecar: Value, stdout: &str) -> Value {
-    let rows: HashMap<&str, (u64, u64, &str)> = stdout
+fn annotate(mut sidecar: Value, log: &str) -> Value {
+    let rows: HashMap<&str, (u64, u64, &str)> = log
         .lines()
         .filter_map(photo_line)
         .map(|(file, width, height, note)| (file, (width, height, note)))
@@ -281,83 +305,53 @@ struct Job {
     document: PathBuf,
     features: Vec<Feature>,
     feature: usize,
-    out: PathBuf,
-    extra: Vec<String>,
+    pad: Option<String>,
+    output: Option<::stabilize::Output>,
 }
 
-impl Pinframe {
-    pub fn new(binary: Option<PathBuf>) -> Self {
+// A claimed folder whose document is saved: what the tracker runs on.
+struct Running {
+    ticket: u64,
+    cancel: CancelOnDrop,
+    photos: Vec<PathBuf>,
+}
+
+impl Stabilize {
+    pub fn new(run: Run) -> Self {
         Self {
-            binary,
+            run,
             tickets: AtomicU64::new(0),
             folders: Mutex::new(HashMap::new()),
         }
     }
 
-    pub fn binary(&self) -> Option<&Path> {
-        self.binary.as_deref()
-    }
-
-    fn configured(&self) -> ApiResult<&Path> {
-        self.binary().ok_or((
-            StatusCode::SERVICE_UNAVAILABLE,
-            "pinframe is not configured: start serve with --pinframe or ENFRAME_PINFRAME"
-                .to_string(),
-        ))
-    }
-
     // Taking a ticket cancels the folder's run in flight, before any await can reorder
     // two requests.
-    fn claim(&self, folder: &Path) -> u64 {
+    fn claim(&self, folder: &Path) -> (u64, Arc<AtomicBool>) {
         let ticket = self.tickets.fetch_add(1, Ordering::Relaxed) + 1;
+        let cancel = Arc::new(AtomicBool::new(false));
         let mut folders = self.folders.lock().unwrap_or_else(|e| e.into_inner());
-        folders.insert(
-            folder.to_path_buf(),
-            Folder {
-                ticket,
-                cancel: None,
-            },
-        );
-        ticket
+        let entry = Folder {
+            ticket,
+            cancel: cancel.clone(),
+        };
+        if let Some(older) = folders.insert(folder.to_path_buf(), entry) {
+            older.cancel.store(true, Ordering::Relaxed);
+        }
+        (ticket, cancel)
     }
 
     // ponytail: the document write happens under the lock, on the async thread — it is a
     // few hundred bytes, and holding the lock is what keeps an older document from
     // landing after a newer one.
-    fn start(
-        &self,
-        job: &Job,
-        ticket: u64,
-        document: &[u8],
-        photos: &[PathBuf],
-    ) -> ApiResult<(tokio::process::Child, oneshot::Receiver<()>)> {
-        let binary = self.configured()?;
-        let mut folders = self.folders.lock().unwrap_or_else(|e| e.into_inner());
-        let folder = match folders.get_mut(&job.folder) {
-            Some(folder) if folder.ticket == ticket => folder,
-            _ => return Err(superseded()),
-        };
-        save_document(&job.document, ticket, document).map_err(crate::fail)?;
-        let child = Command::new(binary)
-            .args(photos)
-            .args(cli_args(&job.features[job.feature].marks))
-            .arg("--out")
-            .arg(&job.out)
-            .args(&job.extra)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| {
-                (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    format!("pinframe {}: {e}", binary.display()),
-                )
-            })?;
-        let (cancel, cancelled) = oneshot::channel();
-        folder.cancel = Some(cancel);
-        Ok((child, cancelled))
+    fn save(&self, job: &Job, ticket: u64, document: &[u8]) -> ApiResult<()> {
+        let folders = self.folders.lock().unwrap_or_else(|e| e.into_inner());
+        match folders.get(&job.folder) {
+            Some(folder) if folder.ticket == ticket => {
+                save_document(&job.document, ticket, document).map_err(crate::fail)
+            }
+            _ => Err(superseded()),
+        }
     }
 
     // A run that finished just as a newer one claimed the folder is stale all the same.
@@ -372,92 +366,60 @@ impl Pinframe {
         }
     }
 
-    // Claims the folder and spawns pinframe. A request superseded before this point
+    // Claims the folder and saves the document. A request superseded before this point
     // answers 409 like any other.
-    async fn spawn(&self, job: &Job) -> ApiResult<Running> {
-        self.configured()?;
-        let ticket = self.claim(&job.folder);
+    async fn start(&self, job: &Job) -> ApiResult<Running> {
+        let (ticket, cancel) = self.claim(&job.folder);
+        let cancel = CancelOnDrop(cancel);
         let folder = job.folder.clone();
         let photos = blocking(move || list_photos(&folder))
             .await
             .map_err(|(_, e)| bad(e))?;
         let document = document_text(&job.folder, &job.features, &photos).map_err(crate::fail)?;
-        let (child, cancelled) = self.start(job, ticket, &document, &photos)?;
+        self.save(job, ticket, &document)?;
         Ok(Running {
-            child,
-            cancelled,
             ticket,
+            cancel,
+            photos,
         })
     }
 
-    // Hands every line pinframe prints to `on_line` and answers with its stdout. Dropping
-    // the future kills the run.
+    // Runs the tracker on a blocking thread, handing every line it reports to `on_line`,
+    // and answers with the sidecar, annotated from those lines. Dropping the future stops
+    // the run.
     async fn wait(
         &self,
         what: &str,
-        folder: &Path,
-        mut running: Running,
-        mut on_line: impl FnMut(&str),
-    ) -> ApiResult<String> {
-        let stdout = running
-            .child
-            .stdout
-            .take()
-            .ok_or_else(|| crate::fail("no stdout"))?;
-        let stderr = running
-            .child
-            .stderr
-            .take()
-            .ok_or_else(|| crate::fail("no stderr"))?;
-        let mut stdout = BufReader::new(stdout).lines();
-        let mut stderr = BufReader::new(stderr).lines();
-        let mut printed = String::new();
-        let mut detail = None;
-        let (mut out_open, mut err_open) = (true, true);
-        while out_open || err_open {
-            tokio::select! {
-                line = stdout.next_line(), if out_open => match line.map_err(crate::fail)? {
-                    Some(line) => {
-                        on_line(&line);
-                        printed.push_str(&line);
-                        printed.push('\n');
-                    }
-                    None => out_open = false,
-                },
-                line = stderr.next_line(), if err_open => match line.map_err(crate::fail)? {
-                    Some(line) => {
-                        on_line(&line);
-                        if !line.trim().is_empty() {
-                            detail = Some(line);
-                        }
-                    }
-                    None => err_open = false,
-                },
-                _ = &mut running.cancelled => return Err(superseded()),
-            }
-        }
-        let status = tokio::select! {
-            status = running.child.wait() => status.map_err(crate::fail)?,
-            _ = &mut running.cancelled => return Err(superseded()),
+        job: &Job,
+        running: Running,
+        mut on_line: impl FnMut(&str) + Send + 'static,
+    ) -> ApiResult<Value> {
+        let tracker_job = ::stabilize::Job {
+            photos: running.photos,
+            order: tracker_order(job.features[job.feature].marks.order),
+            marks: tracker_marks(&job.features[job.feature].marks),
+            pad: job.pad.clone(),
+            output: job.output.clone(),
+            cancel: Some(running.cancel.0.clone()),
+            ..::stabilize::Job::default()
         };
-        self.finish(folder, running.ticket)?;
-        if !status.success() {
-            let detail = detail.unwrap_or_else(|| status.to_string());
-            return Err(crate::fail(format!("{what}: {detail}")));
-        }
-        Ok(printed)
+        let run = self.run;
+        let (result, log) = tokio::task::spawn_blocking(move || {
+            let mut log = String::new();
+            let result = run(tracker_job, &mut |line| {
+                on_line(line);
+                log.push_str(line);
+                log.push('\n');
+            });
+            (result, log)
+        })
+        .await
+        .map_err(crate::fail)?;
+        self.finish(&job.folder, running.ticket)?;
+        let sidecar = result.map_err(|e| crate::fail(format!("{what}: {e}")))?;
+        let sidecar = serde_json::to_value(sidecar).map_err(crate::fail)?;
+        Ok(annotate(sidecar, &log))
     }
-
-    async fn run(&self, what: &str, job: &Job) -> ApiResult<String> {
-        let running = self.spawn(job).await?;
-        self.wait(what, &job.folder, running, |_| {}).await
-    }
-}
-
-struct Running {
-    child: Child,
-    cancelled: oneshot::Receiver<()>,
-    ticket: u64,
 }
 
 // Every run saves the whole document and tracks the one feature it names.
@@ -476,22 +438,6 @@ fn confine_folder(state: &AppState, folder: &str) -> ApiResult<(PathBuf, PathBuf
     Ok((folder, document))
 }
 
-fn read_sidecar(path: &Path, stdout: &str) -> Result<Value, String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let sidecar = serde_json::from_slice(&bytes).map_err(|e| format!("sidecar: {e}"))?;
-    Ok(annotate(sidecar, stdout))
-}
-
-// JSON-only output lands in a file of the run's own, outside the photo folder, and is
-// removed once read.
-fn track_output() -> ApiResult<PathBuf> {
-    static OUTPUTS: AtomicU64 = AtomicU64::new(0);
-    let dir = std::env::temp_dir().join("enframe-pinframe");
-    std::fs::create_dir_all(&dir).map_err(crate::fail)?;
-    let id = OUTPUTS.fetch_add(1, Ordering::Relaxed);
-    Ok(dir.join(format!("{}-{id}.json", std::process::id())))
-}
-
 pub async fn track(
     State(state): State<AppState>,
     Json(body): Json<Value>,
@@ -499,35 +445,35 @@ pub async fn track(
     let (args, feature) = parse_args(body)?;
     let pad = parse_pad(args.pad)?;
     let (folder, document) = confine_folder(&state, &args.folder)?;
-    let out = track_output()?;
-    let extra = match pad {
-        Some(pad) => vec!["--pad".to_string(), pad],
-        None => Vec::new(),
-    };
     let job = Job {
         folder,
         document,
         features: args.features,
         feature,
-        out: out.clone(),
-        extra,
+        pad,
+        output: None,
     };
-    let stdout = state.pinframe.run("track", &job).await;
-    let sidecar = stdout.and_then(|stdout| read_sidecar(&out, &stdout).map_err(crate::fail));
-    let _ = std::fs::remove_file(&out);
-    sidecar.map(Json)
+    let running = state.stabilize.start(&job).await?;
+    let sidecar = state.stabilize.wait("track", &job, running, |_| {}).await?;
+    Ok(Json(sidecar))
 }
 
-fn export_extra(state: &AppState, folder: &Path, args: &mut RunArgs) -> ApiResult<Vec<String>> {
-    let mut extra = Vec::new();
-    if let Some(pad) = parse_pad(args.pad.take())? {
-        extra.extend(["--pad".to_string(), pad]);
-    }
+fn export_output(
+    state: &AppState,
+    folder: &Path,
+    out: PathBuf,
+    args: &mut RunArgs,
+) -> ApiResult<::stabilize::Output> {
+    let mut output = ::stabilize::Output {
+        out,
+        vf: args.vf.take(),
+        ..::stabilize::Output::default()
+    };
     if let Some(fps) = args.fps {
         if fps <= 0.0 {
             return Err(bad("fps must be a positive number"));
         }
-        extra.extend(["--fps".to_string(), fps.to_string()]);
+        output.fps = fps;
     }
     if let Some(frames) = args.frames.take() {
         let checked = state.roots.check_write(&frames).map_err(denied)?;
@@ -536,12 +482,9 @@ fn export_extra(state: &AppState, folder: &Path, args: &mut RunArgs) -> ApiResul
                 "frames {frames}: the frames cannot be written inside the photo folder"
             )));
         }
-        extra.extend(["--frames".to_string(), text(checked)]);
+        output.frames = Some(checked);
     }
-    if let Some(vf) = args.vf.take() {
-        extra.extend(["--vf".to_string(), vf]);
-    }
-    Ok(extra)
+    Ok(output)
 }
 
 // The clip defaults to `<folder>-<feature>.avif`, and never lands inside the folder
@@ -565,7 +508,7 @@ fn export_out(
     Ok(checked)
 }
 
-// ponytail: unbounded, since pinframe prints a line per photo and a few more.
+// ponytail: unbounded, since the tracker reports a line per photo and a few more.
 struct Events(mpsc::UnboundedReceiver<Event>);
 
 impl futures_core::Stream for Events {
@@ -590,37 +533,35 @@ fn ending(result: ApiResult<Value>, out: &Path) -> Event {
     }
 }
 
-// Bad requests and a run superseded before it starts answer with a status; once pinframe
-// runs, the answer is server-sent events: `progress` {line} per line it prints, then
-// `done` {out, sidecar} or `error` {error, superseded?}. A client that leaves stops it.
+// Bad requests and a run superseded before it starts answer with a status; once the
+// tracker runs, the answer is server-sent events: `progress` {line} per line it reports,
+// then `done` {out, sidecar} or `error` {error, superseded?}. A client that leaves stops it.
 pub async fn export(State(state): State<AppState>, Json(body): Json<Value>) -> ApiResult<Response> {
     let (mut args, feature) = parse_args(body)?;
+    let pad = parse_pad(args.pad.take())?;
     let (folder, document) = confine_folder(&state, &args.folder)?;
     let out = export_out(&state, &folder, &args.feature, args.out.take())?;
-    let extra = export_extra(&state, &folder, &mut args)?;
+    let output = export_output(&state, &folder, out.clone(), &mut args)?;
     let job = Job {
         folder,
         document,
         features: args.features,
         feature,
-        out: out.clone(),
-        extra,
+        pad,
+        output: Some(output),
     };
-    let running = state.pinframe.spawn(&job).await?;
+    let running = state.stabilize.start(&job).await?;
     let (events, receiver) = mpsc::unbounded_channel();
     tokio::spawn(async move {
         let progress = events.clone();
-        let run = state.pinframe.wait("export", &job.folder, running, |line| {
+        let run = state.stabilize.wait("export", &job, running, move |line| {
             let _ = progress.send(event("progress", json!({ "line": line })));
         });
         let result = tokio::select! {
             result = run => result,
             _ = events.closed() => return,
         };
-        let sidecar = result.and_then(|stdout| {
-            read_sidecar(&out.with_extension("json"), &stdout).map_err(crate::fail)
-        });
-        let _ = events.send(ending(sidecar, &out));
+        let _ = events.send(ending(result, &out));
     });
     Ok(Sse::new(Events(receiver)).into_response())
 }
@@ -675,7 +616,7 @@ mod tests {
     }
 
     #[test]
-    fn marks_become_the_cli_flags() {
+    fn marks_become_the_trackers() {
         let marks: Marks = serde_json::from_value(json!({
             "points": [[675, 345], [985.5, 345]],
             "at": { "b.avif": { "points": [[1, 2]], "zoom": 2.5 } },
@@ -685,19 +626,15 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(
-            cli_args(&marks),
-            [
-                "--points",
-                "675,345/985.5,345",
-                "--at",
-                "b.avif=1,2@2.5",
-                "--near",
-                "c.avif=3,4",
-                "--skip",
-                "d.avif",
-                "--order",
-                "name"
-            ]
+            tracker_marks(&marks),
+            ::stabilize::Marks {
+                points: Some("675,345/985.5,345".to_string()),
+                at: vec!["b.avif=1,2@2.5".to_string()],
+                skip: vec!["d.avif".to_string()],
+                near: vec!["c.avif=3,4".to_string()],
+            }
         );
+        assert_eq!(tracker_order(marks.order), ::stabilize::Order::Name);
+        assert_eq!(tracker_order(None), ::stabilize::Order::Time);
     }
 }

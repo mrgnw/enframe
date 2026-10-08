@@ -1,6 +1,6 @@
 mod db;
-mod pinframe;
 mod roots;
+mod stabilize;
 
 use axum::Json;
 use axum::Router;
@@ -32,7 +32,7 @@ struct AppState {
     inbox: PathBuf,
     browse: PathBuf,
     roots: Arc<Roots>,
-    pinframe: Arc<pinframe::Pinframe>,
+    stabilize: Arc<stabilize::Stabilize>,
 }
 
 type ApiResult<T> = Result<T, (StatusCode, String)>;
@@ -496,7 +496,6 @@ struct Options {
     inbox: PathBuf,
     read_roots: Vec<PathBuf>,
     write_roots: Vec<PathBuf>,
-    pinframe: Option<PathBuf>,
 }
 
 fn flag(args: &[String], name: &str, env: &str) -> Option<String> {
@@ -548,7 +547,6 @@ fn options() -> Result<Options, String> {
         web: PathBuf::from(flag(&args, "--web", "ENFRAME_WEB").unwrap_or_else(|| "build".into())),
         read_roots: flags(&args, "--read-root", "ENFRAME_READ_ROOTS"),
         write_roots: flags(&args, "--write-root", "ENFRAME_WRITE_ROOTS"),
-        pinframe: flag(&args, "--pinframe", "ENFRAME_PINFRAME").map(PathBuf::from),
         database,
         inbox,
     })
@@ -655,9 +653,9 @@ fn router(state: AppState, web: &FsPath) -> Router {
         .route("/api/stat", get(stat))
         .route("/api/ls", get(ls))
         .route("/api/upload", post(upload))
-        .route("/api/pinframe/track", post(pinframe::track))
-        .route("/api/pinframe/export", post(pinframe::export))
-        .route("/api/pinframe/reveal", post(pinframe::reveal))
+        .route("/api/stabilize/track", post(stabilize::track))
+        .route("/api/stabilize/export", post(stabilize::export))
+        .route("/api/stabilize/reveal", post(stabilize::reveal))
         .route("/api/{command}", post(api))
         .route("/img/{*path}", get(img))
         .fallback_service(spa)
@@ -687,7 +685,7 @@ async fn main() -> Result<(), String> {
         inbox: options.inbox.clone(),
         browse,
         roots: Arc::new(roots),
-        pinframe: Arc::new(pinframe::Pinframe::new(options.pinframe.clone())),
+        stabilize: Arc::new(stabilize::Stabilize::new(stabilize::run)),
     };
 
     let app = router(state.clone(), &options.web);
@@ -705,10 +703,6 @@ async fn main() -> Result<(), String> {
     }
     for root in state.roots.write_roots() {
         println!("  write    {}", root.display());
-    }
-    match state.pinframe.binary() {
-        Some(binary) => println!("  pinframe {}", binary.display()),
-        None => println!("  pinframe unset"),
     }
 
     axum::serve(
@@ -752,10 +746,10 @@ mod tests {
         }
 
         fn app(&self) -> Router {
-            self.app_with(None)
+            self.app_with(stabilize::run)
         }
 
-        fn app_with(&self, pinframe: Option<PathBuf>) -> Router {
+        fn app_with(&self, run: stabilize::Run) -> Router {
             let inbox = self.base.join("inbox");
             std::fs::create_dir_all(&inbox).unwrap();
             let connection = db::open(&self.base.join("enframe.db")).unwrap();
@@ -764,7 +758,7 @@ mod tests {
                 conn: Arc::new(Mutex::new(connection)),
                 browse: self.base.clone(),
                 roots: Arc::new(roots),
-                pinframe: Arc::new(pinframe::Pinframe::new(pinframe)),
+                stabilize: Arc::new(stabilize::Stabilize::new(run)),
                 inbox,
             };
             router(state, &self.base)
@@ -1005,31 +999,40 @@ mod tests {
         (status, String::from_utf8_lossy(&body).into_owned())
     }
 
-    // Stands in for pinframe: sleeps long enough to be superseded, then writes a sidecar
-    // whose run is the --points it was given, so a test can tell which request it answers.
-    const FAKE_PINFRAME: &str = r#"#!/bin/sh
-while [ $# -gt 0 ]; do
-    case "$1" in
-        --out) out=$2; shift ;;
-        --points) points=$2; shift ;;
-    esac
-    shift
-done
-sleep 0.4
-printf '{"run":"%s","clip":null,"photos":[{"file":"a.png"}]}' "$points" > "${out%.*}.json"
-echo "a.png  10x20  anchor 1,2  scale 1.00  your mark"
-echo "clip 10x20"
-"#;
+    // Stands in for the tracker: waits long enough to be superseded, stopping once
+    // cancelled, then answers with a sidecar whose run is the first photo's points, so a
+    // test can tell which request it answers.
+    fn fake_run(
+        job: ::stabilize::Job,
+        log: &mut dyn FnMut(&str),
+    ) -> Result<::stabilize::Sidecar, String> {
+        let cancel = job.cancel.expect("serve always passes a cancel flag");
+        for _ in 0..40 {
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err("cancelled".to_string());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        log("a.png  10x20  anchor 1,2  scale 1.00  your mark");
+        log("clip 10x20");
+        let row = ::stabilize::Row {
+            file: "a.png".to_string(),
+            x: 0.0,
+            y: 0.0,
+            w: 1.0,
+            h: 1.0,
+            scale: 1.0,
+            source: "mark",
+            points: vec![[0.5, 0.5]],
+        };
+        Ok(::stabilize::Sidecar {
+            run: job.marks.points.unwrap_or_default(),
+            clip: None,
+            photos: vec![row],
+        })
+    }
 
     impl Sandbox {
-        fn fake_pinframe(&self) -> PathBuf {
-            use std::os::unix::fs::PermissionsExt;
-            let path = self.base.join("pinframe");
-            std::fs::write(&path, FAKE_PINFRAME).unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-            path
-        }
-
         // A series inside the write root, so the document beside it is writable.
         fn series(&self) -> PathBuf {
             let folder = self.base.join("inbox/series");
@@ -1051,13 +1054,13 @@ echo "clip 10x20"
             text(folder.to_path_buf()),
             feature(marks)
         );
-        post_json("/api/pinframe/track", &body)
+        post_json("/api/stabilize/track", &body)
     }
 
     #[tokio::test]
-    async fn pinframe_rejects_bad_requests_before_anything_runs() {
-        let sandbox = Sandbox::new("pinframe_bad");
-        let app = sandbox.app_with(Some(sandbox.fake_pinframe()));
+    async fn stabilize_rejects_bad_requests_before_anything_runs() {
+        let sandbox = Sandbox::new("stabilize_bad");
+        let app = sandbox.app_with(fake_run);
         let folder = text(sandbox.series());
 
         let bad_marks = [
@@ -1082,14 +1085,14 @@ echo "clip 10x20"
             let body =
                 format!("{{\"folder\":{folder:?},\"features\":{features},\"feature\":\"f\"}}");
             let (status, error) =
-                respond(app.clone(), post_json("/api/pinframe/track", &body)).await;
+                respond(app.clone(), post_json("/api/stabilize/track", &body)).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "{features}: {error}");
         }
         for marks in bad_marks {
             let f = feature(marks);
             let body = format!("{{\"folder\":{folder:?},{f}}}");
             let (status, error) =
-                respond(app.clone(), post_json("/api/pinframe/track", &body)).await;
+                respond(app.clone(), post_json("/api/stabilize/track", &body)).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "{marks}: {error}");
         }
 
@@ -1134,7 +1137,7 @@ echo "clip 10x20"
             ),
         ];
         for (route, body, expected) in rejected {
-            let request = post_json(&format!("/api/pinframe/{route}"), &body);
+            let request = post_json(&format!("/api/stabilize/{route}"), &body);
             let (status, error) = respond(app.clone(), request).await;
             assert_eq!(status, expected, "{body}: {error}");
         }
@@ -1145,25 +1148,23 @@ echo "clip 10x20"
     }
 
     #[tokio::test]
-    async fn pinframe_answers_a_clear_error_when_the_binary_is_unset_or_missing() {
-        let sandbox = Sandbox::new("pinframe_unset");
+    async fn a_tracker_error_answers_with_its_message() {
+        let sandbox = Sandbox::new("stabilize_error");
         let folder = sandbox.series();
-        let marks = "{\"points\":[[1,2]]}";
 
-        let (status, error) = respond(sandbox.app(), track_request(&folder, marks)).await;
-        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-        assert!(error.contains("--pinframe"), "{error}");
-
-        let missing = sandbox.app_with(Some(sandbox.base.join("absent")));
-        let (status, error) = respond(missing, track_request(&folder, marks)).await;
-        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-        assert!(error.contains("absent"), "{error}");
+        let request = track_request(&folder, "{\"points\":[[1,2]]}");
+        let (status, error) = respond(sandbox.app(), request).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(
+            error.starts_with("track: ") && error.contains("a.png"),
+            "{error}"
+        );
     }
 
     #[tokio::test]
     async fn a_newer_track_supersedes_the_one_in_flight() {
-        let sandbox = Sandbox::new("pinframe_supersede");
-        let app = sandbox.app_with(Some(sandbox.fake_pinframe()));
+        let sandbox = Sandbox::new("stabilize_supersede");
+        let app = sandbox.app_with(fake_run);
         let folder = sandbox.series();
 
         let first = tokio::spawn(respond(
@@ -1191,8 +1192,8 @@ echo "clip 10x20"
 
     #[tokio::test]
     async fn a_run_tracks_the_feature_it_names_and_saves_them_all() {
-        let sandbox = Sandbox::new("pinframe_features");
-        let app = sandbox.app_with(Some(sandbox.fake_pinframe()));
+        let sandbox = Sandbox::new("stabilize_features");
+        let app = sandbox.app_with(fake_run);
         let folder = sandbox.series();
         let features = serde_json::json!([
             { "name": "cloud", "marks": { "points": [[1, 1]] } },
@@ -1202,7 +1203,7 @@ echo "clip 10x20"
             serde_json::json!({ "folder": text(folder), "features": features, "feature": "ridge" });
 
         let (status, body) =
-            respond(app, post_json("/api/pinframe/track", &body.to_string())).await;
+            respond(app, post_json("/api/stabilize/track", &body.to_string())).await;
         assert_eq!(status, StatusCode::OK, "{body}");
         let sidecar: Value = serde_json::from_str(&body).unwrap();
         assert_eq!(sidecar["run"], "5,6");
@@ -1219,8 +1220,8 @@ echo "clip 10x20"
 
     #[tokio::test]
     async fn rapid_marks_only_ever_answer_with_the_newest_result() {
-        let sandbox = Sandbox::new("pinframe_rapid");
-        let app = sandbox.app_with(Some(sandbox.fake_pinframe()));
+        let sandbox = Sandbox::new("stabilize_rapid");
+        let app = sandbox.app_with(fake_run);
         let folder = sandbox.series();
 
         let mut runs = Vec::new();
@@ -1252,13 +1253,13 @@ echo "clip 10x20"
             text(folder.to_path_buf()),
             feature(marks)
         );
-        post_json("/api/pinframe/export", &body)
+        post_json("/api/stabilize/export", &body)
     }
 
     #[tokio::test]
     async fn export_streams_each_line_then_the_result() {
-        let sandbox = Sandbox::new("pinframe_export");
-        let app = sandbox.app_with(Some(sandbox.fake_pinframe()));
+        let sandbox = Sandbox::new("stabilize_export");
+        let app = sandbox.app_with(fake_run);
         let folder = sandbox.series();
 
         let (status, body) = respond(app, export_request(&folder, "{\"points\":[[3,3]]}")).await;
@@ -1279,8 +1280,8 @@ echo "clip 10x20"
 
     #[tokio::test]
     async fn a_newer_run_ends_the_export_stream_with_superseded() {
-        let sandbox = Sandbox::new("pinframe_export_supersede");
-        let app = sandbox.app_with(Some(sandbox.fake_pinframe()));
+        let sandbox = Sandbox::new("stabilize_export_supersede");
+        let app = sandbox.app_with(fake_run);
         let folder = sandbox.series();
 
         let first = tokio::spawn(respond(
@@ -1300,7 +1301,7 @@ echo "clip 10x20"
 
     #[tokio::test]
     async fn reveal_only_shows_files_inside_the_read_roots() {
-        let sandbox = Sandbox::new("pinframe_reveal");
+        let sandbox = Sandbox::new("stabilize_reveal");
         let app = sandbox.app();
         let outside = text(std::env::temp_dir().canonicalize().unwrap());
         let expected = if cfg!(target_os = "macos") {
@@ -1311,7 +1312,7 @@ echo "clip 10x20"
         let requests = ["{}".to_string(), format!("{{\"path\":{outside:?}}}")];
         for (body, expected) in requests.iter().zip(expected) {
             let (status, error) =
-                respond(app.clone(), post_json("/api/pinframe/reveal", body)).await;
+                respond(app.clone(), post_json("/api/stabilize/reveal", body)).await;
             assert_eq!(status, expected, "{body}: {error}");
         }
     }
@@ -1319,7 +1320,7 @@ echo "clip 10x20"
     // The done state shows the clip and links its sidecar through /img.
     #[tokio::test]
     async fn img_serves_a_clip_and_its_sidecar_with_their_types() {
-        let sandbox = Sandbox::new("pinframe_clip");
+        let sandbox = Sandbox::new("stabilize_clip");
         let app = sandbox.app();
         for (name, kind) in [
             ("clip.avif", "image/avif"),
@@ -1338,8 +1339,7 @@ echo "clip 10x20"
         }
     }
 
-    const PINFRAME: &str = "/Users/user/dev/pinframe/rust/target/release/pinframe";
-    const TRAIN_CLOUDS: &str = "/Users/user/dev/pinframe/samples/train clouds";
+    const TRAIN_CLOUDS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../samples/train clouds");
     const TRAIN_CLOUDS_MARKS: &str = r#"{
         "points": [[1267.5, 510], [1782.5, 510], [1267.5, 710], [1782.5, 710]],
         "at": {
@@ -1373,12 +1373,12 @@ echo "clip 10x20"
     #[tokio::test]
     async fn a_warm_rerun_on_train_clouds_is_fast() {
         let samples = FsPath::new(TRAIN_CLOUDS);
-        if !FsPath::new(PINFRAME).exists() || !samples.exists() {
-            eprintln!("skipped: {PINFRAME} or {TRAIN_CLOUDS} is absent");
+        if !samples.exists() {
+            eprintln!("skipped: {TRAIN_CLOUDS} is absent");
             return;
         }
-        let sandbox = Sandbox::new("pinframe_real");
-        let app = sandbox.app_with(Some(PathBuf::from(PINFRAME)));
+        let sandbox = Sandbox::new("stabilize_real");
+        let app = sandbox.app();
         let folder = sandbox.base.join("inbox/train clouds");
         std::fs::create_dir_all(&folder).unwrap();
         for entry in std::fs::read_dir(samples).unwrap().flatten() {

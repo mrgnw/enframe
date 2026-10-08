@@ -69,7 +69,7 @@ let sequence = 0;
 export async function postTrack(body: object, newest: () => boolean): Promise<Sidecar> {
 	const payload = JSON.stringify(body);
 	for (let attempt = 0; ; attempt++) {
-		const resp = await fetch(`${currentConnection()}/api/pinframe/track`, {
+		const resp = await fetch(`${currentConnection()}/api/stabilize/track`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: payload
@@ -129,7 +129,7 @@ export interface Exported {
 
 /** Renders the clip. `onLine` sees each line pinframe prints; rejects with the server's message on failure. */
 export async function exportClip(req: ExportRequest, onLine: (line: string) => void): Promise<Exported> {
-	const resp = await fetch(`${currentConnection()}/api/pinframe/export`, {
+	const resp = await fetch(`${currentConnection()}/api/stabilize/export`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify(req)
@@ -162,7 +162,7 @@ export const canReveal = () => isLocalInstance(currentConnection() || location.o
 
 /** Shows the clip in Finder on the machine the instance runs on. */
 export async function revealClip(path: string): Promise<void> {
-	const resp = await fetch(`${currentConnection()}/api/pinframe/reveal`, {
+	const resp = await fetch(`${currentConnection()}/api/stabilize/reveal`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({ path })

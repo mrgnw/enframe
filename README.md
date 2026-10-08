@@ -153,11 +153,6 @@ Overrides, as flags or environment variables:
 | `--inbox` | `ENFRAME_INBOX` | app-support `inbox` |
 | `--read-root` | `ENFRAME_READ_ROOTS` | see below |
 | `--write-root` | `ENFRAME_WRITE_ROOTS` | see below |
-| `--pinframe` | `ENFRAME_PINFRAME` | unset |
-
-The `serve` daemon in `pitchfork.toml` passes `--pinframe`, defaulting to
-`$HOME/dev/pinframe/rust/target/release/pinframe`; set `ENFRAME_PINFRAME` to point it at
-another build. Pitchfork runs `run` through `sh -c`, which expands the default.
 
 Browsers give no filesystem paths, so serve mode substitutes a server-side file picker
 for the native dialogs, and drag-dropped files are uploaded into the inbox directory and
@@ -195,28 +190,19 @@ export. Widen the roots and you widen what any caller can reach.
 #### Tracking a series with pinframe
 
 Two routes run [pinframe](https://github.com/mrgnw/pinframe), which holds one feature
-still across a photo series. Serve calls the binary named by `--pinframe`; with none
-set, both routes answer 503 and say so.
+still across a photo series. Serve calls it as a library, on a blocking thread.
 
-```sh
-PINFRAME=~/dev/pinframe/rust/target/release/pinframe
-```
-
-```sh
-bun run serve --pinframe "$PINFRAME"
-```
-
-- `POST /api/pinframe/track` `{folder, features, feature, pad?}` saves the document,
+- `POST /api/stabilize/track` `{folder, features, feature, pad?}` saves the document,
   `features` (`[{name, marks}]`, one pinframe run each), beside the folder as
   `<folder>.pin.json`, tracks the feature named `feature` without rendering, using
   pinframe's feature cache, and answers with the sidecar: each photo's crop, plus its size
   and the tracker's note. One run per folder: a newer request stops the one in flight.
-- `POST /api/pinframe/export` `{folder, features, feature, out?, pad?, fps?, frames?, vf?}`
+- `POST /api/stabilize/export` `{folder, features, feature, out?, pad?, fps?, frames?, vf?}`
   renders the feature's clip, `<folder>-<feature>.avif` by default, and answers with server-sent events: `progress`
   `{line}` for each line pinframe prints, then `done` `{out, sidecar}` or `error`
   `{error, superseded?}`. A bad request still answers 400 or 403 before anything runs.
   Closing the connection stops the run.
-- `POST /api/pinframe/reveal` `{path}` shows a file inside a read root in Finder
+- `POST /api/stabilize/reveal` `{path}` shows a file inside a read root in Finder
   (`open -R`). Off macOS it answers 501.
 
 The finished clip and its `.json` sidecar are read through `/img/{path}`, like photos.

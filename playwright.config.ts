@@ -7,7 +7,6 @@ import { join } from 'node:path';
 import { defineConfig } from '@playwright/test';
 
 const PINFRAME_REPO = process.env.PINFRAME_REPO ?? '/Users/user/dev/pinframe';
-const PINFRAME_BIN = process.env.PINFRAME_BIN ?? join(PINFRAME_REPO, 'rust/target/release/pinframe');
 const SAMPLES = join(PINFRAME_REPO, 'samples', 'train clouds');
 const port = Number(process.env.ENFRAME_E2E_PORT ?? 17591);
 const baseURL = `http://127.0.0.1:${port}`;
@@ -44,8 +43,7 @@ export default defineConfig({
 			`--db "${join(work, 'enframe.db')}"`,
 			`--inbox "${join(work, 'inbox')}"`,
 			`--read-root "${work}"`,
-			`--write-root "${work}"`,
-			`--pinframe "${PINFRAME_BIN}"`
+			`--write-root "${work}"`
 		].join(' '),
 		url: baseURL,
 		reuseExistingServer: false,

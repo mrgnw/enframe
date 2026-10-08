@@ -82,7 +82,7 @@ test('export: preview a marked folder, change the padding, export, match the CLI
 	});
 	const tracks: string[] = [];
 	page.on('request', (r) => {
-		if (r.url().endsWith('/api/pinframe/track')) tracks.push(JSON.parse(r.postData() ?? '{}').pad ?? 'none');
+		if (r.url().endsWith('/api/stabilize/track')) tracks.push(JSON.parse(r.postData() ?? '{}').pad ?? 'none');
 	});
 
 	await page.goto(`/pin/export?folder=${encodeURIComponent(FOLDER)}`);

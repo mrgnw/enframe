@@ -89,7 +89,7 @@ test('marking: points, track, fix the lost photos, clear the fix list', async ({
 	});
 	let sidecar: { run: string; photos: { file: string; source: string }[] } | null = null;
 	page.on('response', async (r) => {
-		if (r.url().endsWith('/api/pinframe/track') && r.ok()) sidecar = await r.json();
+		if (r.url().endsWith('/api/stabilize/track') && r.ok()) sidecar = await r.json();
 	});
 
 	await page.goto(`/pin?folder=${encodeURIComponent(FOLDER)}`);
@@ -222,7 +222,7 @@ test('a soft mark on a lost photo is placed, cleared and kept across a reload', 
 	type Sidecar = { photos: { file: string; source: string }[] };
 	/** The source the next sidecar gives `file`, after `act` posts the document. */
 	const sourceAfter = async (file: string, act: () => Promise<unknown>) => {
-		const response = page.waitForResponse((r) => r.url().endsWith('/api/pinframe/track') && r.ok());
+		const response = page.waitForResponse((r) => r.url().endsWith('/api/stabilize/track') && r.ok());
 		await act();
 		const sidecar = (await (await response).json()) as Sidecar;
 		return sidecar.photos.find((r) => r.file === file)?.source;
@@ -233,7 +233,7 @@ test('a soft mark on a lost photo is placed, cleared and kept across a reload', 
 	};
 
 	// A document with the script's marks opens already tracked, on the first photo it leaves lost.
-	const opened = page.waitForResponse((r) => r.url().endsWith('/api/pinframe/track') && r.ok());
+	const opened = page.waitForResponse((r) => r.url().endsWith('/api/stabilize/track') && r.ok());
 	await page.goto(`/pin?folder=${encodeURIComponent(FOLDER)}`);
 	const lost = ((await (await opened).json()) as Sidecar).photos.filter((r) => r.source === 'lost').map((r) => r.file);
 	expect(lost.length).toBeGreaterThan(0);
