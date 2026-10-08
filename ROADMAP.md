@@ -57,6 +57,15 @@ Tauri v2 + SvelteKit 5, with Lightroom catalog integration.
   CSS `object-position` for render-time fitting without new image files
 - Cmd+E with radial progress; default output dir matches the source photo
 
+### Stabilize
+- Hold one feature still across a photo series: mark it, Track, fix lost photos,
+  export a clip (`/stabilize`, the `stabilize` crate in `src-tauri/stabilize/`)
+- Decisions made before it moved into enframe (S1, 2026-10-08): marks are reference
+  points; `--skip` hides a photo's feature and a soft mark places a photo without
+  tracking from it; colour keeps the photos' Display P3 or sRGB values; a document
+  holds named features, one run each; serve calls the crate in-process, one run per
+  folder. The full list and its history is in [docs/stabilize/PLAN.md](docs/stabilize/PLAN.md)
+
 ---
 
 ## 📋 Planned
