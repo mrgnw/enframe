@@ -233,7 +233,7 @@ mod tests {
 	}
 
 	fn temp(name: &str) -> PathBuf {
-		let path = std::env::temp_dir().join(format!("pinframe-cache-{name}-{}", random_hex()));
+		let path = std::env::temp_dir().join(format!("stabilize-cache-{name}-{}", random_hex()));
 		std::fs::create_dir_all(&path).unwrap();
 		path
 	}
@@ -303,7 +303,7 @@ mod tests {
 		let cache = FeatureCache { root: root.clone(), cap: u64::MAX };
 		let sample = sample();
 		let mut photos = vec![
-			("../samples/train clouds/IMG_4667.avif", "dav1d [dec]:"),
+			("../../samples/train clouds/IMG_4667.avif", "dav1d [dec]:"),
 			("testdata/orientation-6.png", "png 0."),
 		];
 		if cfg!(target_os = "macos") {

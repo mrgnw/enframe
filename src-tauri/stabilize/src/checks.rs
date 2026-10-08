@@ -4,7 +4,7 @@
 use crate::{avif, pixels};
 use std::path::Path;
 
-const SAMPLES: &str = "../samples/train clouds";
+const SAMPLES: &str = "../../samples/train clouds";
 const DUMPS: &str = "../out";
 
 /// float32 values of a .npy file written by numpy.save.

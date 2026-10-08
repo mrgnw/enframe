@@ -1,11 +1,11 @@
-//! pinframe as a library: pin one feature in place across a photo sequence. [`track`] checks a [`Job`],
+//! Stabilize as a library: pin one feature in place across a photo sequence. [`track`] checks a [`Job`],
 //! follows the marked feature from photo to photo and plans one crop per photo; [`Tracked::sidecar`] gives
 //! the result as the `.json` sidecar holds it, and [`Tracked::write`] renders the clip and writes the
-//! sidecar. The `pinframe` binary is a thin CLI over these, so a server can run the same pipeline
+//! sidecar. The `stabilize` binary is a thin CLI over these, so a server can run the same pipeline
 //! in-process.
 //!
 //! A [`Job`] holds the CLI's options, typed, and is checked in the CLI's order with its messages: an error
-//! is the message the CLI prints after `pinframe: `, naming its flags (`--at`, `--pad`). Progress lines,
+//! is the message the CLI prints after `stabilize: `, naming its flags (`--at`, `--pad`). Progress lines,
 //! the ones the CLI prints, go to a `log` callback.
 
 mod avif;
@@ -265,7 +265,7 @@ fn read_sizes(paths: &[PathBuf]) -> Result<Vec<(u32, u32)>, String> {
 	paths.iter().map(|p| decode::oriented_size(p).map_err(|e| format!("{}: {e}", p.display()))).collect()
 }
 
-/// Every photo's colour profile from its header; a profile pinframe cannot label stops the run.
+/// Every photo's colour profile from its header; a profile stabilize cannot label stops the run.
 fn read_profiles(paths: &[PathBuf]) -> Result<Vec<Profile>, String> {
 	paths.iter().map(|p| decode::profile(p).map_err(|e| format!("{}: {e}", p.display()))).collect()
 }
@@ -572,7 +572,7 @@ fn open_sink(out: &Path, o: &SinkOptions) -> Result<Sink, String> {
 	]);
 	cmd.args(["-s", &format!("{}x{}", o.size.0, o.size.1), "-r", &o.fps.to_string(), "-i", "-"]);
 	cmd.args(["-vf", &vf]).args(&encoder).args(["-pix_fmt", pix_fmt]);
-	cmd.args(["-metadata", &format!("comment=pinframe-run={}", o.run)]).arg(out);
+	cmd.args(["-metadata", &format!("comment=stabilize-run={}", o.run)]).arg(out);
 	let child = cmd.stdin(std::process::Stdio::piped()).spawn().map_err(|e| format!("ffmpeg: {e}"))?;
 	Ok(Sink::Ffmpeg(child))
 }
@@ -581,7 +581,7 @@ fn open_sink(out: &Path, o: &SinkOptions) -> Result<Sink, String> {
 fn run_xmp(run: &str) -> Vec<u8> {
 	format!(
 		"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\
-		<rdf:Description xmlns:pinframe=\"https://pinframe.local/ns/1.0/\" pinframe:run=\"{run}\"/>\
+		<rdf:Description xmlns:stabilize=\"https://stabilize.local/ns/1.0/\" stabilize:run=\"{run}\"/>\
 		</rdf:RDF></x:xmpmeta>"
 	)
 	.into_bytes()
@@ -1101,7 +1101,7 @@ mod tests {
 
 	#[test]
 	fn capture_time_orders_photos_whose_names_disagree_with_their_times() {
-		let dir = std::env::temp_dir().join(format!("pinframe-order-{}", std::process::id()));
+		let dir = std::env::temp_dir().join(format!("stabilize-order-{}", std::process::id()));
 		std::fs::create_dir_all(&dir).unwrap();
 		let files = [
 			("c.png", "2024:01:01 00:00:03"),
@@ -1125,7 +1125,7 @@ mod tests {
 
 	#[test]
 	fn a_photo_with_no_capture_time_falls_back_to_name_order() {
-		let dir = std::env::temp_dir().join(format!("pinframe-order-missing-{}", std::process::id()));
+		let dir = std::env::temp_dir().join(format!("stabilize-order-missing-{}", std::process::id()));
 		std::fs::create_dir_all(&dir).unwrap();
 		let with_time = dir.join("b.png");
 		write_test_png(&with_time, Some("2024:01:01 00:00:01"));
@@ -1269,7 +1269,7 @@ mod tests {
 
 	#[test]
 	fn a_job_without_output_tracks_in_process_and_writes_nothing() {
-		let dir = std::env::temp_dir().join(format!("pinframe-job-{}", std::process::id()));
+		let dir = std::env::temp_dir().join(format!("stabilize-job-{}", std::process::id()));
 		std::fs::create_dir_all(&dir).unwrap();
 		let photos: Vec<PathBuf> = [(0, 0), (6, 3), (12, 6), (18, 9)]
 			.iter()

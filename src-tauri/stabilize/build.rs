@@ -67,7 +67,7 @@ fn main() {
 	let aom = build_aom(&out, &fetch(&out, &AOM));
 	let dav1d = build_dav1d(&out, &fetch(&out, &DAV1D));
 	let avif = build_libavif(&out, &fetch(&out, &LIBAVIF), &aom, &dav1d);
-	eprintln!("pinframe: built libaom, dav1d and libavif in {:.1}s", started.elapsed().as_secs_f64());
+	eprintln!("stabilize: built libaom, dav1d and libavif in {:.1}s", started.elapsed().as_secs_f64());
 
 	for (prefix, lib) in [(&avif, "avif"), (&aom, "aom"), (&dav1d, "dav1d")] {
 		println!("cargo:rustc-link-search=native={}", prefix.join("lib").display());
@@ -85,19 +85,29 @@ fn main() {
 	bindings.write_to_file(out.join("avif_sys.rs")).unwrap();
 }
 
-/// Exposes each crate's locked version as `PINFRAME_VERSION_<NAME>` for the feature cache key.
+/// Exposes each crate's locked version as `PINFRAME_VERSION_<NAME>` for the feature cache key. The workspace
+/// lock may hold several versions of a crate; then this crate's own entry names the one it uses.
 fn locked_versions(crates: &[&str]) {
-	println!("cargo:rerun-if-changed=Cargo.lock");
-	let lock = std::fs::read_to_string("Cargo.lock").expect("Cargo.lock");
+	println!("cargo:rerun-if-changed=../Cargo.lock");
+	let lock = std::fs::read_to_string("../Cargo.lock").expect("the workspace Cargo.lock");
+	let own = lock.find("name = \"stabilize\"\n").expect("stabilize is not in Cargo.lock");
+	let own = &lock[own..own + lock[own..].find("\n\n").unwrap_or(lock.len() - own)];
 	for name in crates {
-		let entry = format!("name = \"{name}\"\nversion = \"");
-		let start = lock.find(&entry).unwrap_or_else(|| panic!("{name} is not in Cargo.lock")) + entry.len();
-		let version = &lock[start..start + lock[start..].find('"').unwrap()];
+		let pinned = format!("\"{name} ");
+		let version = match own.find(&pinned) {
+			Some(start) => &own[start + pinned.len()..start + own[start..].find("\",").unwrap()],
+			None => {
+				let entry = format!("name = \"{name}\"\nversion = \"");
+				let start =
+					lock.find(&entry).unwrap_or_else(|| panic!("{name} is not in Cargo.lock")) + entry.len();
+				&lock[start..start + lock[start..].find('"').unwrap()]
+			}
+		};
 		println!("cargo:rustc-env=PINFRAME_VERSION_{}={version}", name.replace('-', "_").to_uppercase());
 	}
 }
 
-/// Shared cache directory for verified source tarballs, next to pinframe's feature cache
+/// Shared cache directory for verified source tarballs, next to the feature cache
 /// (`~/Library/Caches/pinframe` on macOS, `$XDG_CACHE_HOME/pinframe` or `~/.cache/pinframe` elsewhere),
 /// so every worktree on the same machine downloads each tarball once.
 fn sources_cache_dir() -> PathBuf {
@@ -126,7 +136,7 @@ fn fetch(out: &Path, source: &Source) -> PathBuf {
 	if let Some(sources) = std::env::var_os("PINFRAME_SOURCES") {
 		let local = PathBuf::from(sources).join(source.name);
 		if local.is_dir() {
-			eprintln!("pinframe: using {} from PINFRAME_SOURCES", source.name);
+			eprintln!("stabilize: using {} from PINFRAME_SOURCES", source.name);
 			return local;
 		}
 	}

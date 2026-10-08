@@ -1,4 +1,4 @@
-//! Photo colour profiles. pinframe keeps pixel values and labels the clip with the photos' profile; only
+//! Photo colour profiles. Stabilize keeps pixel values and labels the clip with the photos' profile; only
 //! a set mixing sRGB and Display P3 photos is converted, sRGB to Display P3, which holds every sRGB colour.
 
 use crate::pixels::Image;

@@ -133,7 +133,7 @@ fn ascii_field(exif: &exif::Exif, tag: exif::Tag) -> Option<String> {
 	}
 }
 
-/// What pinframe reads from a photo's EXIF: its capture time as a sort key (`capture_time_key`), and its
+/// What Stabilize reads from a photo's EXIF: its capture time as a sort key (`capture_time_key`), and its
 /// focal length in 35 mm film terms, which names the lens and any digital crop.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Exif {
@@ -303,7 +303,7 @@ mod tests {
 
 	#[test]
 	fn focal_length_reads_from_exif_and_zero_means_unknown() {
-		let path = std::env::temp_dir().join(format!("pinframe-focal-{}.png", std::process::id()));
+		let path = std::env::temp_dir().join(format!("stabilize-focal-{}.png", std::process::id()));
 		png_with_focal(&path, 120);
 		assert_eq!(exif(&path), Ok(Exif { capture_time: None, focal_35mm: Some(120.0) }));
 		png_with_focal(&path, 0);
@@ -327,7 +327,7 @@ mod tests {
 
 	#[test]
 	fn unsupported_format_error() {
-		let path = std::env::temp_dir().join(format!("pinframe-unsupported-{}.bin", std::process::id()));
+		let path = std::env::temp_dir().join(format!("stabilize-unsupported-{}.bin", std::process::id()));
 		std::fs::write(&path, b"not a photo").unwrap();
 		assert_eq!(
 			oriented_size(&path),
@@ -383,7 +383,7 @@ mod tests {
 		for name in ["orientation-6.heic", "orientation-6.jxl", "orientation-6.png"] {
 			assert_eq!(profile(&Path::new("testdata").join(name)), Ok(Profile::Srgb), "{name}");
 		}
-		let path = std::env::temp_dir().join(format!("pinframe-profile-{}.png", std::process::id()));
+		let path = std::env::temp_dir().join(format!("stabilize-profile-{}.png", std::process::id()));
 		let p3_icc = colour::display_p3_icc();
 		let adobe_icc = std::fs::read("/System/Library/ColorSync/Profiles/AdobeRGB1998.icc").unwrap();
 		let write = |icc: Option<&[u8]>, cicp: Option<[u8; 4]>| {
@@ -526,7 +526,7 @@ mod tests {
 			let mut jpeg = base.clone();
 			jpeg[tag_offset + 9] = orientation;
 			let path = std::env::temp_dir()
-				.join(format!("pinframe-orientation-{orientation}-{}.jpg", std::process::id()));
+				.join(format!("stabilize-orientation-{orientation}-{}.jpg", std::process::id()));
 			std::fs::write(&path, jpeg).unwrap();
 			let image = decode(&path).unwrap();
 			assert_eq!(image.pixels, hex(expected), "orientation {orientation}");

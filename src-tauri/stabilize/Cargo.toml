@@ -1,5 +1,5 @@
 [package]
-name = "pinframe"
+name = "stabilize"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
@@ -16,6 +16,3 @@ zune-jpeg = "0.5.15"
 [build-dependencies]
 bindgen = "0.72"
 cmake = "0.1.58"
-
-[profile.release]
-debug = 1

@@ -1,17 +1,17 @@
-//! pinframe in Rust: pin one feature in place across a photo sequence. Same flags and outputs as
-//! `anchor.py`, for AVIF photos. A thin CLI over the `pinframe` library: it reads the flags into a
+//! The stabilize CLI: pin one feature in place across a photo sequence. Same flags and outputs as
+//! `anchor.py`, for AVIF photos. A thin CLI over the `stabilize` library: it reads the flags into a
 //! [`Job`], prints the library's progress lines, and stops with the library's message on an error.
 
-use pinframe::{BOX_REMOVED, Job, Order, Output};
+use stabilize::{BOX_REMOVED, Job, Order, Output};
 use std::path::PathBuf;
 
-const USAGE: &str = "usage: pinframe PHOTO... --points x,y[/x,y]... [--at PHOTO=x,y[/x,y]...[@zoom]]...
+const USAGE: &str = "usage: stabilize PHOTO... --points x,y[/x,y]... [--at PHOTO=x,y[/x,y]...[@zoom]]...
 				[--near PHOTO=x,y[/x,y]...[@zoom]]... [--skip PHOTO]... [--pad COLOUR] [--fps N]
 				[--out CLIP-or-JSON] [--frames DIR] [--vf FILTERS] [--cache DIR|--no-cache] [--order time|name]";
 
-/// Stops on input or photos pinframe cannot use: a message and exit code 1.
+/// Stops on input or photos stabilize cannot use: a message and exit code 1.
 fn fail(message: &str) -> ! {
-	eprintln!("pinframe: {message}");
+	eprintln!("stabilize: {message}");
 	std::process::exit(1);
 }
 
@@ -54,11 +54,11 @@ fn parse_args() -> Job {
 }
 
 fn main() {
-	pinframe::start_profile();
+	stabilize::start_profile();
 	let job = parse_args();
 	let mut log = |line: &str| println!("{line}");
-	let tracked = pinframe::track(&job, &mut log).unwrap_or_else(|e| fail(&e));
+	let tracked = stabilize::track(&job, &mut log).unwrap_or_else(|e| fail(&e));
 	tracked.write(&mut log).unwrap_or_else(|e| fail(&e));
 	println!("wrote {}", job.output.as_ref().unwrap().out.display());
-	pinframe::finish_profile();
+	stabilize::finish_profile();
 }

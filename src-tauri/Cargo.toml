@@ -1,5 +1,5 @@
 [workspace]
-members = ["serve"]
+members = ["serve", "stabilize"]
 
 [package]
 name = "enframe"
@@ -39,3 +39,6 @@ rawler = "0.7"
 default = [ "custom-protocol" ]
 custom-protocol = [ "tauri/custom-protocol" ]
 screenshots = ["dep:xcap", "dep:enigo"]
+
+[profile.release.package.stabilize]
+debug = 1
