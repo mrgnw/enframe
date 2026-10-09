@@ -3,6 +3,7 @@ import '../app.css';
 import '$lib/theme.css';
 import { onMount } from 'svelte';
 import { dev } from '$app/environment';
+import { onNavigate } from '$app/navigation';
 import OfflineProgress from '$lib/components/OfflineProgress.svelte';
 import { Toaster } from '$lib/components/ui/sonner';
 import { hasNativeShell } from '$lib/bridge';
@@ -15,6 +16,21 @@ onMount(() => {
 	if (dev || hasNativeShell() || !('serviceWorker' in navigator)) return;
 	navigator.serviceWorker.register('/service-worker.js').catch((error) => {
 		console.warn('service worker registration failed:', error);
+	});
+});
+
+const appOf = (routeId: string | null | undefined) => (routeId?.startsWith('/stabilize') ? 'stabilize' : 'enframe');
+
+// Crossing between the apps cross-fades instead of cutting, and the app switch, named in its own styles, holds
+// still through it. Moves within one app stay instant.
+onNavigate((navigation) => {
+	if (!document.startViewTransition) return;
+	if (appOf(navigation.from?.route.id) === appOf(navigation.to?.route.id)) return;
+	return new Promise((resolve) => {
+		document.startViewTransition(async () => {
+			resolve();
+			await navigation.complete;
+		});
 	});
 });
 

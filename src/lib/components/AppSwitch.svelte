@@ -89,6 +89,8 @@ function onDocumentKeydown(e: KeyboardEvent) {
 	.app-switch {
 		position: relative;
 		display: inline-flex;
+		/* Crossing between the apps, the switch holds still while the screens cross-fade around it. */
+		view-transition-name: app-switch;
 	}
 
 	.trigger {

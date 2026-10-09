@@ -193,8 +193,15 @@
 	}
 }
 
+/* Moving between the apps cross-fades; the app switch holds still through it. */
+
 @media (prefers-reduced-motion: reduce) {
 	.app .btn.large:hover:not(:disabled) {
 		transform: none;
+	}
+	::view-transition-group(*),
+	::view-transition-old(*),
+	::view-transition-new(*) {
+		animation: none !important;
 	}
 }

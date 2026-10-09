@@ -39,6 +39,41 @@ test('the wordmark switches between enframe and Stabilize', async ({ page }) => 
 	await expect(page).toHaveURL(/\/stabilize$/);
 });
 
+// Crossing between the apps cross-fades, moves within one app do not, and the switch's island is in the same
+// place on both sides.
+test('crossing between the apps cross-fades around a switch that holds still', async ({ page }) => {
+	await page.addInitScript(() => {
+		const counted = window as unknown as { transitions: number };
+		counted.transitions = 0;
+		const start = document.startViewTransition?.bind(document);
+		if (!start) return;
+		document.startViewTransition = ((update: ViewTransitionUpdateCallback) => {
+			counted.transitions += 1;
+			return start(update);
+		}) as typeof document.startViewTransition;
+	});
+	const transitions = () => page.evaluate(() => (window as unknown as { transitions: number }).transitions);
+	const island = page.locator('.dock.top .island.start');
+
+	await page.goto('/');
+	await expect(page.locator('.app-switch .trigger.full')).toHaveText('enframe');
+	const enframeBox = await island.boundingBox();
+	await page.getByRole('link', { name: 'Browse library' }).click();
+	await expect(page).toHaveURL(/\/library$/);
+	expect(await transitions()).toBe(0);
+
+	await page.keyboard.press('Meta+2');
+	await expect(page).toHaveURL(/\/stabilize$/);
+	await expect(page.locator('.app-switch .trigger.full')).toHaveText('Stabilize');
+	expect(await transitions()).toBe(1);
+	const stabilizeBox = await island.boundingBox();
+	expect([stabilizeBox?.x, stabilizeBox?.y, stabilizeBox?.height]).toEqual([
+		enframeBox?.x,
+		enframeBox?.y,
+		enframeBox?.height
+	]);
+});
+
 // Each app's layout draws the switch, so it is there before any screen has loaded anything: on the folder
 // picker, on a folder that cannot be opened, on the preview without a folder, and on every enframe route.
 test('every route and state has the switch', async ({ page }) => {
