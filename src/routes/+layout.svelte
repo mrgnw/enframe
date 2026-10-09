@@ -2,16 +2,11 @@
 import '../app.css';
 import { onMount } from 'svelte';
 import { dev } from '$app/environment';
-import { page } from '$app/state';
-import AppSwitch from '$lib/components/AppSwitch.svelte';
 import OfflineProgress from '$lib/components/OfflineProgress.svelte';
 import { Toaster } from '$lib/components/ui/sonner';
 import { hasNativeShell } from '$lib/bridge';
 
 let { children } = $props();
-
-// Stabilize renders its own AppSwitch inline, in its dark dock; everywhere else gets it here.
-let showSwitch = $derived(!page.url.pathname.startsWith('/stabilize'));
 
 // The browser build is the one that leaves the machine that owns it, so it is the one
 // that earns an offline shell. The desktop shell's assets are already on disk.
@@ -35,12 +30,6 @@ function suppressWebviewMenu(event: MouseEvent) {
 
 <svelte:document oncontextmenu={suppressWebviewMenu} />
 
-{#if showSwitch}
-	<div class="app-switch-slot" class:native={hasNativeShell()}>
-		<AppSwitch current="enframe" />
-	</div>
-{/if}
-
 {#if children}
     {@render children()}
 {:else}
@@ -49,18 +38,3 @@ function suppressWebviewMenu(event: MouseEvent) {
 
 <OfflineProgress />
 <Toaster />
-
-<style>
-	.app-switch-slot {
-		position: fixed;
-		top: 12px;
-		left: 14px;
-		/* Above Standalone's `.corner` (z-index 50), which reserves this corner for the native traffic lights. */
-		z-index: 60;
-	}
-
-	/* The native window's traffic lights sit in this corner on the desktop shell. */
-	.app-switch-slot.native {
-		left: 120px;
-	}
-</style>

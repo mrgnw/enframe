@@ -2,14 +2,12 @@
 // The preview and export screen (mockups/02-preview.html): the clip loops in the browser from the
 // sidecar's crop rects, the transport island sets fps and pad, the panel exports. Space plays and pauses.
 import { onMount } from 'svelte';
-import AppSwitch from '$lib/components/AppSwitch.svelte';
 import Clip from './Clip.svelte';
 import Export from './Export.svelte';
 import { FPS_PRESETS, type PadChoice } from './clip';
 import { Preview } from './preview-session.svelte';
 import Strip from './PreviewStrip.svelte';
-import './stabilize.css';
-import './marking.css';
+import { useDock } from './dock.svelte';
 import './preview.css';
 
 let { folder, feature = null }: { folder: string; feature?: string | null } = $props();
@@ -24,6 +22,8 @@ onMount(() => {
 
 const back = $derived(`/stabilize?folder=${encodeURIComponent(folder)}`);
 const n = $derived(session.rows.length);
+const ready = $derived(session.stage === 'ready');
+useDock({ title, islands });
 const PADS: { v: PadChoice; title: string }[] = [
 	{ v: 'none', title: 'No padding: the crop shrinks until every photo fills it' },
 	{ v: 'black', title: 'Black' },
@@ -90,21 +90,6 @@ function keydown(e: KeyboardEvent) {
 	<nav class="filmstrip empty"></nav>
 {:else}
 	<main class="stage preview">
-		<div class="dock top">
-			<div class="island start">
-				<AppSwitch current="stabilize" responsive />
-				<span class="sep desk"></span>
-				<span class="muted desk">{session.name} · {n} photos</span>
-			</div>
-
-			<div class="island steps mid desk">
-				<a class="step done" href={back}><span class="n">1</span>Points</a>
-				<a class="step done" href={back} title="Back to fixing lost photos"><span class="n">2</span>Fix</a>
-				<span class="step active"><span class="n">3</span>Export</span>
-			</div>
-
-			<a class="island end phone back" href={back}>‹ Back</a>
-		</div>
 
 		<Export {session} />
 
@@ -205,3 +190,22 @@ function keydown(e: KeyboardEvent) {
 
 	<Strip {session} />
 {/if}
+
+{#snippet title()}
+	{#if ready}
+		<span class="sep desk"></span>
+		<span class="muted desk">{session.name} · {n} photos</span>
+	{/if}
+{/snippet}
+
+{#snippet islands()}
+	{#if ready}
+		<div class="island steps mid desk">
+			<a class="step done" href={back}><span class="n">1</span>Points</a>
+			<a class="step done" href={back} title="Back to fixing lost photos"><span class="n">2</span>Fix</a>
+			<span class="step active"><span class="n">3</span>Export</span>
+		</div>
+
+		<a class="island end phone back" href={back}>‹ Back</a>
+	{/if}
+{/snippet}

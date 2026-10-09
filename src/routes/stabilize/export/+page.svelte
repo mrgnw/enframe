@@ -3,8 +3,6 @@
 // feature without a name), and the export panel.
 import { page } from '$app/state';
 import Preview from '$lib/stabilize/Preview.svelte';
-import '$lib/stabilize/stabilize.css';
-import '$lib/stabilize/marking.css';
 
 const folder = $derived(page.url.searchParams.get('folder'));
 const feature = $derived(page.url.searchParams.get('feature'));
@@ -14,21 +12,19 @@ const feature = $derived(page.url.searchParams.get('feature'));
 	<title>Stabilize{folder ? ' · preview and export' : ''}</title>
 </svelte:head>
 
-<div class="stabilize">
-	{#if folder}
-		{#key folder}
-			<Preview {folder} {feature} />
-		{/key}
-	{:else}
-		<main class="stage">
-			<section class="drop">
-				<div>
-					<h1>Which <b>folder</b>?</h1>
-					<p>The preview plays a folder's clip once its points are marked.</p>
-					<a class="btn primary" href="/stabilize">Choose a folder</a>
-				</div>
-			</section>
-		</main>
-		<nav class="filmstrip empty"></nav>
-	{/if}
-</div>
+{#if folder}
+	{#key folder}
+		<Preview {folder} {feature} />
+	{/key}
+{:else}
+	<main class="stage">
+		<section class="drop">
+			<div>
+				<h1>Which <b>folder</b>?</h1>
+				<p>The preview plays a folder's clip once its points are marked.</p>
+				<a class="btn primary" href="/stabilize">Choose a folder</a>
+			</div>
+		</section>
+	</main>
+	<nav class="filmstrip empty"></nav>
+{/if}

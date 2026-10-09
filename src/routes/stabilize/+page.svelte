@@ -20,27 +20,25 @@ async function choose() {
 	<title>Stabilize{folder ? ' · fix lost photos' : ''}</title>
 </svelte:head>
 
-<div class="stabilize">
-	{#if folder}
-		{#key folder}
-			<Marking {folder} {trailMode} />
-		{/key}
-	{:else}
-		<main class="stage">
-			<section class="drop">
-				<div>
-					<h1>Hold one thing <b>still</b></h1>
-					<p>
-						Open a folder of photos. Click points on the cloud, the mountain, the moon, whatever should stay
-						put. Everything else moves around it.
-					</p>
-					<div class="actions">
-						<button class="btn primary" onclick={choose}>Open folder</button>
-					</div>
-					<small>Photos play in capture-time order · AVIF, HEIC, JPEG, PNG</small>
+{#if folder}
+	{#key folder}
+		<Marking {folder} {trailMode} />
+	{/key}
+{:else}
+	<main class="stage">
+		<section class="drop">
+			<div>
+				<h1>Hold one thing <b>still</b></h1>
+				<p>
+					Open a folder of photos. Click points on the cloud, the mountain, the moon, whatever should stay
+					put. Everything else moves around it.
+				</p>
+				<div class="actions">
+					<button class="btn primary" onclick={choose}>Open folder</button>
 				</div>
-			</section>
-		</main>
-		<nav class="filmstrip empty"></nav>
-	{/if}
-</div>
+				<small>Photos play in capture-time order · AVIF, HEIC, JPEG, PNG</small>
+			</div>
+		</section>
+	</main>
+	<nav class="filmstrip empty"></nav>
+{/if}

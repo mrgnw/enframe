@@ -4,7 +4,6 @@
 // "loaded" and "points" states); `fix` is the marking loop. The features panel switches between the folder's
 // features, each with its own session.
 import { onMount } from 'svelte';
-import AppSwitch from '$lib/components/AppSwitch.svelte';
 import Filmstrip from './Filmstrip.svelte';
 import Features from './Features.svelte';
 import { Sequence } from './sequence.svelte';
@@ -12,8 +11,7 @@ import Stage from './Stage.svelte';
 import { patchLayout } from './trail';
 import { PATCH_PX, type TrailMode } from './types';
 import { photoUrl } from './api';
-import './stabilize.css';
-import './marking.css';
+import { useDock } from './dock.svelte';
 
 let { folder, trailMode = 'steps' }: { folder: string; trailMode?: TrailMode } = $props();
 
@@ -32,6 +30,8 @@ const skipped = $derived(p?.source === 'skipped');
 const soft = $derived(p?.source === 'soft');
 const editable = $derived(lost || soft || p?.source === 'mark');
 const folderName = $derived(folder.replace(/\/+$/, '').split('/').pop() ?? folder);
+const ready = $derived(session.stage !== 'loading' && session.stage !== 'failed');
+useDock({ title, islands });
 const patch = $derived(
 	session.stage === 'fix' && (editable || skipped)
 		? patchLayout(session.ref, patchEl?.offsetWidth || 120, patchEl?.offsetHeight || 105, PATCH_PX)
@@ -134,55 +134,6 @@ function keydown(e: KeyboardEvent) {
 	<nav class="filmstrip empty"></nav>
 {:else}
 	<main class="stage" class:marking={session.stage === 'points'} class:tinted={session.hue !== 0} style:--hue="{session.hue}deg">
-		<div class="dock top">
-			<div class="island start">
-				<AppSwitch current="stabilize" responsive />
-				<span class="sep desk"></span>
-				{#if session.stage === 'fix'}
-					<span class="muted where"><b class="desk">{p.name} ·</b> {session.current + 1} / {session.photos.length}</span>
-				{:else}
-					<span class="muted desk">{folderName} · {session.photos.length} photos</span>
-				{/if}
-			</div>
-			<div class="island steps mid desk">
-				{#if session.stage === 'fix'}
-					<span class="step done"><span class="n">1</span>Points</span>
-					<span class="step active"><span class="n">2</span>Fix</span>
-				{:else}
-					<span class="step active"><span class="n">1</span>Points</span>
-					<span class="step"><span class="n">2</span>Fix</span>
-				{/if}
-				<span class="step"><span class="n">3</span>Export</span>
-			</div>
-			{#if session.stage === 'fix'}
-				<div class="island end" class:busy={session.busy}>
-					<span class="count" class:ok={!session.lost}>
-						<span class="dot"></span>
-						<span>
-							{#if session.lost}{session.lost}{phone ? '' : ' to fix'}{:else if phone}0{:else}All {session.photos.length} linked{/if}
-						</span>
-					</span>
-					<button class="btn icon" title="Next photo in the fix list (Tab)" disabled={!session.fixList.size} onclick={() => session.nextInList()}>→</button>
-					{#if session.fixed}
-						<button class="btn clear-fixed" title="Remove the photos you have marked from the fix list" onclick={() => session.clearFixed()}>
-							Clear <span class="desk">{session.fixed} </span>fixed
-						</button>
-					{/if}
-					<span class="sep"></span>
-					<a class="btn primary" href="/stabilize/export?folder={encodeURIComponent(folder)}&feature={encodeURIComponent(session.name)}">Preview</a>
-					<div class="bar"></div>
-				</div>
-			{:else}
-				<div class="island end" class:busy={session.stage === 'tracking'}>
-					<span class="muted">{p.pts.length} point{p.pts.length === 1 ? '' : 's'}</span>
-					<span class="sep"></span>
-					<button class="btn primary" disabled={!p.pts.length || session.stage === 'tracking'} onclick={() => session.startTracking()}>
-						{session.stage === 'tracking' ? 'Tracking…' : 'Track'} <kbd class="desk">⏎</kbd>
-					</button>
-					<div class="bar"></div>
-				</div>
-			{/if}
-		</div>
 
 		<Features {sequence} />
 
@@ -266,3 +217,57 @@ function keydown(e: KeyboardEvent) {
 		<Filmstrip {session} />
 	{/key}
 {/if}
+
+{#snippet title()}
+	{#if ready}
+		<span class="sep desk"></span>
+		{#if session.stage === 'fix'}
+			<span class="muted where"><b class="desk">{p.name} ·</b> {session.current + 1} / {session.photos.length}</span>
+		{:else}
+			<span class="muted desk">{folderName} · {session.photos.length} photos</span>
+		{/if}
+	{/if}
+{/snippet}
+
+{#snippet islands()}
+	{#if ready}
+		<div class="island steps mid desk">
+			{#if session.stage === 'fix'}
+				<span class="step done"><span class="n">1</span>Points</span>
+				<span class="step active"><span class="n">2</span>Fix</span>
+			{:else}
+				<span class="step active"><span class="n">1</span>Points</span>
+				<span class="step"><span class="n">2</span>Fix</span>
+			{/if}
+			<span class="step"><span class="n">3</span>Export</span>
+		</div>
+		{#if session.stage === 'fix'}
+			<div class="island end" class:busy={session.busy}>
+				<span class="count" class:ok={!session.lost}>
+					<span class="dot"></span>
+					<span>
+						{#if session.lost}{session.lost}{phone ? '' : ' to fix'}{:else if phone}0{:else}All {session.photos.length} linked{/if}
+					</span>
+				</span>
+				<button class="btn icon" title="Next photo in the fix list (Tab)" disabled={!session.fixList.size} onclick={() => session.nextInList()}>→</button>
+				{#if session.fixed}
+					<button class="btn clear-fixed" title="Remove the photos you have marked from the fix list" onclick={() => session.clearFixed()}>
+						Clear <span class="desk">{session.fixed} </span>fixed
+					</button>
+				{/if}
+				<span class="sep"></span>
+				<a class="btn primary" href="/stabilize/export?folder={encodeURIComponent(folder)}&feature={encodeURIComponent(session.name)}">Preview</a>
+				<div class="bar"></div>
+			</div>
+		{:else}
+			<div class="island end" class:busy={session.stage === 'tracking'}>
+				<span class="muted">{p.pts.length} point{p.pts.length === 1 ? '' : 's'}</span>
+				<span class="sep"></span>
+				<button class="btn primary" disabled={!p.pts.length || session.stage === 'tracking'} onclick={() => session.startTracking()}>
+					{session.stage === 'tracking' ? 'Tracking…' : 'Track'} <kbd class="desk">⏎</kbd>
+				</button>
+				<div class="bar"></div>
+			</div>
+		{/if}
+	{/if}
+{/snippet}

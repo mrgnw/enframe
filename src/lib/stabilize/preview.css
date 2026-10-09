@@ -342,10 +342,6 @@
 			gap: 8px;
 			padding-bottom: 12px;
 		}
-		.dock {
-			justify-self: stretch;
-			order: 0;
-		}
 		.dock .back {
 			padding-right: 14px;
 			font-weight: 600;

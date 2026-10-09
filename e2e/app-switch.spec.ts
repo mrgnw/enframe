@@ -38,3 +38,32 @@ test('the wordmark switches between enframe and Stabilize', async ({ page }) => 
 	await page.keyboard.press('Meta+2');
 	await expect(page).toHaveURL(/\/stabilize$/);
 });
+
+// Each app's layout draws the switch, so it is there before any screen has loaded anything: on the folder
+// picker, on a folder that cannot be opened, on the preview without a folder, and on every enframe route.
+test('every route and state has the switch', async ({ page }) => {
+	mkdirSync(SHOTS, { recursive: true });
+	const routes: [string, string][] = [
+		['/', 'enframe'],
+		['/library', 'enframe'],
+		['/stabilize', 'Stabilize'],
+		['/stabilize?folder=%2Fno%2Fsuch%2Ffolder', 'Stabilize'],
+		['/stabilize/export', 'Stabilize'],
+		['/stabilize/export?folder=%2Fno%2Fsuch%2Ffolder', 'Stabilize']
+	];
+	for (const [route, app] of routes) {
+		await page.goto(route);
+		const trigger = page.locator('.app-switch .trigger.full');
+		await expect(trigger, route).toHaveCount(1);
+		await expect(trigger, route).toHaveText(app);
+		await expect(trigger, route).toBeVisible();
+	}
+	await page.goto('/stabilize?folder=%2Fno%2Fsuch%2Ffolder');
+	await expect(page.locator('h1')).toContainText("Can't open");
+	await page.screenshot({ path: `${SHOTS}/failed-folder.png` });
+	await page.goto('/stabilize');
+	await page.screenshot({ path: `${SHOTS}/picker.png` });
+	await page.setViewportSize({ width: 390, height: 844 });
+	await expect(page.locator('.app-switch .trigger.compact')).toBeVisible();
+	await page.screenshot({ path: `${SHOTS}/picker-phone.png` });
+});

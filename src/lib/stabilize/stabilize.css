@@ -524,6 +524,9 @@
 	}
 
 	@media (max-width: 700px) {
+		/* The layout's top dock is a row of the shell above the stage. */
+		grid-template-rows: auto minmax(0, 1fr) auto;
+
 		.desk {
 			display: none !important;
 		}
