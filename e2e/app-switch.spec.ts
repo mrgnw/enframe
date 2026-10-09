@@ -57,6 +57,14 @@ test('every route and state has the switch', async ({ page }) => {
 		await expect(trigger, route).toHaveCount(1);
 		await expect(trigger, route).toHaveText(app);
 		await expect(trigger, route).toBeVisible();
+		// Both apps' screens are dark, so the wordmark must be light to be seen at all.
+		const rgb = await trigger.evaluate((el) => getComputedStyle(el).color.match(/\d+/g)?.slice(0, 3).map(Number));
+		expect(Math.min(...(rgb ?? [0])), `${route} wordmark colour ${rgb}`).toBeGreaterThan(200);
+		if (app === 'Stabilize') {
+			// The shell's stylesheet is applied as soon as the switch shows, not after the web fonts load.
+			const position = await page.locator('.stabilize').evaluate((el) => getComputedStyle(el).position);
+			expect(position, route).toBe('fixed');
+		}
 	}
 	await page.goto('/stabilize?folder=%2Fno%2Fsuch%2Ffolder');
 	await expect(page.locator('h1')).toContainText("Can't open");

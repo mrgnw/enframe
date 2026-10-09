@@ -11,6 +11,17 @@ let { children } = $props();
 const dock = provideDock();
 </script>
 
+<!-- Its own stylesheet, not an @import in stabilize.css: a sheet is not applied until its imports load, so the
+     shell would show unstyled for as long as Google Fonts takes, or for good offline. -->
+<svelte:head>
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+	<link
+		rel="stylesheet"
+		href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600&family=Karla:wght@400;500;600&display=swap"
+	/>
+</svelte:head>
+
 <div class="stabilize">
 	<div class="dock top">
 		<div class="island start">
