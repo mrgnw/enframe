@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex};
 use tower::ServiceExt as _;
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
+use tower_http::set_header::SetResponseHeader;
 
 const DEFAULT_PORT: u16 = 5911;
 const MAX_BODY: usize = 512 * 1024 * 1024;
@@ -647,7 +648,17 @@ fn cors() -> CorsLayer {
 }
 
 fn router(state: AppState, web: &FsPath) -> Router {
-    let spa = ServeDir::new(web).fallback(ServeFile::new(web.join("index.html")));
+    // The shell is asked for again on every visit: it names the deploy's chunks, and a
+    // copy the browser kept on its own say would start the last deploy.
+    let spa = SetResponseHeader::overriding(
+        ServeDir::new(web).fallback(ServeFile::new(web.join("index.html"))),
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("no-cache"),
+    );
+    // A build file that is gone is a 404, never the shell: a tab still running the last
+    // deploy asks for that deploy's chunks, and the 404 is what makes it reload onto this
+    // one. The shell in their place loads as a blank page, or a screen without its styles.
+    let build = ServeDir::new(web.join("_app"));
     Router::new()
         .route("/sql/select", post(sql_select))
         .route("/sql/execute", post(sql_execute))
@@ -660,6 +671,7 @@ fn router(state: AppState, web: &FsPath) -> Router {
         .route("/api/stabilize/reveal", post(stabilize::reveal))
         .route("/api/{command}", post(api))
         .route("/img/{*path}", get(img))
+        .nest_service("/_app", build)
         .fallback_service(spa)
         .layer(DefaultBodyLimit::max(MAX_BODY))
         .layer(cors())
@@ -832,6 +844,36 @@ mod tests {
         assert_eq!(
             status(&app, from("100.64.0.7:52001", get_ls(&outside))).await,
             StatusCode::FORBIDDEN
+        );
+    }
+
+    // Every route is the shell, never kept by the browser on its own say, but a build file
+    // that is gone is not the shell: the tab asking for it runs the last deploy, and only a
+    // 404 makes it reload onto this one.
+    #[tokio::test]
+    async fn a_gone_build_file_is_a_404_and_every_route_is_the_shell() {
+        let sandbox = Sandbox::new("web");
+        let assets = sandbox.base.join("_app/immutable/assets");
+        std::fs::create_dir_all(&assets).unwrap();
+        std::fs::write(sandbox.base.join("index.html"), "<!doctype html>").unwrap();
+        std::fs::write(assets.join("3.new.css"), ".stabilize {}").unwrap();
+        let app = sandbox.app();
+        let get = |uri: &str| Request::builder().uri(uri).body(Body::empty()).unwrap();
+
+        let shell = app.clone().oneshot(get("/stabilize")).await.unwrap();
+        assert_eq!(shell.status(), StatusCode::OK);
+        assert_eq!(shell.headers()[header::CACHE_CONTROL], "no-cache");
+        assert_eq!(
+            status(&app, get("/_app/immutable/assets/3.new.css")).await,
+            StatusCode::OK
+        );
+        assert_eq!(
+            status(&app, get("/_app/immutable/assets/3.old.css")).await,
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            status(&app, get("/_app/immutable/nodes/3.old.js")).await,
+            StatusCode::NOT_FOUND
         );
     }
 

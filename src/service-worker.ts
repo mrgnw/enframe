@@ -7,8 +7,7 @@ import { build, files, version } from '$service-worker';
 
 const worker = self as unknown as ServiceWorkerGlobalScope;
 
-// One cache per deploy; activation drops the rest, so a stale shell can outlive a
-// deploy by at most one reload.
+// One cache per deploy; activation drops the rest.
 const CACHE = `enframe-${version}`;
 
 // The SPA fallback page answers every navigation, and build already carries the wasm
@@ -87,12 +86,14 @@ worker.addEventListener('fetch', (event) => {
 	const url = new URL(request.url);
 	if (url.origin !== location.origin) return;
 
-	// Every route is the same shell; serving it from cache is what makes a reload
-	// without a network work at all.
+	// Every route is the same shell. The network's comes first: a cached one can belong to
+	// the last deploy, and its chunks go with that deploy's cache the moment this deploy's
+	// worker activates, which leaves a blank page or a screen without its styles. Whatever
+	// the network answers is passed on, a redirect included (it arrives opaque, not ok);
+	// only no network at all falls back to the cached shell, which is what makes an
+	// offline reload work.
 	if (request.mode === 'navigate') {
-		event.respondWith(
-			caches.match(SHELL).then((cached) => cached ?? fetch(request))
-		);
+		event.respondWith(fetch(request).catch(async () => (await caches.match(SHELL)) ?? Response.error()));
 		return;
 	}
 

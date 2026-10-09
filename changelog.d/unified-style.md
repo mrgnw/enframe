@@ -8,3 +8,4 @@
 ### Fixed
 
 - The library's own "Enframe" title no longer sits under the app switch.
+- After an update, opening the app or switching between enframe and Stabilize no longer shows a blank page or a screen without its styles.
