@@ -15,7 +15,7 @@ const dock = provideDock();
 <div class="app stabilize" class:native={hasNativeShell()}>
 	<div class="dock top">
 		<div class="island start">
-			<AppSwitch current="stabilize" responsive />
+			<AppSwitch current="stabilize" />
 			{@render dock.parts.title?.()}
 		</div>
 		{@render dock.parts.islands?.()}

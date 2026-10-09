@@ -11,7 +11,7 @@ test('the wordmark and the backquote switch between enframe and Stabilize', asyn
 	mkdirSync(SHOTS, { recursive: true });
 
 	await page.goto(`/stabilize?folder=${encodeURIComponent(FOLDER)}`);
-	const darkTrigger = page.locator('.app-switch .trigger.full');
+	const darkTrigger = page.locator('.app-switch .trigger');
 	await expect(darkTrigger).toHaveText('Stabilize');
 
 	await darkTrigger.click();
@@ -24,7 +24,7 @@ test('the wordmark and the backquote switch between enframe and Stabilize', asyn
 
 	await toEnframe.click();
 	await expect(page).toHaveURL(/\/$/);
-	const lightTrigger = page.locator('.app-switch .trigger.full');
+	const lightTrigger = page.locator('.app-switch .trigger');
 	await expect(lightTrigger).toHaveText('enframe');
 
 	await lightTrigger.click();
@@ -61,7 +61,7 @@ test('crossing between the apps cross-fades around a switch that holds still', a
 	const island = page.locator('.dock.top .island.start');
 
 	await page.goto('/');
-	await expect(page.locator('.app-switch .trigger.full')).toHaveText('enframe');
+	await expect(page.locator('.app-switch .trigger')).toHaveText('enframe');
 	const enframeBox = await island.boundingBox();
 	await page.getByRole('link', { name: 'Browse library' }).click();
 	await expect(page).toHaveURL(/\/library$/);
@@ -69,7 +69,7 @@ test('crossing between the apps cross-fades around a switch that holds still', a
 
 	await page.keyboard.press('Backquote');
 	await expect(page).toHaveURL(/\/stabilize$/);
-	await expect(page.locator('.app-switch .trigger.full')).toHaveText('Stabilize');
+	await expect(page.locator('.app-switch .trigger')).toHaveText('Stabilize');
 	expect(await transitions()).toBe(1);
 	const stabilizeBox = await island.boundingBox();
 	expect([stabilizeBox?.x, stabilizeBox?.y, stabilizeBox?.height]).toEqual([
@@ -93,7 +93,7 @@ test('every route and state has the switch', async ({ page }) => {
 	];
 	for (const [route, app] of routes) {
 		await page.goto(route);
-		const trigger = page.locator('.app-switch .trigger.full');
+		const trigger = page.locator('.app-switch .trigger');
 		await expect(trigger, route).toHaveCount(1);
 		await expect(trigger, route).toHaveText(app);
 		await expect(trigger, route).toBeVisible();
@@ -112,6 +112,8 @@ test('every route and state has the switch', async ({ page }) => {
 	await page.goto('/stabilize');
 	await page.screenshot({ path: `${SHOTS}/picker.png` });
 	await page.setViewportSize({ width: 390, height: 844 });
-	await expect(page.locator('.app-switch .trigger.compact')).toBeVisible();
+	// A phone shows the same wordmark as a desktop, not an initial.
+	await expect(page.locator('.app-switch .trigger')).toHaveText('Stabilize');
+	await expect(page.locator('.app-switch .trigger')).toBeVisible();
 	await page.screenshot({ path: `${SHOTS}/picker-phone.png` });
 });

@@ -4,7 +4,7 @@ import { slide } from 'svelte/transition';
 
 type AppId = 'enframe' | 'stabilize';
 
-let { current, responsive = false }: { current: AppId; responsive?: boolean } = $props();
+let { current }: { current: AppId } = $props();
 
 const APPS: { id: AppId; label: string; href: string }[] = [
 	{ id: 'enframe', label: 'enframe', href: '/' },
@@ -49,10 +49,10 @@ function onDocumentKeydown(e: KeyboardEvent) {
 
 <svelte:document onclick={onDocumentClick} onkeydown={onDocumentKeydown} />
 
-<div class="app-switch" class:responsive bind:this={root}>
+<div class="app-switch" bind:this={root}>
 	<button
 		type="button"
-		class="trigger full"
+		class="trigger"
 		class:open
 		aria-haspopup="menu"
 		aria-expanded={open}
@@ -63,19 +63,6 @@ function onDocumentKeydown(e: KeyboardEvent) {
 			<path d="M1 2.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" />
 		</svg>
 	</button>
-	{#if responsive}
-		<button
-			type="button"
-			class="trigger compact"
-			class:open
-			aria-haspopup="menu"
-			aria-expanded={open}
-			aria-label={`Switch app (currently ${current === 'enframe' ? 'enframe' : 'Stabilize'})`}
-			onclick={() => (open = !open)}
-		>
-			<span class="initial">{current === 'enframe' ? 'e' : 'S'}</span>
-		</button>
-	{/if}
 	{#if open}
 		<div class="menu" role="menu" transition:slide={{ duration: 150 }}>
 			{#each APPS as app (app.id)}
@@ -113,26 +100,6 @@ function onDocumentKeydown(e: KeyboardEvent) {
 		font-weight: 600;
 		line-height: 1;
 		letter-spacing: -0.02em;
-	}
-
-	.trigger.compact {
-		display: none;
-		width: 28px;
-		height: 28px;
-		padding: 0;
-		border-radius: 50%;
-		background: var(--raised);
-		justify-content: center;
-		font-size: 13px;
-	}
-
-	@media (max-width: 700px) {
-		.app-switch.responsive .trigger.full {
-			display: none;
-		}
-		.app-switch.responsive .trigger.compact {
-			display: inline-flex;
-		}
 	}
 
 	.caret {
