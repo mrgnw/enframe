@@ -15,5 +15,6 @@ Active, tracked as GitHub issues (order and parallel lanes from 2026-10-10):
 4. cloud-only-lightroom-thumbnails — PARKED: no viable route (previews cache underivable,
    Adobe API enterprise-only); LR local-storage setting is the answer
 5. stabilize-canvas-editor — a "fit all" canvas rule first, then crop controls with prev/next ghosts on the marking screen
+6. start-screen-story — taglines and flip-book visuals: one thing across many images, many stories from one image
 
 Remaining idea from auto-dual-frame Phase 3: tab-cycle alternative auto placements — tracked in ROADMAP.md.
