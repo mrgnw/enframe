@@ -6,10 +6,15 @@ type AppId = 'enframe' | 'stabilize';
 
 let { current, responsive = false }: { current: AppId; responsive?: boolean } = $props();
 
-const APPS: { id: AppId; label: string; href: string; key: string }[] = [
-	{ id: 'enframe', label: 'enframe', href: '/', key: '⌘1' },
-	{ id: 'stabilize', label: 'Stabilize', href: '/stabilize', key: '⌘2' }
+const APPS: { id: AppId; label: string; href: string }[] = [
+	{ id: 'enframe', label: 'enframe', href: '/' },
+	{ id: 'stabilize', label: 'Stabilize', href: '/stabilize' }
 ];
+
+// The browser keeps ⌘1–⌘9 for its tabs. Neither app uses the backquote, and with two apps one key is enough:
+// it goes to the other one.
+const KEY = '`';
+const other = $derived(current === 'enframe' ? '/stabilize' : '/');
 
 let open = $state(false);
 let root: HTMLDivElement | undefined = $state();
@@ -33,11 +38,11 @@ function onDocumentKeydown(e: KeyboardEvent) {
 		close();
 		return;
 	}
-	if ((e.metaKey || e.ctrlKey) && (e.key === '1' || e.key === '2')) {
+	if (e.key === KEY && !e.metaKey && !e.ctrlKey && !e.altKey) {
 		if (inField(document.activeElement)) return;
 		e.preventDefault();
 		close();
-		void goto(e.key === '1' ? '/' : '/stabilize');
+		void goto(other);
 	}
 }
 </script>
@@ -77,7 +82,7 @@ function onDocumentKeydown(e: KeyboardEvent) {
 				{#if app.id === current}
 					<span class="item current" role="menuitem" aria-current="true">{app.label}</span>
 				{:else}
-					<a class="item" role="menuitem" href={app.href} onclick={close}>{app.label}<kbd>{app.key}</kbd></a>
+					<a class="item" role="menuitem" href={app.href} onclick={close}>{app.label}<kbd>{KEY}</kbd></a>
 				{/if}
 			{/each}
 		</div>

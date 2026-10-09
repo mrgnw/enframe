@@ -83,6 +83,7 @@ const shortcuts = [
 		items: [
 			{ key: '\u2318K', label: 'Command bar' },
 			{ key: '?', label: 'Keyboard shortcuts' },
+			{ key: '`', label: 'Switch to Stabilize' },
 			{ key: 'Esc', label: 'Deselect' },
 			{ key: '\u2318Z', label: 'Undo' },
 			{ key: '\u2318\u21e7Z', label: 'Redo' },

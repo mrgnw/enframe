@@ -7,7 +7,7 @@ import { FOLDER } from './stabilize';
 
 const SHOTS = 'captures/nav';
 
-test('the wordmark switches between enframe and Stabilize', async ({ page }) => {
+test('the wordmark and the backquote switch between enframe and Stabilize', async ({ page }) => {
 	mkdirSync(SHOTS, { recursive: true });
 
 	await page.goto(`/stabilize?folder=${encodeURIComponent(FOLDER)}`);
@@ -19,7 +19,7 @@ test('the wordmark switches between enframe and Stabilize', async ({ page }) => 
 	await expect(darkMenu).toBeVisible();
 	await expect(darkMenu.locator('.item.current')).toHaveText('Stabilize');
 	const toEnframe = darkMenu.locator('.item', { hasText: 'enframe' });
-	await expect(toEnframe.locator('kbd')).toHaveText('⌘1');
+	await expect(toEnframe.locator('kbd')).toHaveText('`');
 	await page.screenshot({ path: `${SHOTS}/dark-menu.png` });
 
 	await toEnframe.click();
@@ -35,8 +35,13 @@ test('the wordmark switches between enframe and Stabilize', async ({ page }) => 
 	await page.keyboard.press('Escape');
 	await expect(lightMenu).toBeHidden();
 
-	await page.keyboard.press('Meta+2');
+	await page.keyboard.press('Backquote');
 	await expect(page).toHaveURL(/\/stabilize$/);
+	await page.keyboard.press('Backquote');
+	await expect(page).toHaveURL(/\/$/);
+	// The browser's own tab shortcuts stay the browser's.
+	await page.keyboard.press('Meta+2');
+	await expect(page).toHaveURL(/\/$/);
 });
 
 // Crossing between the apps cross-fades, moves within one app do not, and the switch's island is in the same
@@ -62,7 +67,7 @@ test('crossing between the apps cross-fades around a switch that holds still', a
 	await expect(page).toHaveURL(/\/library$/);
 	expect(await transitions()).toBe(0);
 
-	await page.keyboard.press('Meta+2');
+	await page.keyboard.press('Backquote');
 	await expect(page).toHaveURL(/\/stabilize$/);
 	await expect(page.locator('.app-switch .trigger.full')).toHaveText('Stabilize');
 	expect(await transitions()).toBe(1);
