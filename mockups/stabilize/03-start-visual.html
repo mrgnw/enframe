@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stabilize · start visual, 3 variants</title>
+<style>
+	:root {
+		color-scheme: dark;
+		--blue: #2563eb;
+		--amber: #f5a524;
+		--mark: #3f3f46;
+		--screen: #1a1a1a;
+	}
+	* { box-sizing: border-box; }
+	body {
+		margin: 0;
+		background: #111113;
+		color: #a1a1aa;
+		font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+	}
+
+	.note {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: end;
+		justify-content: space-between;
+		gap: 0.75rem 1.5rem;
+		max-width: 1120px;
+		margin: 0 auto;
+		padding: 28px 24px 4px;
+	}
+	.note h1 { margin: 0 0 4px; color: #f4f4f5; font-size: 1.1rem; font-weight: 600; letter-spacing: -0.01em; }
+	.note p { margin: 0; max-width: 70ch; font-size: 0.85rem; line-height: 1.55; }
+	.note label { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; cursor: pointer; }
+	.note input { accent-color: var(--amber); }
+
+	.grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 22px 16px;
+		max-width: 1120px;
+		margin: 0 auto;
+		padding: 18px 24px 48px;
+	}
+	@media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+	figure { display: grid; grid-row: span 2; grid-template-rows: subgrid; row-gap: 0; margin: 0; }
+	figcaption { margin: 0 0 8px; color: #71717a; font-size: 0.8rem; line-height: 1.5; }
+	figcaption b { color: #e4e4e7; font-weight: 600; }
+
+	/* The start screen, as in Standalone.svelte's .empty */
+	.screen {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		min-height: 440px;
+		padding: 0 2rem;
+		text-align: center;
+		background: var(--screen);
+		border: 1px solid #27272a;
+		border-radius: 12px;
+	}
+	.screen h1 { margin: 0 0 0.75rem; color: #f4f4f5; font-size: 1.65rem; font-weight: 600; letter-spacing: -0.02em; }
+	.screen h1 b { color: var(--amber); font-weight: inherit; }
+	.lede { max-width: 42ch; margin: 0 0 1.75rem; color: #a1a1aa; font-size: 0.9rem; line-height: 1.65; }
+	.open {
+		padding: 0.55rem 1.15rem;
+		color: white;
+		font: inherit;
+		font-size: 0.85rem;
+		background: var(--blue);
+		border: none;
+		border-radius: 0.5rem;
+		cursor: pointer;
+		transition: background 0.15s, transform 0.15s;
+	}
+	.open:hover { background: #3b82f6; transform: translateY(-1px); }
+	/* Stabilize's --accent-fg: white on amber is about 2:1, this is about 10:1 */
+	.open.amber { color: #1a1200; background: var(--amber); }
+	.open.amber:hover { background: #ffb73d; }
+
+	/* Shared visual: enframe's 132 x 92 footprint, marks and 7 px point */
+	.visual { position: relative; width: 132px; height: 92px; margin-bottom: 2.5rem; }
+	.frame { position: absolute; inset: 0; }
+	.mark { position: absolute; width: 26px; height: 26px; border: 2px solid var(--mark); }
+	.tl { top: 0; left: 0; border-right: none; border-bottom: none; }
+	.tr { top: 0; right: 0; border-left: none; border-bottom: none; }
+	.bl { bottom: 0; left: 0; border-right: none; border-top: none; }
+	.br { bottom: 0; right: 0; border-left: none; border-top: none; }
+	.dot {
+		position: absolute;
+		inset: 50% auto auto 50%;
+		width: 7px;
+		height: 7px;
+		margin: -3.5px 0 0 -3.5px;
+		background: var(--amber);
+		border-radius: 999px;
+	}
+
+	/* enframe today: the frame holds, the point drifts */
+	.ref .dot { background: var(--blue); animation: drift 5s ease-in-out infinite; }
+	@keyframes drift {
+		0%, 100% { transform: translate(-22px, -14px); }
+		50% { transform: translate(24px, 15px); }
+	}
+
+	/* A · Swap: the same marks drift and zoom, three poses for three photos; the point holds */
+	.swap .frame { transform: translate(-12px, -6px) scale(0.86); animation: swap 6s ease-in-out infinite; }
+	@keyframes swap {
+		0%, 10%, 100% { transform: translate(-12px, -6px) scale(0.86); }
+		33%, 43% { transform: translate(9px, 5px) scale(0.98); }
+		66%, 76% { transform: translate(13px, -8px) scale(0.74); }
+	}
+
+	/* B · Pinned: three photo outlines at their rects.json placements, pinned through the point */
+	.card {
+		position: absolute;
+		background: #202023;
+		border: 1.5px solid var(--mark);
+		border-radius: 3px;
+		rotate: var(--a);
+		animation: swing 6s ease-in-out var(--delay, 0s) infinite;
+	}
+	@keyframes swing {
+		0%, 100% { rotate: var(--a); scale: 1; }
+		50% { rotate: var(--b); scale: var(--s, 1); }
+	}
+	.pinned .dot, .series .dot { box-shadow: 0 0 0 1.5px var(--screen); }
+
+	/* C · Series: real thumbnails, each placed so its tracked point sits under the amber one */
+	.shot {
+		position: absolute;
+		display: block;
+		border-radius: 2px;
+		filter: saturate(0.7) brightness(0.85);
+		opacity: 0;
+		animation: series 6s ease-in-out calc(var(--i) * 1.5s - 6s) infinite;
+	}
+	.shot:first-child { opacity: 1; }
+	@keyframes series {
+		0% { opacity: 0; scale: 1.05; }
+		8% { opacity: 1; scale: 1; }
+		25% { opacity: 1; }
+		33%, 100% { opacity: 0; }
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.visual * { animation: none !important; }
+	}
+	body:has(#still:checked) .visual * { animation: none !important; }
+</style>
+</head>
+<body>
+
+<header class="note">
+	<div>
+		<h1>Stabilize start visual · 3 variants</h1>
+		<p>enframe's mark says the frame holds and the point moves. Each variant says the reverse: the amber point never moves, the photos do. Same 132 × 92 footprint, 6 s loops.</p>
+	</div>
+	<label><input type="checkbox" id="still"> Still frames (reduced motion)</label>
+</header>
+
+<main class="grid">
+	<figure>
+		<figcaption><b>enframe today</b> · the frame holds still, the point drifts</figcaption>
+		<div class="screen">
+			<div class="visual ref" aria-hidden="true">
+				<span class="mark tl"></span><span class="mark tr"></span><span class="mark bl"></span><span class="mark br"></span>
+				<span class="dot"></span>
+			</div>
+			<h1>Frame your image</h1>
+			<p class="lede">Drop an image and create multiple ways to frame it. One photo can tell many stories.</p>
+			<button class="open">Choose an image</button>
+		</div>
+	</figure>
+
+	<figure>
+		<figcaption><b>A · Swap</b> · enframe's marks, roles reversed: the frame drifts and zooms</figcaption>
+		<div class="screen">
+			<div class="visual swap" aria-hidden="true">
+				<div class="frame">
+					<span class="mark tl"></span><span class="mark tr"></span><span class="mark bl"></span><span class="mark br"></span>
+				</div>
+				<span class="dot"></span>
+			</div>
+			<h1>Hold one thing <b>still</b></h1>
+			<p class="lede">Open a folder of photos. Click points on the cloud, the mountain, the moon, whatever should stay put. Everything else moves around it.</p>
+			<button class="open amber">Open folder</button>
+		</div>
+	</figure>
+
+	<figure>
+		<figcaption><b>B · Pinned</b> · three photo outlines from rects.json swing on one pin</figcaption>
+		<div class="screen">
+			<div class="visual pinned" aria-hidden="true">
+				<span class="card" style="left:17.6px;top:26.1px;width:96.4px;height:72.3px;transform-origin:50.2% 27.4%;--a:-3deg;--b:3deg;--s:0.96"></span>
+				<span class="card" style="left:39.6px;top:-6.8px;width:71.1px;height:94.8px;transform-origin:37.1% 55.7%;--a:4deg;--b:-3deg;--s:1.03;--delay:-2s"></span>
+				<span class="card" style="left:42.8px;top:32.5px;width:38.4px;height:28.8px;transform-origin:60.5% 46.9%;--a:-5deg;--b:4deg;--s:1.1;--delay:-4s"></span>
+				<span class="dot"></span>
+			</div>
+			<h1>Hold one thing <b>still</b></h1>
+			<p class="lede">Open a folder of photos. Click points on the cloud, the mountain, the moon, whatever should stay put. Everything else moves around it.</p>
+			<button class="open amber">Open folder</button>
+		</div>
+	</figure>
+
+	<figure>
+		<figcaption><b>C · Series</b> · real thumbnails, each placed so its cloud sits under the point</figcaption>
+		<div class="screen">
+			<div class="visual series" aria-hidden="true">
+				<img class="shot" src="assets/IMG_4667-t.jpg" alt="" style="--i:0;left:-5.5px;top:17.4px;width:96px;height:72px;transform-origin:74.5% 39.7%">
+				<img class="shot" src="assets/IMG_4720-t.jpg" alt="" style="--i:1;left:57.2px;top:29px;width:28.2px;height:37.6px;transform-origin:31.1% 45.1%">
+				<img class="shot" src="assets/IMG_4773-t.jpg" alt="" style="--i:2;left:35.3px;top:17.7px;width:96.7px;height:72.5px;transform-origin:31.7% 39.1%">
+				<img class="shot" src="assets/IMG_4713-t.jpg" alt="" style="--i:3;left:42.8px;top:32.5px;width:38.4px;height:28.8px;transform-origin:60.5% 46.9%">
+				<span class="dot"></span>
+			</div>
+			<h1>Hold one thing <b>still</b></h1>
+			<p class="lede">Open a folder of photos. Click points on the cloud, the mountain, the moon, whatever should stay put. Everything else moves around it.</p>
+			<button class="open amber">Open folder</button>
+		</div>
+	</figure>
+</main>
+
+</body>
+</html>
