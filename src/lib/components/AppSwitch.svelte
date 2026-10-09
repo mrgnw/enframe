@@ -44,7 +44,7 @@ function onDocumentKeydown(e: KeyboardEvent) {
 
 <svelte:document onclick={onDocumentClick} onkeydown={onDocumentKeydown} />
 
-<div class="app-switch" class:dark={current === 'stabilize'} class:responsive bind:this={root}>
+<div class="app-switch" class:responsive bind:this={root}>
 	<button
 		type="button"
 		class="trigger full"
@@ -85,6 +85,7 @@ function onDocumentKeydown(e: KeyboardEvent) {
 </div>
 
 <style>
+	/* The same in both apps: it sits in the first island of each layout's dock, inside `.app`'s tokens. */
 	.app-switch {
 		position: relative;
 		display: inline-flex;
@@ -98,24 +99,24 @@ function onDocumentKeydown(e: KeyboardEvent) {
 		user-select: none;
 		background: none;
 		border: 0;
-		padding: 0;
-		color: inherit;
-		font: 600 15px/1 inherit;
+		padding: 0 4px 0 0;
+		color: var(--fg);
+		font: inherit;
+		font-size: 15px;
+		font-weight: 600;
+		line-height: 1;
 		letter-spacing: -0.02em;
-	}
-
-	.app-switch.dark .trigger {
-		font: 600 16px/1 var(--display);
 	}
 
 	.trigger.compact {
 		display: none;
 		width: 28px;
 		height: 28px;
+		padding: 0;
 		border-radius: 50%;
-		background: var(--surface);
-		border: 1px solid var(--border);
+		background: var(--raised);
 		justify-content: center;
+		font-size: 13px;
 	}
 
 	@media (max-width: 700px) {
@@ -125,10 +126,6 @@ function onDocumentKeydown(e: KeyboardEvent) {
 		.app-switch.responsive .trigger.compact {
 			display: inline-flex;
 		}
-	}
-
-	.initial {
-		font: 600 13px/1 var(--display);
 	}
 
 	.caret {
@@ -149,21 +146,16 @@ function onDocumentKeydown(e: KeyboardEvent) {
 
 	.menu {
 		position: absolute;
-		top: calc(100% + 10px);
-		left: -8px;
+		top: calc(100% + 16px);
+		left: -13px;
 		min-width: 164px;
 		padding: 5px;
 		border-radius: 12px;
-		border: 1px solid var(--border);
-		background: var(--card);
-		backdrop-filter: blur(14px);
-		box-shadow: 0 2px 12px rgba(20, 24, 40, 0.08);
-		z-index: 50;
-	}
-
-	.app-switch.dark .menu {
+		border: 1px solid var(--edge);
 		background: var(--surface);
-		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+		backdrop-filter: blur(14px);
+		box-shadow: var(--shadow-lg);
+		z-index: 50;
 	}
 
 	.item {
@@ -171,31 +163,21 @@ function onDocumentKeydown(e: KeyboardEvent) {
 		align-items: center;
 		gap: 9px;
 		padding: 7px 9px;
-		border-radius: 8px;
-		font: 500 13.5px/1 inherit;
-		color: var(--foreground);
+		border-radius: 7px;
+		color: var(--fg);
+		font-size: 13px;
+		font-weight: 500;
+		line-height: 1;
 		text-decoration: none;
 	}
 
-	.app-switch.dark .item {
-		color: var(--fg);
-	}
-
 	a.item:hover {
-		background: color-mix(in oklch, var(--foreground) 8%, transparent);
-	}
-
-	.app-switch.dark a.item:hover {
-		background: color-mix(in oklch, var(--fg) 8%, transparent);
+		background: var(--raised);
 	}
 
 	.item.current {
-		color: var(--muted-foreground);
+		color: var(--subtle);
 		cursor: default;
-	}
-
-	.app-switch.dark .item.current {
-		color: var(--muted);
 	}
 
 	.item.current::after {
@@ -206,11 +188,11 @@ function onDocumentKeydown(e: KeyboardEvent) {
 
 	.item kbd {
 		margin-left: auto;
-		font: 500 10.5px/1 inherit;
-		color: var(--muted-foreground);
-	}
-
-	.app-switch.dark .item kbd {
-		color: var(--muted);
+		padding: 0;
+		border: 0;
+		background: none;
+		color: var(--subtle);
+		font: inherit;
+		font-size: 11px;
 	}
 </style>

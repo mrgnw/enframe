@@ -7,7 +7,7 @@ import Export from './Export.svelte';
 import { FPS_PRESETS, type PadChoice } from './clip';
 import { Preview } from './preview-session.svelte';
 import Strip from './PreviewStrip.svelte';
-import { useDock } from './dock.svelte';
+import { useDock } from '$lib/components/dock.svelte';
 import './preview.css';
 
 let { folder, feature = null }: { folder: string; feature?: string | null } = $props();
@@ -78,16 +78,15 @@ function keydown(e: KeyboardEvent) {
 				{#if session.stage === 'empty'}
 					<h1>Nothing to <b>preview</b> yet</h1>
 					<p>{session.name} has no points. Click them on the first photo and track, and the clip plays here.</p>
-					<a class="btn primary" href={back}>Mark {session.name}</a>
+					<a class="btn primary large" href={back}>Mark {session.name}</a>
 				{:else}
 					<h1>Can't open <b>{session.name}</b></h1>
 					<p>{session.error}</p>
-					<a class="btn primary" href={session.absFolder ? back : '/stabilize'}>{session.absFolder ? 'Back to the marks' : 'Choose another folder'}</a>
+					<a class="btn primary large" href={session.absFolder ? back : '/stabilize'}>{session.absFolder ? 'Back to the marks' : 'Choose another folder'}</a>
 				{/if}
 			</div>
 		</section>
 	</main>
-	<nav class="filmstrip empty"></nav>
 {:else}
 	<main class="stage preview">
 

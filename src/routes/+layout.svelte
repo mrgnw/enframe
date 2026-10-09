@@ -1,5 +1,6 @@
 <script lang="ts">
 import '../app.css';
+import '$lib/theme.css';
 import { onMount } from 'svelte';
 import { dev } from '$app/environment';
 import OfflineProgress from '$lib/components/OfflineProgress.svelte';

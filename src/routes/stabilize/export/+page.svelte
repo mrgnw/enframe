@@ -22,9 +22,8 @@ const feature = $derived(page.url.searchParams.get('feature'));
 			<div>
 				<h1>Which <b>folder</b>?</h1>
 				<p>The preview plays a folder's clip once its points are marked.</p>
-				<a class="btn primary" href="/stabilize">Choose a folder</a>
+				<a class="btn primary large" href="/stabilize">Choose a folder</a>
 			</div>
 		</section>
 	</main>
-	<nav class="filmstrip empty"></nav>
 {/if}

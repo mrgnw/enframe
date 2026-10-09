@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onMount } from 'svelte';
+import { useDock } from '$lib/components/dock.svelte';
 import { toast } from 'svelte-sonner';
 import { getImageSrc, hasNativeShell, onDragDrop, pickFiles, readTextFile } from '$lib/bridge';
 import {
@@ -36,6 +37,8 @@ import { loadRecents, type Recent, recentId, relativeTime, rememberRecent, type 
 type Report = (done: number, total: number) => void;
 
 let { libraryHref = null }: { libraryHref?: string | null } = $props();
+
+useDock({ title });
 
 function yieldFrame(): Promise<void> {
 	return new Promise((r) => requestAnimationFrame(() => r()));
@@ -398,27 +401,30 @@ function setFormat(next: ExportFormat) {
 
 <svelte:window ondragover={handleDragOver} ondragleave={handleDragLeave} ondrop={handleDrop} />
 
+<!-- After the app switch in the layout's dock: the photo being framed, and the way back to the library. -->
+{#snippet title()}
+	{#if doc}
+		<span class="sep"></span>
+		{#if libraryHref}
+			<a href={libraryHref} class="btn icon" aria-label="Library" title="Library">
+				<svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+					<path d="M12 15L7 10L12 5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+				</svg>
+			</a>
+		{/if}
+		<span class="name">{imageName}</span>
+		<span class="dot">&middot;</span>
+		<span class="target">{destination}</span>
+		<button class="link" onclick={chooseImage}>Open another</button>
+	{/if}
+{/snippet}
+
 <div class="standalone" class:dragging data-tauri-drag-region>
 	<div class="corner">
 		<div class="stoplight-shadow"></div>
-		{#if libraryHref && doc}
-			<a href={libraryHref} class="back-btn" aria-label="Library">
-				<svg class="back-chevron" width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-					<path d="M12 15L7 10L12 5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-				</svg>
-				<span class="back-label">Library</span>
-			</a>
-		{/if}
 	</div>
 
 	{#if doc}
-		<div class="status">
-			<span class="name">{imageName}</span>
-			<span class="dot">&middot;</span>
-			<span class="target">{destination}</span>
-			<button class="link" onclick={chooseImage}>Open another</button>
-		</div>
-
 		{#if mismatch}
 			<div class="mismatch" role="status">
 				{mismatch}. Frames were loaded anyway.
@@ -454,7 +460,7 @@ function setFormat(next: ExportFormat) {
 				Bring its <code>.metadata.json</code> along and the crops you made last time come back with it.
 			</p>
 			<div class="actions">
-				<button class="open" onclick={chooseImage} disabled={opening}>
+				<button class="btn primary large" onclick={chooseImage} disabled={opening}>
 					{opening ? openingNote || 'Opening…' : 'Choose an image'}
 				</button>
 				{#if libraryHref}
@@ -527,67 +533,20 @@ function setFormat(next: ExportFormat) {
 		pointer-events: none;
 	}
 
-	.back-btn {
-		display: flex;
-		align-items: center;
-		width: 26px;
-		height: 26px;
-		margin-left: 10px;
-		padding: 0 6px;
-		color: rgba(255, 255, 255, 0.85);
-		text-decoration: none;
-		font-size: 12px;
-		font-weight: 500;
-		background: rgba(0, 0, 0, 0.45);
-		backdrop-filter: blur(8px);
-		border-radius: 999px;
-		overflow: hidden;
-		transition: width 0.2s ease, color 0.15s, background 0.15s;
-	}
 
-	.back-btn:hover {
-		width: 84px;
-		color: white;
-		background: rgba(0, 0, 0, 0.6);
-	}
 
-	.back-chevron {
-		flex-shrink: 0;
-	}
 
-	.back-label {
-		opacity: 0;
-		margin-left: 3px;
-		white-space: nowrap;
-		transition: opacity 0.15s 0.05s;
-	}
 
-	.back-btn:hover .back-label {
-		opacity: 1;
-	}
 
-	.status {
-		position: fixed;
-		top: 14px;
-		left: 120px;
-		z-index: 50;
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		max-width: 46vw;
-		padding: 0.3rem 0.7rem;
-		color: #9ca3af;
-		font-size: 0.72rem;
-		background: rgba(0, 0, 0, 0.45);
-		backdrop-filter: blur(8px);
-		border-radius: 999px;
-	}
 
 	.name {
+		max-width: 28vw;
 		overflow: hidden;
 		white-space: nowrap;
 		text-overflow: ellipsis;
-		color: #e5e7eb;
+	}
+	.target {
+		color: var(--subtle);
 	}
 
 	.dot {
@@ -609,8 +568,8 @@ function setFormat(next: ExportFormat) {
 
 	.mismatch {
 		position: fixed;
-		top: 52px;
-		left: 120px;
+		top: 62px;
+		left: 14px;
 		z-index: 50;
 		display: flex;
 		gap: 0.5rem;
@@ -702,23 +661,9 @@ function setFormat(next: ExportFormat) {
 		border-radius: 0.25rem;
 	}
 
-	.open {
-		padding: 0.55rem 1.15rem;
-		color: white;
-		font-size: 0.85rem;
-		background: #2563eb;
-		border: none;
-		border-radius: 0.5rem;
-		cursor: pointer;
-		transition: background 0.15s, transform 0.15s;
-	}
 
-	.open:hover:not(:disabled) {
-		background: #3b82f6;
-		transform: translateY(-1px);
-	}
 
-	.open:disabled {
+	.actions .btn:disabled {
 		opacity: 0.6;
 		cursor: progress;
 	}
@@ -806,6 +751,5 @@ function setFormat(next: ExportFormat) {
 
 	@media (prefers-reduced-motion: reduce) {
 		.grain { animation: none; }
-		.open:hover:not(:disabled) { transform: none; }
 	}
 </style>

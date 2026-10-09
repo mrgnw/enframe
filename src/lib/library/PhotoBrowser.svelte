@@ -276,9 +276,7 @@ async function handleOpenClick() {
 	class:drag-active={dragging && !draggingDir}
 	role="application"
 >
-	<div class="appbar" data-tauri-drag-region>
-		<span class="wordmark">Enframe</span>
-
+	<div class="appbar" class:native={hasNativeShell()} data-tauri-drag-region>
 		<nav class="tabs">
 			{#each TABS as t (t.id)}
 				<button class="tab" class:active={tab === t.id} onclick={() => selectTab(t.id)}>
@@ -463,17 +461,17 @@ async function handleOpenClick() {
 		outline-offset: -2px;
 	}
 
+	/* Level with the layout's dock, whose first island, the app switch, sits in this bar's left end. */
 	.appbar {
 		display: flex;
 		align-items: center;
 		gap: 1.25rem;
-		padding: 0.75rem 1.25rem 0.75rem 5.5rem;
+		padding: 14px 1.25rem 0.75rem 8rem;
 		flex: none;
 	}
 
-	.wordmark {
-		font-weight: 600;
-		font-size: 0.95rem;
+	.appbar.native {
+		padding-left: 14.5rem;
 	}
 
 	.tabs {

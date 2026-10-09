@@ -11,7 +11,7 @@ import Stage from './Stage.svelte';
 import { patchLayout } from './trail';
 import { PATCH_PX, type TrailMode } from './types';
 import { photoUrl } from './api';
-import { useDock } from './dock.svelte';
+import { useDock } from '$lib/components/dock.svelte';
 
 let { folder, trailMode = 'steps' }: { folder: string; trailMode?: TrailMode } = $props();
 
@@ -117,21 +117,20 @@ function keydown(e: KeyboardEvent) {
 				{#if session.failedPhoto}
 					{@const bad = session.failedPhoto}
 					<div class="actions">
-						<button class="btn primary" onclick={() => session.clearBadMark(bad)}>Clear mark</button>
+						<button class="btn primary large" onclick={() => session.clearBadMark(bad)}>Clear mark</button>
 						{#if session.failedInside.length}
-							<button class="btn" title="Keep the points inside the photo as a soft mark: it places the photo, but tracking carries on from the photo before it." onclick={() => session.softBadMark(bad)}>Soft mark</button>
+							<button class="btn large" title="Keep the points inside the photo as a soft mark: it places the photo, but tracking carries on from the photo before it." onclick={() => session.softBadMark(bad)}>Soft mark</button>
 						{/if}
 						{#if bad !== session.photos[0]?.file}
-							<button class="btn" onclick={() => session.skipBadMark(bad)}>Skip photo</button>
+							<button class="btn large" onclick={() => session.skipBadMark(bad)}>Skip photo</button>
 						{/if}
 					</div>
 				{:else}
-					<a class="btn primary" href="/stabilize">Choose another folder</a>
+					<a class="btn primary large" href="/stabilize">Choose another folder</a>
 				{/if}
 			</div>
 		</section>
 	</main>
-	<nav class="filmstrip empty"></nav>
 {:else}
 	<main class="stage" class:marking={session.stage === 'points'} class:tinted={session.hue !== 0} style:--hue="{session.hue}deg">
 

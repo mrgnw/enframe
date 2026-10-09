@@ -34,11 +34,10 @@ async function choose() {
 					put. Everything else moves around it.
 				</p>
 				<div class="actions">
-					<button class="btn primary" onclick={choose}>Open folder</button>
+					<button class="btn primary large" onclick={choose}>Open folder</button>
 				</div>
 				<small>Photos play in capture-time order · AVIF, HEIC, JPEG, PNG</small>
 			</div>
 		</section>
 	</main>
-	<nav class="filmstrip empty"></nav>
 {/if}

@@ -1,9 +1,9 @@
-// The top dock is Stabilize's chrome: the layout draws it on every screen and in every state, with the app
-// switch first. A screen adds its title after the switch and its own islands with `useDock`.
+// The top dock is both apps' chrome: each app's layout draws it on every screen and in every state, with the
+// app switch first. A screen adds its title after the switch and its own islands with `useDock`.
 
 import { getContext, onDestroy, setContext, type Snippet } from 'svelte';
 
-const KEY = Symbol('stabilize dock');
+const KEY = Symbol('dock');
 
 export interface DockParts {
 	/** After the switch in the first island: what the screen is on, with its leading separator. */
@@ -25,7 +25,7 @@ export const provideDock = (): Dock => setContext(KEY, new Dock());
  */
 export function useDock(parts: DockParts): void {
 	const dock = getContext<Dock | undefined>(KEY);
-	if (!dock) throw new Error('useDock needs the Stabilize layout, src/routes/stabilize/+layout.svelte');
+	if (!dock) throw new Error('useDock needs an app layout: src/routes/(enframe) or src/routes/stabilize');
 	const me = Symbol('dock owner');
 	dock.owner = me;
 	dock.parts = parts;

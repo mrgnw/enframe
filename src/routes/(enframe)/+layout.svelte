@@ -1,30 +1,35 @@
 <script lang="ts">
-// enframe's shell for every framer, library and editor screen: the wordmark top-left is the app switch.
+// enframe's shell for every framer, library and editor screen: the shared look in enframe's blue, and the
+// same top dock as Stabilize's, whose first island is the app switch.
 import AppSwitch from '$lib/components/AppSwitch.svelte';
 import { hasNativeShell } from '$lib/bridge';
+import { provideDock } from '$lib/components/dock.svelte';
 
 let { children } = $props();
+
+const dock = provideDock();
 </script>
 
-<div class="app-switch-slot" class:native={hasNativeShell()}>
-	<AppSwitch current="enframe" />
+<div class="app enframe" class:native={hasNativeShell()}>
+	<div class="dock top">
+		<div class="island start">
+			<AppSwitch current="enframe" />
+			{@render dock.parts.title?.()}
+		</div>
+		{@render dock.parts.islands?.()}
+	</div>
+	{@render children()}
 </div>
 
-{@render children()}
-
 <style>
-	.app-switch-slot {
-		position: fixed;
-		top: 12px;
-		left: 14px;
-		/* Above Standalone's `.corner` (z-index 50), which reserves this corner for the native traffic lights. */
-		z-index: 60;
-		/* Every enframe screen is dark (#1a1a1a, the library #161616); the page's own text colour is the light theme's. */
-		color: #ededed;
+	/* The tokens reach the screens without boxing them in: each enframe screen lays itself out on the page. */
+	.enframe {
+		display: contents;
 	}
 
-	/* The native window's traffic lights sit in this corner on the desktop shell. */
-	.app-switch-slot.native {
-		left: 120px;
+	/* Above Standalone's `.corner` (z-index 50), which reserves the corner for the native traffic lights. */
+	.enframe > .dock {
+		position: fixed;
+		z-index: 60;
 	}
 </style>

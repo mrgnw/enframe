@@ -44,7 +44,7 @@
 	.looking .label {
 		padding: 4px 6px 0 0;
 		font-size: 12px;
-		color: var(--muted);
+		color: var(--subtle);
 		line-height: 1.35;
 	}
 	.looking .label b {
@@ -68,25 +68,28 @@
 		font-variant-numeric: tabular-nums;
 	}
 	.tools .val {
-		font: 600 15px / 1 var(--display);
+		font-size: 15px;
+		font-weight: 600;
+		line-height: 1;
 		min-width: 2.4ch;
 		text-align: center;
 	}
 	.tools .val.off {
-		font: 500 13px / 1 var(--body);
-		color: var(--muted);
+		font-size: 13px;
+		font-weight: 500;
+		color: var(--subtle);
 	}
 	.tools .btn.icon {
 		width: 26px;
 		height: 26px;
 		font-size: 15px;
-		color: var(--muted);
+		color: var(--subtle);
 	}
 	.legend {
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
-		color: var(--muted);
+		color: var(--subtle);
 		font-size: 12px;
 		margin-right: 2px;
 	}
@@ -142,8 +145,8 @@
 		translate: -50% calc(-100% - 12px);
 		padding: 1px 6px;
 		border-radius: 4px;
-		background: var(--accent);
-		color: var(--accent-fg);
+		background: var(--brand);
+		color: var(--on-brand);
 		font-size: 11px;
 		font-weight: 600;
 		white-space: nowrap;
@@ -156,10 +159,10 @@
 	}
 	.ptag.tracked {
 		background: rgba(0, 0, 0, 0.6);
-		color: var(--accent);
+		color: var(--brand);
 	}
 	.ptag.soft {
-		background: color-mix(in oklab, var(--accent) 55%, rgba(0, 0, 0, 0.6));
+		background: color-mix(in oklab, var(--brand) 55%, rgba(0, 0, 0, 0.6));
 	}
 
 	.trail .halo {
@@ -234,7 +237,7 @@
 		stroke-dasharray: 3 2;
 	}
 	.trail .pt.skipped {
-		stroke: var(--muted);
+		stroke: var(--subtle);
 		stroke-width: 2;
 	}
 	.trail .pt.lost {
@@ -242,7 +245,7 @@
 		stroke-width: 2;
 	}
 	.trail .pt.ghost {
-		stroke: var(--accent);
+		stroke: var(--brand);
 		stroke-width: 2;
 	}
 	.trail .pt.ghost.blocked {
@@ -257,23 +260,23 @@
 		stroke-width: 1.25;
 	}
 	.thumb.mark.listed::after {
-		background: var(--accent);
+		background: var(--brand);
 		box-shadow: none;
 	}
 	.thumb.soft::after {
-		box-shadow: inset 0 0 0 1.5px var(--accent);
+		box-shadow: inset 0 0 0 1.5px var(--brand);
 		opacity: 0.55;
 	}
 	.thumb.soft.listed::after {
-		background: var(--accent);
+		background: var(--brand);
 		box-shadow: none;
 	}
 	.thumb.skipped::after {
 		background: transparent;
-		box-shadow: inset 0 0 0 1.5px var(--muted);
+		box-shadow: inset 0 0 0 1.5px var(--subtle);
 	}
 	.thumb.skipped.listed::after {
-		background: var(--muted);
+		background: var(--subtle);
 		box-shadow: none;
 	}
 	.btn.clear-fixed {
@@ -299,37 +302,33 @@
 		border-radius: 5px;
 		background: var(--surface-solid);
 	}
+	/* Laid out like enframe's empty screen. */
 	.drop {
 		display: grid;
 		place-items: center;
 		text-align: center;
 		width: min(640px, calc(100% - 80px));
-		padding: 72px 40px;
-		border: 1.5px dashed var(--faint);
-		border-radius: 20px;
+		padding: 0 2rem;
 		justify-self: center;
 		align-self: center;
 	}
 	.drop h1 {
-		margin: 0 0 12px;
-		font: 600 40px / 1.05 var(--display);
-		letter-spacing: -0.03em;
+		margin: 0 0 0.6rem;
+		font-size: 1.65rem;
+		font-weight: 600;
+		line-height: 1.2;
+		letter-spacing: -0.02em;
 	}
 	.drop h1 b {
-		color: var(--accent);
+		color: var(--brand);
 		font-weight: inherit;
 	}
 	.drop p {
-		margin: 0 0 28px;
+		margin: 0 0 1.75rem;
 		max-width: 42ch;
-		color: var(--muted);
-		font-size: 16px;
-		line-height: 1.55;
-	}
-	.drop .btn.primary {
-		height: 40px;
-		padding: 0 18px;
-		font-size: 15px;
+		color: var(--subtle);
+		font-size: 0.9rem;
+		line-height: 1.6;
 	}
 	.drop form,
 	.drop .actions {
@@ -338,32 +337,27 @@
 		justify-content: center;
 		margin-bottom: 20px;
 	}
-	.drop .actions .btn {
-		height: 40px;
-		padding: 0 18px;
-		font-size: 15px;
-	}
 	.drop input {
 		width: min(360px, 60vw);
 		height: 40px;
 		padding: 0 14px;
-		border: 1px solid var(--border);
-		border-radius: 999px;
+		border: 1px solid var(--edge);
+		border-radius: 0.5rem;
 		background: rgba(255, 255, 255, 0.05);
 	}
 	.drop small {
 		display: block;
 		margin-top: 20px;
 		color: var(--faint);
-		font-size: 12px;
+		font-size: 0.72rem;
 	}
 	.drop .sample {
 		margin-top: 16px;
-		color: var(--muted);
+		color: var(--subtle);
 		font-size: 13px;
 	}
 	.drop .sample a {
-		color: var(--accent);
+		color: var(--brand);
 		text-decoration: none;
 	}
 
@@ -407,10 +401,7 @@
 			height: 48px;
 		}
 		.drop {
-			padding: 48px 20px;
-		}
-		.drop h1 {
-			font-size: 32px;
+			padding: 0 20px;
 		}
 	}
 }
@@ -478,14 +469,14 @@
 		cursor: pointer;
 	}
 	.features li:not(.on) .pick {
-		color: var(--muted);
+		color: var(--subtle);
 	}
 	.features .swatch {
 		flex: none;
 		width: 10px;
 		height: 10px;
 		border-radius: 50%;
-		background: var(--accent);
+		background: var(--brand);
 		filter: hue-rotate(var(--hue));
 	}
 	.features .name {
@@ -493,7 +484,7 @@
 		min-width: 0;
 		height: 24px;
 		padding: 0 6px;
-		border: 1px solid var(--border);
+		border: 1px solid var(--edge);
 		border-radius: 6px;
 		background: rgba(0, 0, 0, 0.3);
 		color: inherit;
