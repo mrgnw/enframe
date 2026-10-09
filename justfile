@@ -39,3 +39,7 @@ init-db:
 # Stabilize's gate: build, lint and test the crate, run every documented command and compare tracking with its baseline
 check-stabilize:
 	bash analysis/stabilize/check.sh
+
+# Release notes: fold changelog.d/ into one dated CHANGELOG.md entry, edited in $EDITOR (--print, --yes, --date)
+changelog *args:
+	uv run scripts/changelog.py {{args}}

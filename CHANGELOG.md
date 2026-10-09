@@ -1,12 +1,6 @@
 # Changelog
 
-Notable changes to enframe, newest first. Every pull request that changes what the app does adds a line under Unreleased in the same pull request. Dates are merge dates; there are no version tags yet.
-
-## Unreleased
-
-### Added
-
-- The wordmark on every screen is now the app switch: click it for a two-item menu to the other app, or press `⌘1`/`⌘2` from anywhere.
+Notable changes to enframe, newest first, one entry per release date; there are no version tags yet. Pull requests add a note to [changelog.d/](changelog.d/README.md) instead of editing this file, and `just changelog` writes the notes in here at release time.
 
 ## 2026-10-08
 
