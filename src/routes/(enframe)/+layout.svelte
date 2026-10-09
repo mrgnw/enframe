@@ -19,6 +19,8 @@ let { children } = $props();
 		left: 14px;
 		/* Above Standalone's `.corner` (z-index 50), which reserves this corner for the native traffic lights. */
 		z-index: 60;
+		/* Every enframe screen is dark (#1a1a1a, the library #161616); the page's own text colour is the light theme's. */
+		color: #ededed;
 	}
 
 	/* The native window's traffic lights sit in this corner on the desktop shell. */
