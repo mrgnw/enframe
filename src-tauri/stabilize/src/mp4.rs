@@ -4,7 +4,9 @@
 
 use crate::colour::{Profile, SRGB_TRANSFER};
 use crate::yuv::Yuv;
-use filmcraft_h264enc::{ColorConfig, Encoder, EncoderConfig, Packet, PacketFormat, RateControl, YuvFrame};
+use filmcraft_h264enc::{
+	ColorConfig, Encoder, EncoderConfig, Packet, PacketFormat, Preset, RateControl, YuvFrame,
+};
 use filmcraft_isobmff::{
 	AvcConfig, Brand, ColorInfo, Mp4Writer, SampleEntry, TrackConfig, WriteSample, WriterOptions,
 };
@@ -13,7 +15,8 @@ use std::path::Path;
 
 /// H.273 matrix coefficients 1, BT.709.
 const MATRIX: u16 = 1;
-/// The encoder's CRF that matched x264's CRF 18 (SSIM 0.993) on the train clouds photos (#30).
+/// The encoder's CRF that matched x264's CRF 18 (SSIM 0.993) on the train clouds photos (#30). The Speed
+/// preset beat Balanced there on time, size and SSIM.
 const CRF: f32 = 15.0;
 
 pub struct Writer {
@@ -43,6 +46,7 @@ impl Writer {
 		let (fps_num, fps_den) = fraction(fps);
 		let mut config = EncoderConfig::new(size.0, size.1, fps_num, fps_den);
 		config.format = PacketFormat::LengthPrefixed;
+		config.preset = Preset::Speed;
 		config.rate = RateControl::Crf(CRF);
 		config.color = ColorConfig {
 			primaries: profile.primaries() as u8,
