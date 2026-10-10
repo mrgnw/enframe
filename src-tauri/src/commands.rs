@@ -676,8 +676,11 @@ pub fn crop_and_export(
 
 #[cfg(test)]
 mod tests {
-    use super::{crop_and_export, detect_faces_blocking, may_be_raw, preview_is_full_size};
-    use std::path::PathBuf;
+    use super::{
+        DETECT_MIN_SCORE, crop_and_export, decode_rgb, detect_faces_blocking, may_be_raw,
+        preview_is_full_size,
+    };
+    use std::{path::PathBuf, time::Instant};
 
     #[cfg(target_os = "macos")]
     #[test]
@@ -821,5 +824,35 @@ mod tests {
                 .expect("detect landscape")
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn yunet_median_on_a_2048px_photo_stays_under_the_bound() {
+        let source = decode_rgb(&fixture("portrait-upright-ref.jpg")).expect("decode portrait");
+        let image =
+            image::imageops::resize(&source, 2048, 2048, image::imageops::FilterType::Triangle);
+        let options = faces::yunet::Options {
+            score: DETECT_MIN_SCORE,
+            ..Default::default()
+        };
+        let detector = faces::detector().expect("load detector");
+        let mut timings = Vec::new();
+        for _ in 0..9 {
+            let started = Instant::now();
+            let found = detector
+                .detect(
+                    image.as_raw(),
+                    image.width() as usize,
+                    image.height() as usize,
+                    &options,
+                )
+                .expect("detect face");
+            assert!(!found.is_empty(), "portrait should contain a face");
+            timings.push(started.elapsed());
+        }
+        timings.sort();
+        let median = timings[timings.len() / 2];
+        println!("YuNet 2048px median: {median:?}");
+        assert!(median.as_millis() < 500, "median {median:?}");
     }
 }
