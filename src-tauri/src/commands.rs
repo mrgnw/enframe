@@ -398,6 +398,7 @@ pub fn crop_and_export(
         let decoder = jxl_oxide::JxlImage::builder()
             .read(file_bytes)
             .map_err(|e| format!("JXL decode error: {e}"))?;
+        let icc = decoder.rendered_icc();
         let render = decoder
             .render_frame(0)
             .map_err(|e| format!("JXL render error: {e}"))?;
@@ -420,7 +421,7 @@ pub fn crop_and_export(
         (
             image::RgbImage::from_raw(w, h, rgb_buf)
                 .ok_or_else(|| "Failed to create image from JXL data".to_string())?,
-            None,
+            Some(icc),
         )
     } else if let Ok(decoder) = rawler::get_decoder(&src) {
         (decode_raw(decoder.as_ref(), &src)?.to_rgb8(), None)
