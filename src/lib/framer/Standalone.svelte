@@ -2,7 +2,15 @@
 import { onMount } from 'svelte';
 import { toast } from 'svelte-sonner';
 import { getImageSrc, hasNativeShell, onDragDrop, pickFiles, readTextFile } from '$lib/bridge';
-import { cropToBlob, encodingFor, loadImage, prepareEncoder } from '$lib/framer/canvas-export';
+import {
+	AVIF_SPEED,
+	cropToBlob,
+	EXPORT_QUALITY,
+	encodingFor,
+	loadImage,
+	prepareEncoder
+} from '$lib/framer/canvas-export';
+import Framer from '$lib/framer/Framer.svelte';
 import {
 	download,
 	fileSystemAccess,
@@ -12,13 +20,12 @@ import {
 	saveAs,
 	writeInto
 } from '$lib/framer/files';
-import Framer from '$lib/framer/Framer.svelte';
 import { MemoryStore } from '$lib/framer/memory-store.svelte';
 import { generateFrameFilename, getDefaultExportDir, sidecarJson, sidecarName } from '$lib/framer/output';
 import { decodeRaw, isRawName } from '$lib/framer/raw';
 import {
-	type CropDoc,
 	CROP_DOC_VERSION,
+	type CropDoc,
 	type DocImage,
 	docFromSidecar,
 	type ExportFormat,
@@ -331,7 +338,9 @@ async function runExport(frames: Frame[], edited: CropDoc, report: Report) {
 async function exportNative(frames: Frame[], edited: CropDoc, report: Report, total: number) {
 	const { exportFrames, exportMetadata } = await import('$lib/export');
 	const photo = nativePhoto(edited);
-	await exportFrames(photo, frames, exportDir, format, 0.92, (current: number) => report(current, total));
+	await exportFrames(photo, frames, exportDir, format, EXPORT_QUALITY, AVIF_SPEED, (current: number) =>
+		report(current, total)
+	);
 	report(frames.length, total);
 	await yieldFrame();
 	await exportMetadata(photo, { ...edited, frames }, `${exportDir}/${sidecarName(imageName)}`);

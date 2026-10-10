@@ -212,8 +212,12 @@ pub fn crop_and_export(
     width: f64,
     height: f64,
     quality: u8,
+    speed: u8,
     format: String,
 ) -> Result<(), String> {
+    if !(1..=10).contains(&speed) {
+        return Err(format!("AVIF speed must be 1–10, got {speed}"));
+    }
     let file_bytes = fs::read(&source_path).map_err(|e| format!("Read error: {e}"))?;
     let src = RawSource::new_from_shared_vec(Arc::new(file_bytes));
     let file_bytes = src.buf();
@@ -286,7 +290,7 @@ pub fn crop_and_export(
         }
         "avif" => {
             let encoder =
-                image::codecs::avif::AvifEncoder::new_with_speed_quality(&mut buf, 6, quality);
+                image::codecs::avif::AvifEncoder::new_with_speed_quality(&mut buf, speed, quality);
             encoder
                 .write_image(&cropped, crop_w, crop_h, image::ExtendedColorType::Rgb8)
                 .map_err(|e| format!("AVIF encode error: {e}"))?;
@@ -305,7 +309,25 @@ pub fn crop_and_export(
 
 #[cfg(test)]
 mod tests {
-    use super::{may_be_raw, preview_is_full_size};
+    use super::{crop_and_export, may_be_raw, preview_is_full_size};
+
+    #[test]
+    fn avif_speed_outside_one_to_ten_is_refused_before_any_work() {
+        for speed in [0, 11] {
+            let result = crop_and_export(
+                "/missing.jpg".into(),
+                "/missing.avif".into(),
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                87,
+                speed,
+                "avif".into(),
+            );
+            assert_eq!(result, Err(format!("AVIF speed must be 1–10, got {speed}")));
+        }
+    }
 
     #[test]
     fn ordinary_images_never_reach_the_raw_decoder() {

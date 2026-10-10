@@ -22,10 +22,11 @@ import {
 	updateFrame
 } from '$lib/db';
 import { exportFrames, exportMetadata, pickDirectory } from '$lib/export';
+import { AVIF_SPEED, EXPORT_QUALITY } from '$lib/framer/canvas-export';
 import Framer from '$lib/framer/Framer.svelte';
 import { getDefaultExportDir, sidecarName } from '$lib/framer/output';
 import type { FramerStore } from '$lib/framer/session.svelte';
-import { type CropDoc, CROP_DOC_VERSION, type ExportFormat, type Frame } from '$lib/framer/types';
+import { CROP_DOC_VERSION, type CropDoc, type ExportFormat, type Frame } from '$lib/framer/types';
 import { parseSnapshot } from '$lib/history';
 import { rememberRecent } from '$lib/recents';
 
@@ -138,7 +139,9 @@ async function runExport(frames: Frame[], edited: CropDoc, report: Report) {
 	report(0, total);
 	await yieldFrame();
 	try {
-		await exportFrames(photo, frames, exportDir, exportFormat, 0.92, (current: number) => report(current, total));
+		await exportFrames(photo, frames, exportDir, exportFormat, EXPORT_QUALITY, AVIF_SPEED, (current: number) =>
+			report(current, total)
+		);
 		report(frames.length, total);
 		await yieldFrame();
 		await exportMetadata(photo, { ...edited, frames }, `${exportDir}/${sidecarName(photo.title ?? '')}`);

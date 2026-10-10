@@ -102,6 +102,7 @@ struct CropArgs {
     width: f64,
     height: f64,
     quality: u8,
+    speed: u8,
     format: String,
 }
 
@@ -181,6 +182,7 @@ fn dispatch(command: &str, body: Value) -> Result<Value, String> {
                 a.width,
                 a.height,
                 a.quality,
+                a.speed,
                 a.format,
             ))
         }

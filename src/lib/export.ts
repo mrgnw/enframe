@@ -1,6 +1,7 @@
 import { toast } from 'svelte-sonner';
 import { pickDirectory as bridgePickDirectory, invoke, writeFile } from './bridge';
 import type { Photo } from './db';
+import { AVIF_SPEED, EXPORT_QUALITY } from './framer/canvas-export';
 import { generateFrameFilename, sidecarJson } from './framer/output';
 import type { CropDoc, ExportFormat, Frame } from './framer/types';
 import { getLrAssetPaths } from './lightroom';
@@ -28,7 +29,8 @@ export async function exportFrames(
 	frames: Frame[],
 	directory: string,
 	format: ExportFormat = 'avif',
-	quality: number = 0.92,
+	quality = EXPORT_QUALITY,
+	speed = AVIF_SPEED,
 	onProgress?: (current: number, total: number) => void
 ): Promise<string[]> {
 	const exportedPaths: string[] = [];
@@ -54,6 +56,7 @@ export async function exportFrames(
 			width: frame.width,
 			height: frame.height,
 			quality: qualityU8,
+			speed,
 			format
 		});
 
