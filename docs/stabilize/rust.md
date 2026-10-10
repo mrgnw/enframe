@@ -194,6 +194,12 @@ cd rust && cargo test --release -- --ignored --nocapture
   - `image` with `avif` encodes still images through ravif only; decoding needs dav1d separately.
   - `ravif` 0.13 (rav1e) encodes single images, not animations.
 
+## MP4 encode
+
+- **`.mp4` without `--vf` is encoded in-process** by filmcraft's pure-Rust H.264 encoder and MP4 writer, vendored in `src-tauri/vendor/filmcraft` (#30). High profile, 2 B-frames, CRF 15 Balanced, 8-bit 4:2:0, BT.709 limited range; the colour tags go in both the SPS VUI and the `colr` nclx box, the run ID in `©cmt`, and an edit list starts the clip at frame 1. `--vf`, `.mov` and `.webm` still go through ffmpeg.
+- **Against the old path** (ffmpeg, libx264 CRF 18 preset medium), all 57 train clouds photos, `PAD=black`, clip 1476x1172, M4 Pro, median of 5 whole runs: 8.3 s and 20.2 MB native against 4.8 s and 17.3 MB through ffmpeg. Encoding alone, on the same YUV: 4.4 s against 2.1 s; SSIM 0.9930 against 0.9942. On 12 photos at 1920x1080 the two were equally fast (0.40 s against 0.41 s, #30). These photos are nearly unrelated frame to frame, so the encoder's scene cut makes most frames IDR.
+- **Not tuned further.** On the 57 photos the Speed preset at CRF 15 took 2.7 s for 20.0 MB at SSIM 0.9932, and CRF 14 matched x264's SSIM at 21.7 MB.
+
 ## HEIC and JPEG XL input
 
 HEIC/HEIF and JPEG XL decode through macOS ImageIO (`CGImageSource`), linked to ImageIO, CoreGraphics and CoreFoundation rather than a new Rust or C codec dependency. It is the practical local choice: macOS uses the M4 media path for HEVC, supports both formats without a build-time codec library, and supplies their orientation metadata. The decoder reads the `CGImage` provider directly, avoiding a bitmap-context colour conversion; it accepts 8-bit RGB(A), 16-bit RGB(A), and Apple's packed HEVC Main 10 `l10r` layout. 10- and 16-bit samples are rounded to the nearest 8-bit sample, and premultiplied alpha is undone before alpha is dropped.
