@@ -191,6 +191,21 @@ fn imageio_avif_quality(dial: u8) -> f64 {
     (0.72 + 2.7 * (f64::from(dial) / 100.0 - 0.87)).clamp(0.0, 1.0)
 }
 
+const DETECT_MAX_SIDE: u32 = 1280;
+const DETECT_MIN_SCORE: f32 = 0.6;
+
+#[derive(Debug, serde::Serialize)]
+pub struct DetectedFace {
+    pub x: f32,
+    pub y: f32,
+    pub x0: f32,
+    pub y0: f32,
+    pub x1: f32,
+    pub y1: f32,
+    pub score: f32,
+    pub required: bool,
+}
+
 // sips survives for HEIC/HEIF only: rawler decodes camera RAW formats and the
 // `image` crate has no HEIF codec, so macOS is the only decoder available.
 fn is_heif(path: &str) -> bool {
@@ -217,8 +232,10 @@ fn sips_convert_to_tiff(source: &str) -> Result<String, String> {
 fn decode_image_with_orientation_and_profile(
     path: &Path,
 ) -> Result<(DynamicImage, Option<Vec<u8>>), String> {
-    let mut decoder = ImageReader::open(path)
-        .map_err(|e| format!("Image open error: {e}"))?
+    let bytes = fs::read(path).map_err(|e| format!("Image open error: {e}"))?;
+    let mut decoder = ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| format!("Image format error: {e}"))?
         .into_decoder()
         .map_err(|e| format!("Image decode error: {e}"))?;
     let profile = decoder
@@ -264,6 +281,132 @@ fn decode_raw(decoder: &dyn Decoder, src: &RawSource) -> Result<image::DynamicIm
         .map_err(|e| format!("RAW develop error: {e}"))?
         .to_dynamic_image()
         .ok_or_else(|| "RAW develop produced no image".to_string())
+}
+
+fn decode_rgb(path: &str) -> Result<image::RgbImage, String> {
+    let bytes = fs::read(path).map_err(|e| format!("Read error: {e}"))?;
+    let src = RawSource::new_from_shared_vec(Arc::new(bytes));
+    let bytes = src.buf();
+    let is_jxl = path.ends_with(".jxl")
+        || (bytes.len() >= 2
+            && (bytes[0..2] == [0xFF, 0x0A] || bytes.starts_with(b"\x00\x00\x00\x0CJXL ")));
+
+    if is_jxl {
+        let decoder = jxl_oxide::JxlImage::builder()
+            .read(bytes)
+            .map_err(|e| format!("JXL decode error: {e}"))?;
+        let render = decoder
+            .render_frame(0)
+            .map_err(|e| format!("JXL render error: {e}"))?;
+        let fb = render.image_all_channels();
+        let (w, h, channels) = (
+            fb.width() as u32,
+            fb.height() as u32,
+            fb.channels() as usize,
+        );
+        let mut rgb = Vec::with_capacity((w * h * 3) as usize);
+        for pixel in 0..(w * h) as usize {
+            let base = pixel * channels;
+            for channel in 0..3 {
+                rgb.push((fb.buf()[base + channel].clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+            }
+        }
+        return image::RgbImage::from_raw(w, h, rgb)
+            .ok_or_else(|| "Failed to create image from JXL data".to_string());
+    }
+
+    if may_be_raw(path)
+        && let Ok(decoder) = rawler::get_decoder(&src)
+    {
+        let params = RawDecodeParams::default();
+        if let Ok(Some(preview)) = decoder.preview_image(&src, &params) {
+            return Ok(preview.to_rgb8());
+        }
+        return decode_raw(decoder.as_ref(), &src).map(|image| image.to_rgb8());
+    }
+
+    if is_heif(path) {
+        let tmp = sips_convert_to_tiff(path)?;
+        let decoded = decode_image_with_orientation(Path::new(&tmp));
+        let _ = fs::remove_file(&tmp);
+        return decoded.map(|image| image.to_rgb8());
+    }
+
+    decode_image_with_orientation(Path::new(path)).map(|image| image.to_rgb8())
+}
+
+fn iou(a: &faces::yunet::Face, b: &faces::yunet::Face) -> f32 {
+    let width = (a.x1.min(b.x1) - a.x0.max(b.x0)).max(0.0);
+    let height = (a.y1.min(b.y1) - a.y0.max(b.y0)).max(0.0);
+    let intersection = width * height;
+    let union = (a.x1 - a.x0) * (a.y1 - a.y0) + (b.x1 - b.x0) * (b.y1 - b.y0) - intersection;
+    if union > 0.0 {
+        intersection / union
+    } else {
+        0.0
+    }
+}
+
+fn contains(a: &faces::yunet::Face, b: &faces::yunet::Face) -> bool {
+    a.x0 <= b.x0 && a.y0 <= b.y0 && a.x1 >= b.x1 && a.y1 >= b.y1
+}
+
+pub fn detect_faces_blocking(path: &str) -> Result<Vec<DetectedFace>, String> {
+    let image = decode_rgb(path)?;
+    let image = if image.width().max(image.height()) > DETECT_MAX_SIDE {
+        image::imageops::thumbnail(&image, DETECT_MAX_SIDE, DETECT_MAX_SIDE)
+    } else {
+        image
+    };
+    let options = faces::yunet::Options {
+        score: DETECT_MIN_SCORE,
+        ..Default::default()
+    };
+    let mut faces = faces::detector()
+        .map_err(|e| e.to_string())?
+        .detect(
+            image.as_raw(),
+            image.width() as usize,
+            image.height() as usize,
+            &options,
+        )
+        .map_err(|e| e.to_string())?;
+    faces.sort_by(|a, b| b.score.total_cmp(&a.score));
+    let mut deduped = Vec::new();
+    for face in faces {
+        if deduped
+            .iter()
+            .any(|kept| iou(kept, &face) > 0.3 || contains(kept, &face) || contains(&face, kept))
+        {
+            continue;
+        }
+        deduped.push(face);
+    }
+    let largest = deduped
+        .iter()
+        .map(|face| (face.x1 - face.x0) * (face.y1 - face.y0))
+        .fold(0.0_f32, f32::max);
+    Ok(deduped
+        .into_iter()
+        .map(|face| DetectedFace {
+            x: ((face.landmarks[0].0 + face.landmarks[1].0) / 2.0).clamp(0.0, 1.0),
+            y: ((face.landmarks[0].1 + face.landmarks[1].1) / 2.0).clamp(0.0, 1.0),
+            x0: face.x0,
+            y0: face.y0,
+            x1: face.x1,
+            y1: face.y1,
+            score: face.score,
+            required: face.score >= 0.7
+                && (face.x1 - face.x0) * (face.y1 - face.y0) >= largest * 0.25,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn detect_faces(path: String) -> Result<Vec<DetectedFace>, String> {
+    tauri::async_runtime::spawn_blocking(move || detect_faces_blocking(&path))
+        .await
+        .map_err(|e| format!("face detection task: {e}"))?
 }
 
 const RAW_EXTENSIONS: [&str; 9] = [
@@ -533,7 +676,7 @@ pub fn crop_and_export(
 
 #[cfg(test)]
 mod tests {
-    use super::{crop_and_export, may_be_raw, preview_is_full_size};
+    use super::{crop_and_export, detect_faces_blocking, may_be_raw, preview_is_full_size};
     use std::path::PathBuf;
 
     #[cfg(target_os = "macos")]
@@ -543,6 +686,14 @@ mod tests {
         assert!((imageio_avif_quality(87) - 0.72).abs() < 1e-9);
         assert_eq!(imageio_avif_quality(100), 1.0);
         assert_eq!(imageio_avif_quality(0), 0.0);
+    }
+
+    fn fixture(name: &str) -> String {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name)
+            .to_string_lossy()
+            .into_owned()
     }
 
     #[test]
@@ -634,5 +785,41 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn detects_a_face_in_the_portrait_fixture() {
+        let faces =
+            detect_faces_blocking(&fixture("portrait-upright-ref.jpg")).expect("detect faces");
+        assert!(!faces.is_empty(), "portrait should contain a face");
+    }
+
+    #[test]
+    fn orientation_six_keeps_the_portrait_detectable() {
+        let upright =
+            detect_faces_blocking(&fixture("portrait-upright-ref.jpg")).expect("detect upright");
+        let oriented =
+            detect_faces_blocking(&fixture("synthetic-orient6.jpg")).expect("detect oriented");
+        assert!(
+            !oriented.is_empty(),
+            "orientation-6 portrait should contain a face"
+        );
+        assert!(
+            (upright[0].score - oriented[0].score).abs() < 0.05,
+            "orientation should preserve the same face"
+        );
+    }
+
+    #[test]
+    fn no_people_landscape_has_no_faces() {
+        let landscape = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../images/20230713-DJI_0392-Enhanced-NR.jxl")
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            detect_faces_blocking(&landscape)
+                .expect("detect landscape")
+                .is_empty()
+        );
     }
 }

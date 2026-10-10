@@ -1,5 +1,5 @@
 [workspace]
-members = ["serve", "stabilize"]
+members = ["serve", "stabilize", "faces"]
 exclude = ["vendor"]
 
 [package]
@@ -35,6 +35,8 @@ rmpv = { version = "1", features = ["with-serde"] }
 xcap = { version = "0.8", optional = true }
 enigo = { version = "0.6", optional = true }
 rawler = "0.7"
+faces = { path = "faces" }
+sha2 = "0.10"
 
 [features]
 default = [ "custom-protocol" ]

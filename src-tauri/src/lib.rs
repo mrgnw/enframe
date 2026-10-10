@@ -42,6 +42,7 @@ pub fn run() {
             inbox::scan_inbox,
             commands::save_image,
             commands::crop_and_export,
+            commands::detect_faces,
             commands::raw_thumbnail,
             commands::get_screenshot_mode
         ])

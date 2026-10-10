@@ -1,0 +1,7 @@
+This crate vendors the YuNet detection subset of LightCraft `crates/faces` at
+commit 1cc0dde, Copyright (c) 2026 ArtCraft Team and the LightCraft contributors.
+It is available under the MIT License (LICENSE-MIT) or Apache-2.0.
+
+The bundled face_detection_yunet_2023mar.onnx model is from opencv_zoo commit
+25f423d and is MIT licensed: Copyright (c) 2020 Shiqi Yu.
+The model was trained on WIDER FACE; users should review that dataset's terms.

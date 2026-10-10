@@ -1,0 +1,14 @@
+[package]
+name = "faces"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+ndarray = { version = "=0.17.2", default-features = false, features = ["std"] }
+matrixmultiply = { version = "=0.3.11", default-features = false, features = ["std", "avx512"] }
+thiserror = "2"
+web-time = "1"
+
+[dev-dependencies]
+sha2 = "0.10"
