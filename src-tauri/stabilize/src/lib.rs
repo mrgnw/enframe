@@ -25,6 +25,7 @@ mod profile;
 mod render;
 mod sift;
 mod track;
+mod yuv;
 
 pub use track::Mark;
 
@@ -683,7 +684,7 @@ struct RenderJob<'a> {
 
 /// A placed frame as the sink takes it: YUV for libavif, RGB(A) bytes for ffmpeg.
 enum Frame {
-	Yuv(avif::Yuv),
+	Yuv(yuv::Yuv),
 	Rgb(pixels::Image),
 }
 
@@ -715,7 +716,7 @@ fn render(job: &RenderJob, sink: &mut Sink) -> Result<(), String> {
 			save_png(&path, &frame, job.profile).map_err(|e| format!("{}: {e}", path.display()))?;
 		}
 		Ok(if job.avif {
-			Frame::Yuv(work(Work::Place, || avif::to_yuv420(&frame)))
+			Frame::Yuv(work(Work::Place, || yuv::to_yuv420(&frame, yuv::BT601, yuv::FULL)))
 		} else {
 			Frame::Rgb(frame)
 		})

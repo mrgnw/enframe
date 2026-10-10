@@ -321,7 +321,7 @@ fn task_memory() {
 			Some(&[0, 0, 0, 0]),
 		);
 		drop(rgb);
-		std::hint::black_box(avif::to_yuv420(&frame));
+		std::hint::black_box(crate::yuv::to_yuv420(&frame, crate::yuv::BT601, crate::yuv::FULL));
 	} else {
 		let k = (1024.0 / w.max(h) as f64).min(1.0);
 		let gray = pixels::gray(&rgb);
