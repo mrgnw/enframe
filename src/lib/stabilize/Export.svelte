@@ -16,7 +16,7 @@ const TITLES: Record<Format, string> = {
 };
 const NOTES: Record<Format, string> = {
 	avif: 'Plays in a browser as an image.',
-	mp4: 'H.264 through ffmpeg. Plays everywhere.',
+	mp4: 'H.264. Plays everywhere.',
 	mov: 'ProRes 4444 through ffmpeg, for video editors.',
 	webm: 'VP9 through ffmpeg.'
 };

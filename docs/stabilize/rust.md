@@ -188,7 +188,7 @@ cd rust && cargo test --release -- --ignored --nocapture
 - **libavif through bindgen** (`rust/build.rs`), built from source and linked statically: libavif 1.4.2 with dav1d 1.5.4 for decode and libaom 3.15.0 for encode, the versions Homebrew ships. Animated AVIF needs libavif or something like it; the pure-Rust options cannot write it.
 - **The libavif build has no libyuv** (Homebrew's has none either), while Pillow's does. Its YUV to RGB conversion differed from Pillow's by up to 3 levels, so the 4:4:4 full-range BT.601 case (the Girona photos) converts in Rust the way libyuv does: bit-exact with Pillow. Other layouts fall back to libavif's own conversion (`avif.rs`, marked `ponytail:`). Its RGB to YUV conversion for encoding was slow (above), so frames convert in Rust on the render threads.
 - **Orientation** comes from the AVIF `irot` and `imir` boxes, as Pillow reports it. It is unit-tested on synthetic images only: no rotated AVIF was at hand.
-- **Encoder settings** follow `anchor.py`'s Pillow call: speed 10, quality 75, 4:2:0, full range, alpha kept, 250 ms frames, run ID in the XMP. ffmpeg outputs (`.mov`, `.mp4`, `.webm`) pipe RGB(A) as before, with the run ID in the comment tag.
+- **Encoder settings** follow `anchor.py`'s Pillow call: speed 10, quality 75, 4:2:0, full range, alpha kept, 250 ms frames, run ID in the XMP. ffmpeg outputs (`.mov`, `.webm`, and `.mp4` with `--vf`) pipe RGB(A) as before, with the run ID in the comment tag.
 - **Alternatives considered:**
   - `libavif-sys` 0.17 vendors libavif 1.0.4 and builds dav1d with meson and ninja (not installed) and aom with cmake. It also pulls rav1e by default.
   - `image` with `avif` encodes still images through ravif only; decoding needs dav1d separately.
@@ -231,7 +231,7 @@ A full-pipeline trial confirmed it. With AVIF routed through ImageIO, decoded pi
 
 Decoders keep each photo's own pixel values, and the clip carries the photos' label (`rust/src/colour.rs`). Each photo's profile is read from its header before decoding: AVIF's ICC profile or nclx code points, the colour space ImageIO reports for HEIC and JPEG XL, the ICC profile in JPEG, and cICP, then iCCP, then sRGB in PNG. ICC profiles are identified by their colorants and tone curves, not their description: sRGB and Display P3 are accepted, and anything else (Adobe RGB, ProPhoto, BT.709 or BT.2020 transfer, an unknown ICC) is an error naming the photo. Unlabelled photos count as sRGB.
 
-The AVIF clip gets nclx primaries 1 (sRGB) or 12 (Display P3) with transfer 13 (sRGB). ffmpeg outputs get the same through `setparams` on the frames, after an explicit BT.709 limited-range RGB to YUV step; ffmpeg 9 ignores `-color_primaries` and friends when the frames carry their own. `--frames` PNGs get the sRGB chunk or Apple's Display P3 ICC profile from CoreGraphics.
+The AVIF clip gets nclx primaries 1 (sRGB) or 12 (Display P3) with transfer 13 (sRGB). The native `.mp4` gets the same with matrix 1, limited range, in both the H.264 VUI and the `colr` box. ffmpeg outputs get the same through `setparams` on the frames, after an explicit BT.709 limited-range RGB to YUV step; ffmpeg 9 ignores `-color_primaries` and friends when the frames carry their own. `--frames` PNGs get the sRGB chunk or Apple's Display P3 ICC profile from CoreGraphics.
 
 A set mixing sRGB and Display P3 photos becomes Display P3. The sRGB photos are linearized, multiplied by the fixed sRGB to Display P3 matrix (both D65), and re-encoded to 8 bits on the render threads, just before placing. Tracking and the feature cache see the decoded values as before, so neither changes.
 
@@ -266,6 +266,8 @@ Measured on the Linux host above: a clean release build takes 3 min 10 s wall (1
 | bindgen 0.72, cmake 0.1 (build) | libavif bindings and build | BSD-3-Clause; MIT or Apache-2.0 |
 | kornia-imgproc 0.2 (optional) | alternative SIFT | Apache-2.0 |
 | opencv 0.101 (optional) | OpenCV's SIFT | MIT (OpenCV itself Apache-2.0) |
+| filmcraft-h264enc, -isobmff, -bitstream 0.5 (vendored in `src-tauri/vendor/filmcraft`) | `.mp4`: H.264 encode and MP4 mux | MIT or Apache-2.0 |
+| thiserror 2, rayon 1 | filmcraft's errors and threads | MIT or Apache-2.0 |
 | libavif, dav1d, libaom (C, linked statically) | AVIF | BSD-2-Clause (libaom also carries the AOM patent license); see Build and install |
 
 A default build compiles 26 crates, 48 with the build dependencies. SIFT's patent expired in March 2020.
@@ -330,7 +332,9 @@ Measured on a 4-core Linux container (2026-10-08): an in-process re-track of the
 
 - `src-tauri/stabilize/src/lib.rs`: the library: input checks, resource planning, pipeline, outputs.
 - `src-tauri/stabilize/src/main.rs`: the CLI (same flags as `anchor.py` except box drawing), a thin layer over the library.
-- `src-tauri/stabilize/src/avif.rs`: libavif decode and encode, libyuv-exact YUV to RGB, RGB to YUV for the encoder.
+- `src-tauri/stabilize/src/avif.rs`: libavif decode and encode, libyuv-exact YUV to RGB.
+- `src-tauri/stabilize/src/yuv.rs`: RGB to YUV 4:2:0 for the AVIF (BT.601 full range) and MP4 (BT.709 limited range) encoders.
+- `src-tauri/stabilize/src/mp4.rs`: `.mp4` clips through the vendored filmcraft H.264 encoder and MP4 writer.
 - `src-tauri/stabilize/src/colour.rs`: colour profiles from ICC and nclx, sRGB to Display P3.
 - `src-tauri/stabilize/src/pixels.rs`: orientation, OpenCV-exact gray and INTER_AREA.
 - `src-tauri/stabilize/src/sift.rs`: the SIFT port.
