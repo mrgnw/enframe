@@ -8,6 +8,148 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 
+#[cfg(target_os = "macos")]
+mod imageio_avif {
+    use image::RgbImage;
+    use std::ffi::{CString, c_void};
+
+    type CF = *const c_void;
+    const UTF8: u32 = 0x0800_0100;
+    const FLOAT64: i32 = 13;
+
+    #[link(name = "ImageIO", kind = "framework")]
+    unsafe extern "C" {
+        static kCGImageDestinationLossyCompressionQuality: CF;
+        fn CGImageDestinationCreateWithData(data: CF, ty: CF, count: usize, options: CF) -> CF;
+        fn CGImageDestinationAddImage(destination: CF, image: CF, properties: CF);
+        fn CGImageDestinationFinalize(destination: CF) -> bool;
+    }
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {
+        fn CGColorSpaceCreateWithICCData(data: CF) -> CF;
+        fn CGColorSpaceCreateDeviceRGB() -> CF;
+        fn CGDataProviderCreateWithData(info: CF, data: *const u8, size: usize, release: CF) -> CF;
+        fn CGImageCreate(
+            width: usize,
+            height: usize,
+            bpc: usize,
+            bpp: usize,
+            bpr: usize,
+            color_space: CF,
+            bitmap_info: u32,
+            provider: CF,
+            decode: *const f64,
+            interpolate: bool,
+            intent: i32,
+        ) -> CF;
+    }
+    #[link(name = "CoreFoundation", kind = "framework")]
+    unsafe extern "C" {
+        static kCFAllocatorDefault: CF;
+        static kCFTypeDictionaryKeyCallBacks: c_void;
+        static kCFTypeDictionaryValueCallBacks: c_void;
+        fn CFDataCreate(allocator: CF, bytes: *const u8, length: isize) -> CF;
+        fn CFDataCreateMutable(allocator: CF, capacity: isize) -> CF;
+        fn CFDataGetBytePtr(data: CF) -> *const u8;
+        fn CFDataGetLength(data: CF) -> isize;
+        fn CFDictionaryCreate(
+            allocator: CF,
+            keys: *const CF,
+            values: *const CF,
+            count: isize,
+            key_callbacks: *const c_void,
+            value_callbacks: *const c_void,
+        ) -> CF;
+        fn CFNumberCreate(allocator: CF, number_type: i32, value: *const c_void) -> CF;
+        fn CFRelease(value: CF);
+        fn CFStringCreateWithCString(allocator: CF, value: *const i8, encoding: u32) -> CF;
+    }
+
+    pub fn encode(image: &RgbImage, icc: Option<&[u8]>, quality: f64) -> Result<Vec<u8>, String> {
+        unsafe {
+            let color_space = if let Some(icc) = icc {
+                let data = CFDataCreate(kCFAllocatorDefault, icc.as_ptr(), icc.len() as isize);
+                let color_space = CGColorSpaceCreateWithICCData(data);
+                CFRelease(data);
+                if color_space.is_null() {
+                    CGColorSpaceCreateDeviceRGB()
+                } else {
+                    color_space
+                }
+            } else {
+                CGColorSpaceCreateDeviceRGB()
+            };
+            let provider = CGDataProviderCreateWithData(
+                std::ptr::null(),
+                image.as_raw().as_ptr(),
+                image.as_raw().len(),
+                std::ptr::null(),
+            );
+            let cg_image = CGImageCreate(
+                image.width() as usize,
+                image.height() as usize,
+                8,
+                24,
+                image.width() as usize * 3,
+                color_space,
+                0,
+                provider,
+                std::ptr::null(),
+                false,
+                0,
+            );
+            if cg_image.is_null() {
+                return Err("CGImageCreate failed".into());
+            }
+            let output = CFDataCreateMutable(kCFAllocatorDefault, 0);
+            let ty = CString::new("public.avif").unwrap();
+            let ty = CFStringCreateWithCString(kCFAllocatorDefault, ty.as_ptr(), UTF8);
+            let destination = CGImageDestinationCreateWithData(output, ty, 1, std::ptr::null());
+            if destination.is_null() {
+                return Err("ImageIO has no AVIF encoder".into());
+            }
+            let quality = CFNumberCreate(
+                kCFAllocatorDefault,
+                FLOAT64,
+                (&quality as *const f64).cast(),
+            );
+            let keys = [kCGImageDestinationLossyCompressionQuality];
+            let values = [quality];
+            let properties = CFDictionaryCreate(
+                kCFAllocatorDefault,
+                keys.as_ptr(),
+                values.as_ptr(),
+                1,
+                (&raw const kCFTypeDictionaryKeyCallBacks).cast(),
+                (&raw const kCFTypeDictionaryValueCallBacks).cast(),
+            );
+            CGImageDestinationAddImage(destination, cg_image, properties);
+            let result = if CGImageDestinationFinalize(destination) {
+                Ok(std::slice::from_raw_parts(
+                    CFDataGetBytePtr(output),
+                    CFDataGetLength(output) as usize,
+                )
+                .to_vec())
+            } else {
+                Err("ImageIO AVIF encode failed".into())
+            };
+            for value in [
+                properties,
+                quality,
+                destination,
+                ty,
+                output,
+                cg_image,
+                provider,
+                color_space,
+            ] {
+                CFRelease(value);
+            }
+            result
+        }
+    }
+}
+
 // sips survives for HEIC/HEIF only: rawler decodes camera RAW formats and the
 // `image` crate has no HEIF codec, so macOS is the only decoder available.
 fn is_heif(path: &str) -> bool {
@@ -31,19 +173,28 @@ fn sips_convert_to_tiff(source: &str) -> Result<String, String> {
     Ok(tmp_str)
 }
 
-/// Decode an image in the orientation WebKit presents to the editor.
-pub fn decode_image_with_orientation(path: &Path) -> Result<DynamicImage, String> {
+fn decode_image_with_orientation_and_profile(
+    path: &Path,
+) -> Result<(DynamicImage, Option<Vec<u8>>), String> {
     let mut decoder = ImageReader::open(path)
         .map_err(|e| format!("Image open error: {e}"))?
         .into_decoder()
         .map_err(|e| format!("Image decode error: {e}"))?;
+    let profile = decoder
+        .icc_profile()
+        .map_err(|e| format!("Image profile error: {e}"))?;
     let orientation = decoder
         .orientation()
         .map_err(|e| format!("Image orientation error: {e}"))?;
     let mut image =
         DynamicImage::from_decoder(decoder).map_err(|e| format!("Image decode error: {e}"))?;
     image.apply_orientation(orientation);
-    Ok(image)
+    Ok((image, profile))
+}
+
+/// Decode an image in the orientation WebKit presents to the editor.
+pub fn decode_image_with_orientation(path: &Path) -> Result<DynamicImage, String> {
+    decode_image_with_orientation_and_profile(path).map(|(image, _)| image)
 }
 
 // ponytail: embedded previews carry the in-camera render, so prefer them, but
@@ -243,7 +394,7 @@ pub fn crop_and_export(
             && (file_bytes[0..2] == [0xFF, 0x0A]
                 || file_bytes.starts_with(b"\x00\x00\x00\x0CJXL ")));
 
-    let img = if is_jxl {
+    let (img, icc) = if is_jxl {
         let decoder = jxl_oxide::JxlImage::builder()
             .read(file_bytes)
             .map_err(|e| format!("JXL decode error: {e}"))?;
@@ -266,17 +417,22 @@ pub fn crop_and_export(
             rgb_buf.push(g);
             rgb_buf.push(b);
         }
-        image::RgbImage::from_raw(w, h, rgb_buf)
-            .ok_or_else(|| "Failed to create image from JXL data".to_string())?
+        (
+            image::RgbImage::from_raw(w, h, rgb_buf)
+                .ok_or_else(|| "Failed to create image from JXL data".to_string())?,
+            None,
+        )
     } else if let Ok(decoder) = rawler::get_decoder(&src) {
-        decode_raw(decoder.as_ref(), &src)?.to_rgb8()
+        (decode_raw(decoder.as_ref(), &src)?.to_rgb8(), None)
     } else if is_heif(&source_path) {
         let tmp = sips_convert_to_tiff(&source_path)?;
-        let decoded = decode_image_with_orientation(Path::new(&tmp));
+        let decoded = decode_image_with_orientation_and_profile(Path::new(&tmp));
         let _ = fs::remove_file(&tmp);
-        decoded?.to_rgb8()
+        let (image, icc) = decoded?;
+        (image.to_rgb8(), icc)
     } else {
-        decode_image_with_orientation(Path::new(&source_path))?.to_rgb8()
+        let (image, icc) = decode_image_with_orientation_and_profile(Path::new(&source_path))?;
+        (image.to_rgb8(), icc)
     };
 
     let img_w = img.width();
@@ -294,6 +450,9 @@ pub fn crop_and_export(
 
     let cropped = image::imageops::crop_imm(&img, crop_x, crop_y, crop_w, crop_h).to_image();
 
+    #[cfg(not(target_os = "macos"))]
+    let _ = &icc;
+
     let mut buf: Vec<u8> = Vec::new();
     match format.as_str() {
         "png" => {
@@ -303,11 +462,24 @@ pub fn crop_and_export(
                 .map_err(|e| format!("PNG encode error: {e}"))?;
         }
         "avif" => {
-            let encoder =
-                image::codecs::avif::AvifEncoder::new_with_speed_quality(&mut buf, speed, quality);
-            encoder
-                .write_image(&cropped, crop_w, crop_h, image::ExtendedColorType::Rgb8)
-                .map_err(|e| format!("AVIF encode error: {e}"))?;
+            #[cfg(target_os = "macos")]
+            {
+                buf = imageio_avif::encode(
+                    &cropped,
+                    icc.as_deref(),
+                    (f64::from(quality) / 100.0 - 0.10).clamp(0.0, 1.0),
+                )
+                .map_err(|e| format!("ImageIO AVIF encode error: {e}"))?;
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                let encoder = image::codecs::avif::AvifEncoder::new_with_speed_quality(
+                    &mut buf, speed, quality,
+                );
+                encoder
+                    .write_image(&cropped, crop_w, crop_h, image::ExtendedColorType::Rgb8)
+                    .map_err(|e| format!("AVIF encode error: {e}"))?;
+            }
         }
         _ => {
             let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, quality);
