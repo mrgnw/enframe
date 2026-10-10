@@ -1,5 +1,6 @@
 [workspace]
 members = ["serve", "stabilize"]
+exclude = ["vendor"]
 
 [package]
 name = "enframe"

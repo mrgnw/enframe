@@ -1513,6 +1513,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "filmcraft-bitstream"
+version = "0.5.0"
+
+[[package]]
+name = "filmcraft-h264enc"
+version = "0.5.0"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "filmcraft-isobmff"
+version = "0.5.0"
+dependencies = [
+ "filmcraft-bitstream",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5183,6 +5204,8 @@ dependencies = [
  "bindgen",
  "blake3",
  "cmake",
+ "filmcraft-h264enc",
+ "filmcraft-isobmff",
  "kamadak-exif",
  "libc",
  "png 0.18.1",

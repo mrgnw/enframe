@@ -20,6 +20,7 @@ mod imageio;
 #[cfg(not(target_os = "macos"))]
 #[path = "imageio_unavailable.rs"]
 mod imageio;
+mod mp4;
 mod pixels;
 mod profile;
 mod render;
@@ -451,11 +452,14 @@ fn check_output(out: &Path, alpha: bool, filters: Option<&str>) -> Result<(), St
 		}
 		return Ok(());
 	}
-	if !on_path("ffmpeg") {
-		return Err(format!("--out .{ext} needs ffmpeg on PATH; .avif does not"));
-	}
 	if alpha && ext == "mp4" {
 		return Err("transparent padding needs a .avif, .mov or .webm --out".into());
+	}
+	if filters.is_some() && !on_path("ffmpeg") {
+		return Err("--vf needs ffmpeg on PATH".into());
+	}
+	if ext != "mp4" && !on_path("ffmpeg") {
+		return Err(format!("--out .{ext} needs ffmpeg on PATH; .avif and .mp4 do not"));
 	}
 	Ok(())
 }
@@ -577,9 +581,11 @@ fn prepare(
 	Ok(photo)
 }
 
-/// Where each frame goes: an animated AVIF through libavif, or ffmpeg for the other formats.
+/// Where each frame goes: an animated AVIF through libavif, an MP4 through the vendored H.264 encoder, or
+/// ffmpeg for the other formats and for --vf.
 enum Sink {
 	Avif(avif::Encoder),
+	Mp4(Box<mp4::Writer>),
 	Ffmpeg(std::process::Child),
 }
 
@@ -605,6 +611,9 @@ fn open_sink(out: &Path, o: &SinkOptions) -> Result<Sink, String> {
 			xmp,
 			o.profile,
 		)));
+	}
+	if suffix(out) == "mp4" && o.filters.is_none() {
+		return Ok(Sink::Mp4(Box::new(mp4::Writer::new(out, o.size, o.fps, o.run, o.profile)?)));
 	}
 	let (encoder, pix_fmt): (Vec<&str>, &str) = match (suffix(out).as_str(), o.alpha) {
 		("webm", alpha) => (
@@ -675,14 +684,15 @@ struct RenderJob<'a> {
 	keep: Option<&'a Keep>,
 	threads: usize,
 	frames: Option<&'a Path>,
-	avif: bool,
+	/// The matrix and range the sink takes YUV in; `None` for RGB(A).
+	yuv: Option<(yuv::Matrix, yuv::Range)>,
 	profile: Profile,
 	/// Photos to convert from sRGB to the clip's Display P3 before placing.
 	convert: &'a [bool],
 	cancel: Option<&'a AtomicBool>,
 }
 
-/// A placed frame as the sink takes it: YUV for libavif, RGB(A) bytes for ffmpeg.
+/// A placed frame as the sink takes it: YUV for libavif and H.264, RGB(A) bytes for ffmpeg.
 enum Frame {
 	Yuv(yuv::Yuv),
 	Rgb(pixels::Image),
@@ -715,10 +725,9 @@ fn render(job: &RenderJob, sink: &mut Sink) -> Result<(), String> {
 			let path = dir.join(format!("{:04}.png", i + 1));
 			save_png(&path, &frame, job.profile).map_err(|e| format!("{}: {e}", path.display()))?;
 		}
-		Ok(if job.avif {
-			Frame::Yuv(work(Work::Place, || yuv::to_yuv420(&frame, yuv::BT601, yuv::FULL)))
-		} else {
-			Frame::Rgb(frame)
+		Ok(match job.yuv {
+			Some((matrix, range)) => Frame::Yuv(work(Work::Place, || yuv::to_yuv420(&frame, matrix, range))),
+			None => Frame::Rgb(frame),
 		})
 	};
 	let mut failed = None;
@@ -728,6 +737,7 @@ fn render(job: &RenderJob, sink: &mut Sink) -> Result<(), String> {
 		if failed.is_none() {
 			let added = frame.and_then(|frame| match (&mut *sink, frame) {
 				(Sink::Avif(encoder), Frame::Yuv(yuv)) => work(Work::Encode, || encoder.add(&yuv)),
+				(Sink::Mp4(writer), Frame::Yuv(yuv)) => work(Work::Encode, || writer.add(&yuv)),
 				(Sink::Ffmpeg(child), Frame::Rgb(rgb)) => {
 					// ffmpeg prints why it quit (a bad --vf, say); its exit code is reported below.
 					let _ = child.stdin.as_mut().unwrap().write_all(&rgb.pixels);
@@ -748,6 +758,7 @@ fn render(job: &RenderJob, sink: &mut Sink) -> Result<(), String> {
 fn finish_sink(sink: Sink, out: &Path) -> Result<(), String> {
 	match sink {
 		Sink::Avif(encoder) => work(Work::Encode, || encoder.finish(out)),
+		Sink::Mp4(writer) => work(Work::Encode, || writer.finish()),
 		Sink::Ffmpeg(mut child) => {
 			drop(child.stdin.take());
 			let status = child.wait().map_err(|e| format!("ffmpeg: {e}"))?;
@@ -1097,7 +1108,11 @@ impl Tracked {
 					keep: self.keep.as_ref(),
 					threads: self.render_threads,
 					frames: output.frames.as_deref(),
-					avif: suffix(&output.out) == "avif",
+					yuv: match sink {
+						Sink::Avif(_) => Some((yuv::BT601, yuv::FULL)),
+						Sink::Mp4(_) => Some((yuv::BT709, yuv::LIMITED)),
+						Sink::Ffmpeg(_) => None,
+					},
 					profile,
 					convert: &convert,
 					cancel: self.cancel.as_deref(),
@@ -1231,6 +1246,7 @@ mod tests {
 		assert_eq!(parse_fill("transparent"), Ok(vec![0, 0, 0, 0]));
 		assert_eq!(parse_fill("#ff8000"), Ok(vec![255, 128, 0]));
 		assert!(check_output(Path::new("clip.gif"), false, None).is_err());
+		assert!(check_output(Path::new("clip.mp4"), true, None).is_err(), "no alpha in .mp4");
 		assert!(check_output(Path::new("clip.avif"), false, Some("deflicker")).is_err());
 		assert!(check_output(Path::new("no/such/folder/clip.avif"), false, None).is_err());
 		assert!(read_sizes(&[PathBuf::from("only-one.avif")]).is_err());
