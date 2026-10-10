@@ -437,6 +437,7 @@ function setFormat(next: ExportFormat) {
 				doc={doc}
 				store={store ?? undefined}
 				{imageSrc}
+				imagePath={nativePath ?? undefined}
 				onsave={save}
 				onexport={runExport}
 				onsetoutputdir={setOutputDir}
