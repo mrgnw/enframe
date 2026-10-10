@@ -150,6 +150,15 @@ mod imageio_avif {
     }
 }
 
+// Maps the app's JPEG-style dial (0-100) to ImageIO's AVIF quality (0-1). Fitted
+// with SSIMULACRA2 against the `image` crate AVIF encoder at speed 9: dial 87
+// matches at 0.72, and ImageIO gains ~0.44 points per 0.01 where the `image`
+// encoder gains ~1.2 points per dial step.
+#[cfg(target_os = "macos")]
+fn imageio_avif_quality(dial: u8) -> f64 {
+    (0.72 + 2.7 * (f64::from(dial) / 100.0 - 0.87)).clamp(0.0, 1.0)
+}
+
 // sips survives for HEIC/HEIF only: rawler decodes camera RAW formats and the
 // `image` crate has no HEIF codec, so macOS is the only decoder available.
 fn is_heif(path: &str) -> bool {
@@ -465,12 +474,8 @@ pub fn crop_and_export(
         "avif" => {
             #[cfg(target_os = "macos")]
             {
-                buf = imageio_avif::encode(
-                    &cropped,
-                    icc.as_deref(),
-                    (f64::from(quality) / 100.0 - 0.10).clamp(0.0, 1.0),
-                )
-                .map_err(|e| format!("ImageIO AVIF encode error: {e}"))?;
+                buf = imageio_avif::encode(&cropped, icc.as_deref(), imageio_avif_quality(quality))
+                    .map_err(|e| format!("ImageIO AVIF encode error: {e}"))?;
             }
             #[cfg(not(target_os = "macos"))]
             {
@@ -498,6 +503,15 @@ pub fn crop_and_export(
 mod tests {
     use super::{crop_and_export, may_be_raw, preview_is_full_size};
     use std::path::PathBuf;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn imageio_avif_quality_is_anchored_at_the_default_and_stays_in_range() {
+        use super::imageio_avif_quality;
+        assert!((imageio_avif_quality(87) - 0.72).abs() < 1e-9);
+        assert_eq!(imageio_avif_quality(100), 1.0);
+        assert_eq!(imageio_avif_quality(0), 0.0);
+    }
 
     #[test]
     fn avif_speed_outside_one_to_ten_is_refused_before_any_work() {
