@@ -219,3 +219,17 @@ describe('deleting points', () => {
 		expect(s.focalPoints).toHaveLength(2);
 	});
 });
+
+describe('adding face points', () => {
+	test('adds a batch and selects every new point', async () => {
+		const s = session(0, 0);
+		const added = await s.addPoints([
+			{ frame_id: undefined, x: 0.2, y: 0.3, label: 'Face 1', required: true },
+			{ frame_id: undefined, x: 0.7, y: 0.6, label: 'Face 2', required: false }
+		]);
+
+		expect(added).toHaveLength(2);
+		expect(s.focalPoints.map((point) => point.label)).toEqual(['Face 1', 'Face 2']);
+		expect(ids(s.pointSelection)).toEqual(added.sort((a, b) => a - b));
+	});
+});

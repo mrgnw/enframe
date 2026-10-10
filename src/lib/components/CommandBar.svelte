@@ -7,6 +7,7 @@ import type { ExportFormat } from '$lib/framer/types';
 interface Props {
 	onaddframe?: () => void;
 	onaddpoint?: () => void;
+	ondetectfaces?: () => void;
 	ongenerate?: () => void;
 	onsave?: () => void;
 	onexport?: () => void;
@@ -30,6 +31,7 @@ interface Props {
 let {
 	onaddframe,
 	onaddpoint,
+	ondetectfaces,
 	ongenerate,
 	onsave,
 	onexport,
@@ -108,6 +110,7 @@ const shortcuts = [
 		items: [
 			{ key: 'F', label: 'Add frame' },
 			{ key: 'P', label: 'Add focal point' },
+			{ key: '', label: 'Detect faces' },
 			{ key: 'A', label: 'Generate versions' },
 			{ key: '\u2325Click', label: 'Point + auto versions' },
 			{ key: '\u2318S', label: 'Save' },
@@ -182,6 +185,9 @@ const shortcuts = [
 						<Command.Item onSelect={() => run(onaddpoint)}>
 							<span>Add Focal Point</span>
 							<Command.Shortcut>P</Command.Shortcut>
+						</Command.Item>
+						<Command.Item onSelect={() => run(ondetectfaces)}>
+							<span>Detect Faces</span>
 						</Command.Item>
 						<Command.Item onSelect={() => run(ongenerate)}>
 							<span>Generate Versions</span>
@@ -280,5 +286,4 @@ const shortcuts = [
 		{/if}
 	</Dialog.Content>
 </Dialog.Root>
-
 

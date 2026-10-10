@@ -1,6 +1,7 @@
 <script lang="ts">
 import { onMount } from 'svelte';
 import { toast } from 'svelte-sonner';
+import { invoke } from '$lib/bridge';
 import CommandBar from '$lib/components/CommandBar.svelte';
 import CursorProgress from '$lib/components/CursorProgress.svelte';
 import FloatingToolbar from '$lib/components/FloatingToolbar.svelte';
@@ -9,7 +10,7 @@ import GenerateVersionsDialog from '$lib/components/GenerateVersionsDialog.svelt
 import ImageCanvas from '$lib/components/ImageCanvas.svelte';
 import PreviewPanel from '$lib/components/PreviewPanel.svelte';
 import { REQUIRED_DESTINATIONS } from '$lib/destinations';
-import { type FramerStore, FramerSession } from './session.svelte';
+import { FramerSession, type FramerStore } from './session.svelte';
 import type { CropDoc, ExportFormat, Frame, SelectMode } from './types';
 
 type Report = (done: number, total: number) => void;
@@ -25,10 +26,22 @@ interface Props {
 	onexport?: (frames: Frame[], doc: CropDoc, report: Report) => Promise<void>;
 	onsetoutputdir?: () => void;
 	onsetformat?: (format: ExportFormat) => void;
+	imagePath?: string;
 }
 
-let { doc, imageSrc, store, historySeqs, historyPos, onchange, onsave, onexport, onsetoutputdir, onsetformat }: Props =
-	$props();
+let {
+	doc,
+	imageSrc,
+	store,
+	historySeqs,
+	historyPos,
+	onchange,
+	onsave,
+	onexport,
+	onsetoutputdir,
+	onsetformat,
+	imagePath
+}: Props = $props();
 
 // svelte-ignore state_referenced_locally
 const session = new FramerSession({
@@ -61,6 +74,7 @@ let saving = $state(false);
 let saveProgress = $state(0);
 let saveTotal = $state(0);
 let exporting = $state(false);
+let detectingFaces = $state(false);
 let exportProgress = $state(0);
 let exportTotal = $state(0);
 
@@ -136,6 +150,51 @@ function handlePointerMove(event: PointerEvent) {
 async function addFrame() {
 	await session.addFrame();
 	panelExpanded = true;
+}
+
+type DetectedFace = {
+	x: number;
+	y: number;
+	x0: number;
+	y0: number;
+	x1: number;
+	y1: number;
+	score: number;
+	required: boolean;
+};
+
+async function detectFaces() {
+	if (!imagePath) {
+		toast.error('Face detection needs the original image path');
+		return;
+	}
+	detectingFaces = true;
+	try {
+		const faces = await invoke<DetectedFace[]>('detect_faces', { path: imagePath });
+		const added = await session.addPoints(
+			faces
+				.filter(
+					(face) =>
+						!session.focalPoints.some(
+							(point) => point.x >= face.x0 && point.x <= face.x1 && point.y >= face.y0 && point.y <= face.y1
+						)
+				)
+				.map((face, index) => ({
+					frame_id: undefined,
+					x: face.x,
+					y: face.y,
+					label: `Face ${index + 1}`,
+					required: face.required
+				}))
+		);
+		if (added.length === 0) toast.info(faces.length === 0 ? 'No faces found' : 'Faces are already focal points');
+		else toast.success(`${added.length} face${added.length === 1 ? '' : 's'} found`);
+	} catch (error) {
+		console.error('Face detection failed:', error);
+		toast.error('Face detection failed');
+	} finally {
+		detectingFaces = false;
+	}
 }
 
 async function generateVersions(slugs: string[]) {
@@ -360,6 +419,8 @@ function handleKeyDown(event: KeyboardEvent) {
 		onredo={() => session.redo()}
 		onaddframe={addFrame}
 		onaddpoint={() => session.addPoint()}
+		ondetectfaces={detectFaces}
+		detectingFaces={detectingFaces}
 		ongenerate={() => (generateOpen = true)}
 		onsave={save}
 		onexport={runExport}
@@ -394,6 +455,7 @@ function handleKeyDown(event: KeyboardEvent) {
 <CommandBar
 	onaddframe={addFrame}
 	onaddpoint={() => session.addPoint()}
+		ondetectfaces={detectFaces}
 	ongenerate={() => (generateOpen = true)}
 	onsave={save}
 	onexport={runExport}

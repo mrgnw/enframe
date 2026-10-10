@@ -11,8 +11,8 @@ import {
 	undoSeq
 } from '../history';
 import {
-	type CropDoc,
 	CROP_DOC_VERSION,
+	type CropDoc,
 	cycleFrameId,
 	type FocalPoint,
 	type Frame,
@@ -249,7 +249,13 @@ export class FramerSession {
 
 	async addPoint(x = 0.5, y = 0.5): Promise<number | null> {
 		try {
-			const id = await this.#insertPoint(x, y);
+			const id = await this.#insertPoint({
+				frame_id: undefined,
+				x,
+				y,
+				label: `Point ${this.focalPoints.length + 1}`,
+				required: true
+			});
 			this.#emit();
 			this.#capture();
 			return id;
@@ -257,6 +263,26 @@ export class FramerSession {
 			console.error('Failed to add focal point:', error);
 			this.#onerror?.('Failed to add focal point');
 			return null;
+		}
+	}
+
+	async addPoints(points: Omit<FocalPoint, 'id'>[]): Promise<number[]> {
+		if (points.length === 0) return [];
+		try {
+			const ids = [];
+			for (const point of points) ids.push(await this.#insertPoint(point));
+			this.selectedFrameId = null;
+			this.pointSelection = new Set(ids);
+			this.selectedPointId = ids.at(-1) ?? null;
+			this.#pointAnchor = this.selectedPointId;
+			this.#emit();
+			await this.recomputeAutoFrames();
+			this.#capture();
+			return ids;
+		} catch (error) {
+			console.error('Failed to add focal points:', error);
+			this.#onerror?.('Failed to add focal points');
+			return [];
 		}
 	}
 
@@ -492,14 +518,7 @@ export class FramerSession {
 		return id;
 	}
 
-	async #insertPoint(x: number, y: number): Promise<number> {
-		const point: Omit<FocalPoint, 'id'> = {
-			frame_id: undefined,
-			x,
-			y,
-			label: `Point ${this.focalPoints.length + 1}`,
-			required: true
-		};
+	async #insertPoint(point: Omit<FocalPoint, 'id'>): Promise<number> {
 		const id = (await this.#store?.addPoint(point)) ?? nextLocalId(this.toDoc());
 		this.focalPoints.push({ id, ...point });
 		return id;

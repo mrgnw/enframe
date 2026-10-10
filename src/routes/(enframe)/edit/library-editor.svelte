@@ -180,6 +180,7 @@ function setFormat(format: ExportFormat) {
 	{:else if photo && doc}
 		<Framer
 			{doc}
+			imagePath={photo.file_path}
 			{store}
 			{historySeqs}
 			{historyPos}

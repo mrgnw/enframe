@@ -159,7 +159,8 @@ fn encode<T: Serialize>(result: Result<T, String>) -> Result<Value, String> {
 
 fn dispatch(command: &str, body: Value) -> Result<Value, String> {
     use app_lib::commands::{
-        crop_and_export, get_screenshot_mode, raw_thumbnail_blocking, save_image,
+        crop_and_export, detect_faces_blocking, get_screenshot_mode, raw_thumbnail_blocking,
+        save_image,
     };
     use app_lib::{inbox, lightroom};
 
@@ -168,6 +169,10 @@ fn dispatch(command: &str, body: Value) -> Result<Value, String> {
         "raw_thumbnail" => {
             let a: PathArg = args(body)?;
             encode(raw_thumbnail_blocking(&a.path))
+        }
+        "detect_faces" => {
+            let a: PathArg = args(body)?;
+            encode(detect_faces_blocking(&a.path))
         }
         "save_image" => {
             let a: SaveImageArgs = args(body)?;
@@ -263,6 +268,7 @@ fn confine_command(roots: &Roots, command: &str, body: &mut Value) -> ApiResult<
         "crop_and_export" => confine(roots, body, "sourcePath", Access::Read)?,
         "scan_inbox" => confine(roots, body, "directory", Access::Read)?,
         "raw_thumbnail" => confine(roots, body, "path", Access::Read)?,
+        "detect_faces" => confine(roots, body, "path", Access::Read)?,
         // The Lightroom commands take ids and queries, and read the library through
         // a root that has to be allowlisted for them to work at all.
         _ => {}
