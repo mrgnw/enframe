@@ -1,9 +1,10 @@
 use base64::Engine;
-use image::ImageEncoder;
+use image::{DynamicImage, ImageDecoder, ImageEncoder, ImageReader};
 use rawler::decoders::{Decoder, RawDecodeParams};
 use rawler::rawsource::RawSource;
 use std::fs;
 use std::io::Cursor;
+use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 
@@ -28,6 +29,21 @@ fn sips_convert_to_tiff(source: &str) -> Result<String, String> {
         ));
     }
     Ok(tmp_str)
+}
+
+/// Decode an image in the orientation WebKit presents to the editor.
+pub fn decode_image_with_orientation(path: &Path) -> Result<DynamicImage, String> {
+    let mut decoder = ImageReader::open(path)
+        .map_err(|e| format!("Image open error: {e}"))?
+        .into_decoder()
+        .map_err(|e| format!("Image decode error: {e}"))?;
+    let orientation = decoder
+        .orientation()
+        .map_err(|e| format!("Image orientation error: {e}"))?;
+    let mut image =
+        DynamicImage::from_decoder(decoder).map_err(|e| format!("Image decode error: {e}"))?;
+    image.apply_orientation(orientation);
+    Ok(image)
 }
 
 // ponytail: embedded previews carry the in-camera render, so prefer them, but
@@ -256,13 +272,11 @@ pub fn crop_and_export(
         decode_raw(decoder.as_ref(), &src)?.to_rgb8()
     } else if is_heif(&source_path) {
         let tmp = sips_convert_to_tiff(&source_path)?;
-        let decoded = image::open(&tmp).map_err(|e| format!("Image open error: {e}"));
+        let decoded = decode_image_with_orientation(Path::new(&tmp));
         let _ = fs::remove_file(&tmp);
         decoded?.to_rgb8()
     } else {
-        image::open(&source_path)
-            .map_err(|e| format!("Image open error: {e}"))?
-            .to_rgb8()
+        decode_image_with_orientation(Path::new(&source_path))?.to_rgb8()
     };
 
     let img_w = img.width();
@@ -310,6 +324,7 @@ pub fn crop_and_export(
 #[cfg(test)]
 mod tests {
     use super::{crop_and_export, may_be_raw, preview_is_full_size};
+    use std::path::PathBuf;
 
     #[test]
     fn avif_speed_outside_one_to_ten_is_refused_before_any_work() {
@@ -355,5 +370,50 @@ mod tests {
         assert!(preview_is_full_size(6024, 6024));
         assert!(preview_is_full_size(5422, 6024));
         assert!(!preview_is_full_size(5421, 6024));
+    }
+
+    #[test]
+    fn crops_use_exif_orientation_without_rotating_jxl_twice() {
+        let cases = [
+            ("orientation-1.jpg", (600, 200), [255u8, 0, 0]),
+            ("orientation-3.jpg", (600, 200), [255u8, 255, 0]),
+            ("orientation-6.jpg", (400, 300), [0u8, 255, 0]),
+            ("orientation-8.jpg", (400, 300), [0u8, 0, 255]),
+            ("orientation-6.jxl", (400, 300), [0u8, 255, 0]),
+        ];
+
+        for (source, dimensions, expected) in cases {
+            let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("testdata")
+                .join(source);
+            let output = std::env::temp_dir().join(format!(
+                "enframe-orientation-{}-{}.png",
+                source.file_stem().unwrap().to_string_lossy(),
+                std::process::id()
+            ));
+            crop_and_export(
+                source.to_string_lossy().into_owned(),
+                output.to_string_lossy().into_owned(),
+                0.0,
+                0.0,
+                0.5,
+                0.25,
+                87,
+                9,
+                "png".into(),
+            )
+            .unwrap();
+
+            let crop = image::open(&output).unwrap().to_rgb8();
+            let _ = std::fs::remove_file(output);
+            assert_eq!(crop.dimensions(), dimensions, "{source:?}");
+            let pixel = crop.get_pixel(5, 5).0;
+            for (actual, wanted) in pixel.into_iter().zip(expected) {
+                assert!(
+                    (i16::from(actual) - i16::from(wanted)).abs() < 20,
+                    "{source:?}: {pixel:?}"
+                );
+            }
+        }
     }
 }
