@@ -28,7 +28,7 @@ mod imageio_avif {
     unsafe extern "C" {
         fn CGColorSpaceCreateWithICCData(data: CF) -> CF;
         fn CGColorSpaceCreateDeviceRGB() -> CF;
-        fn CGDataProviderCreateWithData(info: CF, data: *const u8, size: usize, release: CF) -> CF;
+        fn CGDataProviderCreateWithCFData(data: CF) -> CF;
         fn CGImageCreate(
             width: usize,
             height: usize,
@@ -65,87 +65,119 @@ mod imageio_avif {
         fn CFStringCreateWithCString(allocator: CF, value: *const i8, encoding: u32) -> CF;
     }
 
+    /// Owns one retained CoreFoundation object and releases it on drop.
+    struct Cf(CF);
+
+    impl Cf {
+        fn new(value: CF, what: &str) -> Result<Cf, String> {
+            if value.is_null() {
+                Err(format!("{what} failed"))
+            } else {
+                Ok(Cf(value))
+            }
+        }
+    }
+
+    impl Drop for Cf {
+        fn drop(&mut self) {
+            assert!(!self.0.is_null());
+            unsafe { CFRelease(self.0) }
+        }
+    }
+
+    unsafe fn color_space(icc: Option<&[u8]>) -> Result<Cf, String> {
+        unsafe {
+            if let Some(icc) = icc {
+                let data = Cf::new(
+                    CFDataCreate(kCFAllocatorDefault, icc.as_ptr(), icc.len() as isize),
+                    "CFDataCreate (ICC)",
+                )?;
+                let space = CGColorSpaceCreateWithICCData(data.0);
+                if !space.is_null() {
+                    return Ok(Cf(space));
+                }
+            }
+            Cf::new(CGColorSpaceCreateDeviceRGB(), "CGColorSpaceCreateDeviceRGB")
+        }
+    }
+
+    unsafe fn cg_image(image: &RgbImage, icc: Option<&[u8]>) -> Result<Cf, String> {
+        unsafe {
+            let space = color_space(icc)?;
+            let pixels = image.as_raw();
+            let data = Cf::new(
+                CFDataCreate(kCFAllocatorDefault, pixels.as_ptr(), pixels.len() as isize),
+                "CFDataCreate (pixels)",
+            )?;
+            let provider = Cf::new(
+                CGDataProviderCreateWithCFData(data.0),
+                "CGDataProviderCreateWithCFData",
+            )?;
+            Cf::new(
+                CGImageCreate(
+                    image.width() as usize,
+                    image.height() as usize,
+                    8,
+                    24,
+                    image.width() as usize * 3,
+                    space.0,
+                    0,
+                    provider.0,
+                    std::ptr::null(),
+                    false,
+                    0,
+                ),
+                "CGImageCreate",
+            )
+        }
+    }
+
     pub fn encode(image: &RgbImage, icc: Option<&[u8]>, quality: f64) -> Result<Vec<u8>, String> {
         unsafe {
-            let color_space = if let Some(icc) = icc {
-                let data = CFDataCreate(kCFAllocatorDefault, icc.as_ptr(), icc.len() as isize);
-                let color_space = CGColorSpaceCreateWithICCData(data);
-                CFRelease(data);
-                if color_space.is_null() {
-                    CGColorSpaceCreateDeviceRGB()
-                } else {
-                    color_space
-                }
-            } else {
-                CGColorSpaceCreateDeviceRGB()
-            };
-            let provider = CGDataProviderCreateWithData(
-                std::ptr::null(),
-                image.as_raw().as_ptr(),
-                image.as_raw().len(),
-                std::ptr::null(),
-            );
-            let cg_image = CGImageCreate(
-                image.width() as usize,
-                image.height() as usize,
-                8,
-                24,
-                image.width() as usize * 3,
-                color_space,
-                0,
-                provider,
-                std::ptr::null(),
-                false,
-                0,
-            );
-            if cg_image.is_null() {
-                return Err("CGImageCreate failed".into());
-            }
-            let output = CFDataCreateMutable(kCFAllocatorDefault, 0);
+            let cg_image = cg_image(image, icc)?;
+            let output = Cf::new(
+                CFDataCreateMutable(kCFAllocatorDefault, 0),
+                "CFDataCreateMutable",
+            )?;
             let ty = CString::new("public.avif").unwrap();
-            let ty = CFStringCreateWithCString(kCFAllocatorDefault, ty.as_ptr(), UTF8);
-            let destination = CGImageDestinationCreateWithData(output, ty, 1, std::ptr::null());
-            if destination.is_null() {
-                return Err("ImageIO has no AVIF encoder".into());
-            }
-            let quality = CFNumberCreate(
-                kCFAllocatorDefault,
-                FLOAT64,
-                (&quality as *const f64).cast(),
-            );
+            let ty = Cf::new(
+                CFStringCreateWithCString(kCFAllocatorDefault, ty.as_ptr(), UTF8),
+                "CFStringCreateWithCString",
+            )?;
+            let destination = Cf::new(
+                CGImageDestinationCreateWithData(output.0, ty.0, 1, std::ptr::null()),
+                "ImageIO has no AVIF encoder; CGImageDestinationCreateWithData",
+            )?;
+            let quality = Cf::new(
+                CFNumberCreate(
+                    kCFAllocatorDefault,
+                    FLOAT64,
+                    (&quality as *const f64).cast(),
+                ),
+                "CFNumberCreate",
+            )?;
             let keys = [kCGImageDestinationLossyCompressionQuality];
-            let values = [quality];
-            let properties = CFDictionaryCreate(
-                kCFAllocatorDefault,
-                keys.as_ptr(),
-                values.as_ptr(),
-                1,
-                (&raw const kCFTypeDictionaryKeyCallBacks).cast(),
-                (&raw const kCFTypeDictionaryValueCallBacks).cast(),
-            );
-            CGImageDestinationAddImage(destination, cg_image, properties);
-            let result = if CGImageDestinationFinalize(destination) {
-                Ok(std::slice::from_raw_parts(
-                    CFDataGetBytePtr(output),
-                    CFDataGetLength(output) as usize,
-                )
-                .to_vec())
-            } else {
-                Err("ImageIO AVIF encode failed".into())
-            };
-            for value in [
-                properties,
-                quality,
-                destination,
-                ty,
-                output,
-                cg_image,
-                provider,
-                color_space,
-            ] {
-                CFRelease(value);
+            let values = [quality.0];
+            let properties = Cf::new(
+                CFDictionaryCreate(
+                    kCFAllocatorDefault,
+                    keys.as_ptr(),
+                    values.as_ptr(),
+                    1,
+                    (&raw const kCFTypeDictionaryKeyCallBacks).cast(),
+                    (&raw const kCFTypeDictionaryValueCallBacks).cast(),
+                ),
+                "CFDictionaryCreate",
+            )?;
+            CGImageDestinationAddImage(destination.0, cg_image.0, properties.0);
+            if !CGImageDestinationFinalize(destination.0) {
+                return Err("ImageIO AVIF encode failed".into());
             }
-            result
+            Ok(std::slice::from_raw_parts(
+                CFDataGetBytePtr(output.0),
+                CFDataGetLength(output.0) as usize,
+            )
+            .to_vec())
         }
     }
 }
