@@ -1,0 +1,13 @@
+[package]
+name = "filmcraft-isobmff"
+version = "0.5.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.95"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+filmcraft-bitstream = { path = "../bitstream" }
+thiserror = "2"
