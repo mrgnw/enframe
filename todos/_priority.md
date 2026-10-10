@@ -1,3 +1,9 @@
+Active, tracked as GitHub issues (order and parallel lanes from 2026-10-10):
+
+- Lane A: #32 EXIF orientation at export, then #35 ImageIO AVIF (both change `crop_and_export`)
+- Lane B: #30 `.mp4` clips without ffmpeg, then #33 drop the libavif build
+- Lane C: #31 face focal points (its decode uses #32's orientation fix)
+
 1. one-writer-instance-connection — phases 1 and 2 done. Remaining: phase 3, export
    destination chosen per export, which is what a remotely-connected app needs to write
    back to the machine you are sitting at.

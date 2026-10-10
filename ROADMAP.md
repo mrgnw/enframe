@@ -56,6 +56,8 @@ Tauri v2 + SvelteKit 5, with Lightroom catalog integration.
 - Sidecar metadata JSON with `fit` section: per-destination crop rect +
   CSS `object-position` for render-time fitting without new image files
 - Cmd+E with radial progress; default output dir matches the source photo
+- AVIF encodes on every core at speed 9, default quality 0.87: about 11x faster and
+  30% smaller than before (#34)
 
 ### Stabilize
 - Hold one feature still across a photo series: mark it, Track, fix lost photos,
@@ -71,13 +73,24 @@ Tauri v2 + SvelteKit 5, with Lightroom catalog integration.
 ## 📋 Planned
 
 ### Framing
+- Suggest focal points from detected faces: lightcraft's pure-Rust YuNet, vendored,
+  model bundled (#31)
 - Tab-cycle 2nd/3rd-best auto placements as alternatives (creative exploration)
 - Tunable engine weights (composition vs crop vs zoom)
 
 ### Export
-- JXL **encode** export (deferred — no permissive-license encoder available yet)
-- Per-format quality controls in the export UI
-- Honor frame `rotation` in `crop_and_export` (currently ignored at encode time)
+- Apply EXIF orientation at export, so rotated phone photos crop the right region (#32)
+- AVIF through ImageIO on macOS, keeping the Display P3 profile (#35)
+- JXL **encode** export: lossless exists (`zune-jpegxl`, no colour profile); no
+  permissive lossy encoder yet
+- Per-format quality and speed controls in the export UI
+- Arbitrary-angle frame rotation (stored but never set; export ignores it)
+
+### Stabilize
+- Write `.mp4` clips without ffmpeg: filmcraft's pure-Rust H.264 encoder and MP4
+  muxer, vendored (#30)
+- Drop the libavif C build: AVIF photos decode through ImageIO, no animated `.avif`
+  clip (#33, after #30)
 
 ### Lightroom integration
 - Write crops/metadata back to Lightroom (currently read-only)
@@ -97,7 +110,7 @@ Tauri v2 + SvelteKit 5, with Lightroom catalog integration.
 ## 💡 Suggestions
 
 ### Smarter framing
-- Saliency / face detection to seed focal points automatically on import
+- Saliency detection to seed focal points where there are no faces (faces: #31)
 
 ### Throughput
 - Batch apply a set of frames/ratios across many selected photos
