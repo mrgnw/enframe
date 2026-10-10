@@ -1,0 +1,6 @@
+[build]
+# One build dir for every checkout and worktree of this repo. Dependencies compile once,
+# a deleted worktree leaves nothing behind, and devclean can tell the dir is still in use.
+# cargo serialises concurrent builds on this dir with a file lock.
+# Per machine, `{cargo-cache-home}` is ~/.cargo (symlink ~/.cargo/build elsewhere to move it).
+build-dir = "{cargo-cache-home}/build/enframe"
