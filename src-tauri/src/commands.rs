@@ -233,6 +233,12 @@ fn decode_image_with_orientation_and_profile(
     path: &Path,
 ) -> Result<(DynamicImage, Option<Vec<u8>>), String> {
     let bytes = fs::read(path).map_err(|e| format!("Image open error: {e}"))?;
+    decode_bytes_with_orientation_and_profile(bytes)
+}
+
+fn decode_bytes_with_orientation_and_profile(
+    bytes: Vec<u8>,
+) -> Result<(DynamicImage, Option<Vec<u8>>), String> {
     let mut decoder = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
         .map_err(|e| format!("Image format error: {e}"))?
@@ -352,7 +358,17 @@ fn contains(a: &faces::yunet::Face, b: &faces::yunet::Face) -> bool {
 }
 
 pub fn detect_faces_blocking(path: &str) -> Result<Vec<DetectedFace>, String> {
-    let image = decode_rgb(path)?;
+    detect_faces_in(decode_rgb(path)?)
+}
+
+/// For a browser that holds the pixels but no path the server can read: the image it
+/// already oriented and downscaled, encoded in a format the `image` crate reads.
+pub fn detect_faces_in_bytes(bytes: Vec<u8>) -> Result<Vec<DetectedFace>, String> {
+    let (image, _) = decode_bytes_with_orientation_and_profile(bytes)?;
+    detect_faces_in(image.to_rgb8())
+}
+
+fn detect_faces_in(image: image::RgbImage) -> Result<Vec<DetectedFace>, String> {
     let image = if image.width().max(image.height()) > DETECT_MAX_SIDE {
         image::imageops::thumbnail(&image, DETECT_MAX_SIDE, DETECT_MAX_SIDE)
     } else {
@@ -677,8 +693,8 @@ pub fn crop_and_export(
 #[cfg(test)]
 mod tests {
     use super::{
-        DETECT_MIN_SCORE, crop_and_export, decode_rgb, detect_faces_blocking, may_be_raw,
-        preview_is_full_size,
+        DETECT_MIN_SCORE, crop_and_export, decode_rgb, detect_faces_blocking,
+        detect_faces_in_bytes, may_be_raw, preview_is_full_size,
     };
     use std::{path::PathBuf, time::Instant};
 
@@ -811,6 +827,22 @@ mod tests {
             (upright[0].score - oriented[0].score).abs() < 0.05,
             "orientation should preserve the same face"
         );
+    }
+
+    #[test]
+    fn detects_the_same_face_from_encoded_bytes() {
+        let from_path =
+            detect_faces_blocking(&fixture("portrait-upright-ref.jpg")).expect("detect by path");
+        let bytes = std::fs::read(fixture("portrait-upright-ref.jpg")).expect("read portrait");
+        let from_bytes = detect_faces_in_bytes(bytes).expect("detect from bytes");
+        assert_eq!(from_bytes.len(), from_path.len());
+        assert!((from_bytes[0].x - from_path[0].x).abs() < 0.01);
+        assert!((from_bytes[0].y - from_path[0].y).abs() < 0.01);
+    }
+
+    #[test]
+    fn rejects_bytes_that_are_not_an_image() {
+        assert!(detect_faces_in_bytes(b"not an image".to_vec()).is_err());
     }
 
     #[test]

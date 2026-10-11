@@ -291,6 +291,28 @@ export type DragDropPayload =
 	| { type: 'drop'; paths: string[]; position: { x: number; y: number } }
 	| { type: 'leave' };
 
+const DETECT_MAX_SIDE = 1280;
+
+// A tab that opened a photo from disk holds pixels but no path the instance can read.
+// Send what the tab shows, oriented by the browser and downscaled to what the detector
+// uses anyway, so the points land where the user sees the faces and nothing is stored.
+export async function detectFacesInImage<T>(src: string): Promise<T> {
+	const image = new Image();
+	image.src = src;
+	await image.decode();
+	const scale = Math.min(1, DETECT_MAX_SIDE / Math.max(image.naturalWidth, image.naturalHeight));
+	const canvas = document.createElement('canvas');
+	canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+	canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+	const context = canvas.getContext('2d');
+	if (!context) throw new Error('no 2d canvas context');
+	context.drawImage(image, 0, 0, canvas.width, canvas.height);
+	const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+	if (!blob) throw new Error('could not encode the image');
+	const response = await request('/api/detect_faces_bytes', { method: 'POST', body: blob });
+	return response.json() as Promise<T>;
+}
+
 // Browser drops carry bytes, not paths, so each file lands in the server inbox and
 // the resulting absolute path stands in for the one Tauri would have given us.
 async function uploadDropped(file: File): Promise<string> {

@@ -1,7 +1,7 @@
 <script lang="ts">
 import { onMount } from 'svelte';
 import { toast } from 'svelte-sonner';
-import { invoke } from '$lib/bridge';
+import { detectFacesInImage, invoke } from '$lib/bridge';
 import CommandBar from '$lib/components/CommandBar.svelte';
 import CursorProgress from '$lib/components/CursorProgress.svelte';
 import FloatingToolbar from '$lib/components/FloatingToolbar.svelte';
@@ -164,13 +164,11 @@ type DetectedFace = {
 };
 
 async function detectFaces() {
-	if (!imagePath) {
-		toast.error('Face detection needs the original image path');
-		return;
-	}
 	detectingFaces = true;
 	try {
-		const faces = await invoke<DetectedFace[]>('detect_faces', { path: imagePath });
+		const faces = imagePath
+			? await invoke<DetectedFace[]>('detect_faces', { path: imagePath })
+			: await detectFacesInImage<DetectedFace[]>(imageSrc);
 		const added = await session.addPoints(
 			faces
 				.filter(

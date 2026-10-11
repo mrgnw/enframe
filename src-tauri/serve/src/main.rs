@@ -23,6 +23,7 @@ use tower_http::set_header::SetResponseHeader;
 
 const DEFAULT_PORT: u16 = 5911;
 const MAX_BODY: usize = 512 * 1024 * 1024;
+const DETECT_MAX_BODY: usize = 32 * 1024 * 1024;
 const MAX_ENTRIES: usize = 5_000;
 
 // ponytail: one connection behind a mutex — a single browser client serialises fine.
@@ -440,6 +441,14 @@ async fn upload(
     .map(Json)
 }
 
+// A photo opened in a browser tab has pixels but no path here. The tab sends the image
+// it shows, already oriented and downscaled, and nothing is written to disk.
+async fn detect_faces_bytes(body: Bytes) -> ApiResult<Json<Value>> {
+    blocking(move || encode(app_lib::commands::detect_faces_in_bytes(body.to_vec())))
+        .await
+        .map(Json)
+}
+
 // A read that never returns leaves the browser tab spinning forever, which is how a
 // launchd-managed server without Full Disk Access fails on an iCloud path. Bound it:
 // slow enough for a genuine iCloud download, finite either way.
@@ -672,6 +681,10 @@ fn router(state: AppState, web: &FsPath) -> Router {
         .route("/api/stat", get(stat))
         .route("/api/ls", get(ls))
         .route("/api/upload", post(upload))
+        .route(
+            "/api/detect_faces_bytes",
+            post(detect_faces_bytes).layer(DefaultBodyLimit::max(DETECT_MAX_BODY)),
+        )
         .route("/api/stabilize/track", post(stabilize::track))
         .route("/api/stabilize/export", post(stabilize::export))
         .route("/api/stabilize/reveal", post(stabilize::reveal))
