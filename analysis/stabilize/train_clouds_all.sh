@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-OUT=${1:-out/all.avif}
+OUT=${1:-out/all.mov}
 # PAD= (empty) runs without padding, the tool's default crop. BIN= overrides the binary (e.g. to add
 # flags or point at a different build); it defaults to the release build.
 PAD=${PAD-transparent}

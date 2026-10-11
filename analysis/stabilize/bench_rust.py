@@ -29,7 +29,7 @@ for r in range(rounds):
 			os.environ, BIN=f'/usr/bin/time -l {commands[name]}', PINFRAME_PROFILE=f'out/bench-{name}.jsonl'
 		)
 		run = subprocess.run(
-			['bash', 'analysis/stabilize/train_clouds_all.sh', f'out/bench-{name}.avif'],
+			['bash', 'analysis/stabilize/train_clouds_all.sh', f'out/bench-{name}.mov'],
 			env=env,
 			capture_output=True,
 			text=True,

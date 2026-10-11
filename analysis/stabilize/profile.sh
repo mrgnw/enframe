@@ -5,7 +5,7 @@ cd "$(dirname "$0")/../.."
 
 RUNS=${1:-5}
 FRAMES=${2:-}
-OUT=${OUT:-out/profile.avif}
+OUT=${OUT:-out/profile.mov}
 mkdir -p out
 log=out/profile.jsonl
 walls=out/profile-wall.txt
