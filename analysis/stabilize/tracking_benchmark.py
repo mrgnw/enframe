@@ -40,8 +40,8 @@ DEFAULT_REPORT = ROOT / 'out' / 'tracking_benchmark.json'
 
 # Synthetic frames: 1024 px on the long edge, so the tracker runs SIFT at full frame size (TRACK_EDGE).
 FRAME = (1024, 768)
-# Noise variant: uniform integer noise in [-2, 2] levels, the size of the ImageIO-vs-libavif difference
-# documented in docs/rust.md. Fixed seed so the baseline is reproducible.
+# Noise variant: uniform integer noise in [-2, 2] levels, about the size of the ImageIO-vs-libavif
+# difference (up to 3 levels, mean 0.6) documented in docs/stabilize/rust.md. Fixed seed so the baseline is reproducible.
 NOISE_LEVELS = 2
 NOISE_SEED = 0
 TOP_MOVERS = 5
@@ -267,15 +267,6 @@ def sips(fmt: str, options: list[str], ext: str):
 	return convert
 
 
-def imageio_avif(src: Path, dst_dir: Path) -> None:
-	"""The AVIF bytes with 'avif' brands relabelled 'mif1', so stabilize decodes them through ImageIO."""
-	data = bytearray(src.read_bytes())
-	head = data[:32].replace(b'avif', b'mif1')
-	assert head != data[:32], f'{src.name}: no avif brand in ftyp'
-	data[:32] = head
-	(dst_dir / f'{src.stem}.heic').write_bytes(data)
-
-
 def pillow_png(noise: bool):
 	def convert(src: Path, dst_dir: Path) -> None:
 		with Image.open(src) as original:
@@ -291,11 +282,10 @@ def pillow_png(noise: bool):
 	return convert
 
 
-# Name: (how to make one photo, extension). imageio_avif is the docs/rust.md trial: the same AVIF bytes,
-# decoded by ImageIO with rounding. sips decodes through ImageIO too, then writes 16-bit PNG (stabilize
-# truncates to 8 bits), HEIC or JPEG. Pillow decodes through libavif, bit-exact with stabilize's AVIF path.
+# Name: (how to make one photo, extension). sips decodes through ImageIO, as stabilize does AVIF on macOS,
+# then writes 16-bit PNG (stabilize truncates to 8 bits), HEIC or JPEG. Pillow decodes through libavif:
+# on macOS pillow_png is the libavif-vs-ImageIO difference; off macOS it is bit-exact with stabilize.
 VARIANTS = {
-	'imageio_avif': (imageio_avif, 'heic'),
 	'imageio_png': (sips('png', [], 'png'), 'png'),
 	'heic': (sips('heic', [], 'heic'), 'heic'),
 	'jpeg_q90': (sips('jpeg', ['-s', 'formatOptions', '90'], 'jpeg'), 'jpeg'),

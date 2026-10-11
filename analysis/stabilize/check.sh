@@ -171,8 +171,10 @@ for name, expected in expected_colours:
 with Image.open(out / 'frames/0001.png') as im:
 	assert im.info.get('icc_profile'), 'a Display P3 frame carries its ICC profile'
 
-# Tracking: Rust against the committed baseline (analysis/stabilize/tracking_baseline.json) on all 57 train clouds photos.
-baseline = json.loads(Path('analysis/stabilize/tracking_baseline.json').read_text())['stability']['original']
+# Tracking: Rust against the committed baseline on all 57 train clouds photos. AVIF decodes through ImageIO on
+# macOS (tracking_baseline.json) and libavif elsewhere (tracking_baseline_libavif.json).
+BASELINE = Path(sys.argv[2])
+baseline = json.loads(BASELINE.read_text())['stability']['original']
 rust = {p['file']: p for p in json.loads((out / 'all.json').read_text())['photos']}
 samples = Path('samples/train clouds')
 
@@ -199,7 +201,7 @@ worst_point_px = 0.0
 for file, row in rust.items():
 	base = baseline[Path(file).stem]
 	assert row['source'] == base['source'], (
-		f'{file}: source {row["source"]!r}, baseline (analysis/stabilize/tracking_baseline.json) has {base["source"]!r}'
+		f'{file}: source {row["source"]!r}, baseline ({BASELINE}) has {base["source"]!r}'
 	)
 	rect_diff = max(abs(row[k] - base['rect'][i]) for i, k in enumerate('xywh'))
 	assert rect_diff <= RECT_TOLERANCE, f'{file}: rect differs from baseline by {rect_diff:.2e}'
@@ -216,11 +218,16 @@ for file, row in rust.items():
 	worst_point_px = max(worst_point_px, point_diff)
 lost = sorted(f for f in rust if rust[f]['source'] == 'lost')
 print(
-	f'train clouds vs baseline (analysis/stabilize/tracking_baseline.json): max rect diff {worst_rect:.2e}, '
+	f'train clouds vs baseline ({BASELINE}): max rect diff {worst_rect:.2e}, '
 	f'max scale diff {worst_scale:.1e}, max point diff {worst_point_px:.2e}px, lost {lost}'
 )
 PY
-check 'outputs valid, train clouds matches baseline' uv run --project analysis/stabilize "$OUT/verify.py" "$OUT"
+if [[ $(uname) == Darwin ]]; then
+	BASELINE=analysis/stabilize/tracking_baseline.json
+else
+	BASELINE=analysis/stabilize/tracking_baseline_libavif.json
+fi
+check 'outputs valid, train clouds matches baseline' uv run --project analysis/stabilize "$OUT/verify.py" "$OUT" "$BASELINE"
 tail -1 "$LOG"
 
 echo "--- $pass passed, $fail failed"
