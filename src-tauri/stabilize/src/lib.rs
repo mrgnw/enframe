@@ -50,9 +50,7 @@ const CACHE_HASH_BYTES: usize = 1 << 20; // one streaming BLAKE3 input buffer pe
 const QUEUE_DEPTH: usize = 3;
 /// Policy: plan within this share of the memory free at start, leaving the rest to other apps.
 const MEMORY_SHARE: f64 = 0.75;
-const AVIF_SPEED: i32 = 10;
-const AVIF_QUALITY: i32 = 75;
-const CLIP_SUFFIXES: [&str; 4] = ["avif", "mp4", "mov", "webm"];
+const CLIP_SUFFIXES: [&str; 3] = ["mp4", "mov", "webm"];
 
 /// The message given when `--box` or an old `x,y,w,h` mark is used: the conversion to point form.
 pub const BOX_REMOVED: &str = "--box is removed; use --points, and turn a box x,y,w,h into its four quarter \
@@ -126,10 +124,10 @@ fn points_text(points: &[(f64, f64)]) -> String {
 	points.iter().map(|(x, y)| format!("{x},{y}")).collect::<Vec<_>>().join("/")
 }
 
-/// What [`Tracked::write`] writes. The default is the CLI's: `out.avif` at 4 frames per second.
+/// What [`Tracked::write`] writes. The default is the CLI's: `out.mp4` at 4 frames per second.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Output {
-	/// A clip (`.avif`, `.mp4`, `.mov`, `.webm`), written with its `.json` sidecar beside it, or a `.json`
+	/// A clip (`.mp4`, `.mov`, `.webm`), written with its `.json` sidecar beside it, or a `.json`
 	/// alone (`--out`).
 	pub out: PathBuf,
 	/// Frames per second (`--fps`).
@@ -142,7 +140,7 @@ pub struct Output {
 
 impl Default for Output {
 	fn default() -> Output {
-		Output { out: PathBuf::from("out.avif"), fps: 4.0, frames: None, vf: None }
+		Output { out: PathBuf::from("out.mp4"), fps: 4.0, frames: None, vf: None }
 	}
 }
 
@@ -435,7 +433,7 @@ fn folder_of(path: &Path) -> PathBuf {
 fn check_output(out: &Path, alpha: bool, filters: Option<&str>) -> Result<(), String> {
 	let ext = suffix(out);
 	if ext != "json" && !CLIP_SUFFIXES.contains(&ext.as_str()) {
-		return Err(format!("--out {}: use .json, .avif, .mp4, .mov or .webm", out.display()));
+		return Err(format!("--out {}: use .json, .mp4, .mov or .webm", out.display()));
 	}
 	if !folder_of(out).is_dir() {
 		return Err(format!("--out {}: folder {} does not exist", out.display(), folder_of(out).display()));
@@ -446,20 +444,14 @@ fn check_output(out: &Path, alpha: bool, filters: Option<&str>) -> Result<(), St
 		}
 		return Ok(());
 	}
-	if ext == "avif" {
-		if filters.is_some() {
-			return Err("--vf runs through ffmpeg: use a .mp4, .mov or .webm --out".into());
-		}
-		return Ok(());
-	}
 	if alpha && ext == "mp4" {
-		return Err("transparent padding needs a .avif, .mov or .webm --out".into());
+		return Err("transparent padding needs a .mov or .webm --out".into());
 	}
 	if filters.is_some() && !on_path("ffmpeg") {
 		return Err("--vf needs ffmpeg on PATH".into());
 	}
 	if ext != "mp4" && !on_path("ffmpeg") {
-		return Err(format!("--out .{ext} needs ffmpeg on PATH; .avif and .mp4 do not"));
+		return Err(format!("--out .{ext} needs ffmpeg on PATH; .mp4 does not"));
 	}
 	Ok(())
 }
@@ -581,10 +573,9 @@ fn prepare(
 	Ok(photo)
 }
 
-/// Where each frame goes: an animated AVIF through libavif, an MP4 through the vendored H.264 encoder, or
-/// ffmpeg for the other formats and for --vf.
+/// Where each frame goes: an MP4 through the vendored H.264 encoder, or ffmpeg for the other formats and
+/// for --vf.
 enum Sink {
-	Avif(avif::Encoder),
 	Mp4(Box<mp4::Writer>),
 	Ffmpeg(std::process::Child),
 }
@@ -599,19 +590,6 @@ struct SinkOptions<'a> {
 }
 
 fn open_sink(out: &Path, o: &SinkOptions) -> Result<Sink, String> {
-	if suffix(out) == "avif" {
-		let threads = std::thread::available_parallelism().map_or(1, |n| n.get()) as i32;
-		let frame_ms = (1000.0 / o.fps).round_ties_even() as u64;
-		let xmp = run_xmp(o.run);
-		return Ok(Sink::Avif(avif::Encoder::new(
-			AVIF_SPEED,
-			AVIF_QUALITY,
-			frame_ms,
-			threads,
-			xmp,
-			o.profile,
-		)));
-	}
 	if suffix(out) == "mp4" && o.filters.is_none() {
 		return Ok(Sink::Mp4(Box::new(mp4::Writer::new(out, o.size, o.fps, o.run, o.profile)?)));
 	}
@@ -648,16 +626,6 @@ fn open_sink(out: &Path, o: &SinkOptions) -> Result<Sink, String> {
 	Ok(Sink::Ffmpeg(child))
 }
 
-/// A minimal XMP packet carrying the run ID, so a clip can be matched with its .json.
-fn run_xmp(run: &str) -> Vec<u8> {
-	format!(
-		"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\
-		<rdf:Description xmlns:stabilize=\"https://stabilize.local/ns/1.0/\" stabilize:run=\"{run}\"/>\
-		</rdf:RDF></x:xmpmeta>"
-	)
-	.into_bytes()
-}
-
 /// A --frames PNG, labelled with the sRGB chunk or Display P3's ICC profile.
 fn save_png(path: &Path, frame: &pixels::Image, profile: Profile) -> Result<(), String> {
 	static P3_ICC: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
@@ -684,15 +652,15 @@ struct RenderJob<'a> {
 	keep: Option<&'a Keep>,
 	threads: usize,
 	frames: Option<&'a Path>,
-	/// The matrix and range the sink takes YUV in; `None` for RGB(A).
-	yuv: Option<(yuv::Matrix, yuv::Range)>,
+	/// The sink takes YUV 4:2:0, not RGB(A).
+	yuv: bool,
 	profile: Profile,
 	/// Photos to convert from sRGB to the clip's Display P3 before placing.
 	convert: &'a [bool],
 	cancel: Option<&'a AtomicBool>,
 }
 
-/// A placed frame as the sink takes it: YUV for libavif and H.264, RGB(A) bytes for ffmpeg.
+/// A placed frame as the sink takes it: YUV for H.264, RGB(A) bytes for ffmpeg.
 enum Frame {
 	Yuv(yuv::Yuv),
 	Rgb(pixels::Image),
@@ -725,10 +693,7 @@ fn render(job: &RenderJob, sink: &mut Sink) -> Result<(), String> {
 			let path = dir.join(format!("{:04}.png", i + 1));
 			save_png(&path, &frame, job.profile).map_err(|e| format!("{}: {e}", path.display()))?;
 		}
-		Ok(match job.yuv {
-			Some((matrix, range)) => Frame::Yuv(work(Work::Place, || yuv::to_yuv420(&frame, matrix, range))),
-			None => Frame::Rgb(frame),
-		})
+		Ok(if job.yuv { Frame::Yuv(work(Work::Place, || yuv::to_yuv420(&frame))) } else { Frame::Rgb(frame) })
 	};
 	let mut failed = None;
 	let mut waited = std::time::Instant::now();
@@ -736,7 +701,6 @@ fn render(job: &RenderJob, sink: &mut Sink) -> Result<(), String> {
 		profile::add(Work::EncoderWait, waited.elapsed());
 		if failed.is_none() {
 			let added = frame.and_then(|frame| match (&mut *sink, frame) {
-				(Sink::Avif(encoder), Frame::Yuv(yuv)) => work(Work::Encode, || encoder.add(&yuv)),
 				(Sink::Mp4(writer), Frame::Yuv(yuv)) => work(Work::Encode, || writer.add(&yuv)),
 				(Sink::Ffmpeg(child), Frame::Rgb(rgb)) => {
 					// ffmpeg prints why it quit (a bad --vf, say); its exit code is reported below.
@@ -755,9 +719,8 @@ fn render(job: &RenderJob, sink: &mut Sink) -> Result<(), String> {
 	failed.map_or(Ok(()), Err)
 }
 
-fn finish_sink(sink: Sink, out: &Path) -> Result<(), String> {
+fn finish_sink(sink: Sink) -> Result<(), String> {
 	match sink {
-		Sink::Avif(encoder) => work(Work::Encode, || encoder.finish(out)),
 		Sink::Mp4(writer) => work(Work::Encode, || writer.finish()),
 		Sink::Ffmpeg(mut child) => {
 			drop(child.stdin.take());
@@ -1108,11 +1071,7 @@ impl Tracked {
 					keep: self.keep.as_ref(),
 					threads: self.render_threads,
 					frames: output.frames.as_deref(),
-					yuv: match sink {
-						Sink::Avif(_) => Some((yuv::BT601, yuv::FULL)),
-						Sink::Mp4(_) => Some((yuv::BT709, yuv::LIMITED)),
-						Sink::Ffmpeg(_) => None,
-					},
+					yuv: matches!(sink, Sink::Mp4(_)),
 					profile,
 					convert: &convert,
 					cancel: self.cancel.as_deref(),
@@ -1121,7 +1080,7 @@ impl Tracked {
 					abandon_sink(sink);
 					return Err(e);
 				}
-				finish_sink(sink, clip_partial)
+				finish_sink(sink)
 			})?;
 		}
 		step("write the JSON", || {
@@ -1247,8 +1206,8 @@ mod tests {
 		assert_eq!(parse_fill("#ff8000"), Ok(vec![255, 128, 0]));
 		assert!(check_output(Path::new("clip.gif"), false, None).is_err());
 		assert!(check_output(Path::new("clip.mp4"), true, None).is_err(), "no alpha in .mp4");
-		assert!(check_output(Path::new("clip.avif"), false, Some("deflicker")).is_err());
-		assert!(check_output(Path::new("no/such/folder/clip.avif"), false, None).is_err());
+		assert!(check_output(Path::new("clip.avif"), false, None).is_err(), "no animated AVIF");
+		assert!(check_output(Path::new("no/such/folder/clip.mp4"), false, None).is_err());
 		assert!(read_sizes(&[PathBuf::from("only-one.avif")]).is_err());
 		assert!(read_sizes(&[PathBuf::from("a/x.avif"), PathBuf::from("b/x.avif")]).is_err());
 		assert!(read_sizes(&[PathBuf::from("missing-1.avif"), PathBuf::from("missing-2.avif")]).is_err());
@@ -1427,7 +1386,7 @@ mod tests {
 			})
 			.collect();
 		let cancel = Arc::new(AtomicBool::new(true));
-		let out = dir.join("clip.avif");
+		let out = dir.join("clip.mp4");
 		let output = Some(Output { out: out.clone(), ..Output::default() });
 		let marks = Marks::new(&[(110.0, 80.0)]);
 		let job =

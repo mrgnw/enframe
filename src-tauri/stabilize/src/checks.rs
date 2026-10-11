@@ -177,33 +177,6 @@ fn decode_bench() {
 	}
 	println!("decode_bench: gray + half {best:?}");
 }
-/// One clip frame's RGBA to YUV 4:2:0 conversion in libavif (no libyuv) against the whole add.
-#[test]
-#[ignore]
-fn encode_bench() {
-	use crate::avif_sys::*;
-	let (w, h) = (1442u32, 1196u32);
-	let pixels: Vec<u8> = (0..(w * h * 4) as usize).map(|i| (i * 7 % 251) as u8).collect();
-	let mut best = std::time::Duration::MAX;
-	for _ in 0..7 {
-		unsafe {
-			let image = avifImageCreate(w, h, 8, AVIF_PIXEL_FORMAT_YUV420);
-			(*image).yuvRange = AVIF_RANGE_FULL;
-			(*image).matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT601 as _;
-			let mut rgb = avifRGBImage::default();
-			avifRGBImageSetDefaults(&mut rgb, image);
-			rgb.format = AVIF_RGB_FORMAT_RGBA;
-			rgb.depth = 8;
-			rgb.pixels = pixels.as_ptr() as *mut u8;
-			rgb.rowBytes = w * 4;
-			let started = std::time::Instant::now();
-			assert_eq!(avifImageRGBToYUV(image, &rgb), AVIF_RESULT_OK);
-			best = best.min(started.elapsed());
-			avifImageDestroy(image);
-		}
-	}
-	println!("encode_bench: RGBA to YUV420 + alpha {best:?} per frame");
-}
 /// The IMG_4698 to IMG_4699 match with OpenCV's own descriptors (`uv run analysis/dump_ransac.py`):
 /// nearest neighbours, distances and the ratio test against BFMatcher's.
 #[test]
@@ -321,7 +294,7 @@ fn task_memory() {
 			Some(&[0, 0, 0, 0]),
 		);
 		drop(rgb);
-		std::hint::black_box(crate::yuv::to_yuv420(&frame, crate::yuv::BT601, crate::yuv::FULL));
+		std::hint::black_box(crate::yuv::to_yuv420(&frame));
 	} else {
 		let k = (1024.0 / w.max(h) as f64).min(1.0);
 		let gray = pixels::gray(&rgb);

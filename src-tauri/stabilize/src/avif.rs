@@ -1,4 +1,4 @@
-//! AVIF through libavif: photo headers and decode (dav1d), and the animated clip encode (libaom).
+//! AVIF photos through libavif: headers and decode (dav1d).
 
 use crate::avif_sys::*;
 use crate::colour::{self, Profile};
@@ -165,84 +165,5 @@ fn yuv444_to_rgb(image: &avifImage, rgb: &mut [u8]) {
 			px[1] = clamp(y1 + bg - (u * UG + v * VG));
 			px[2] = clamp(y1 + u * UB - bb);
 		}
-	}
-}
-
-/// An animated AVIF written frame by frame, with the settings `anchor.py` passes to Pillow.
-pub struct Encoder {
-	encoder: *mut avifEncoder,
-	frame_ms: u64,
-	xmp: Vec<u8>,
-	profile: Profile,
-	frames: usize,
-}
-
-impl Drop for Encoder {
-	fn drop(&mut self) {
-		unsafe { avifEncoderDestroy(self.encoder) };
-	}
-}
-
-impl Encoder {
-	pub fn new(
-		speed: i32,
-		quality: i32,
-		frame_ms: u64,
-		threads: i32,
-		xmp: Vec<u8>,
-		profile: Profile,
-	) -> Encoder {
-		let encoder = unsafe { avifEncoderCreate() };
-		assert!(!encoder.is_null(), "libavif could not allocate an encoder");
-		unsafe {
-			(*encoder).maxThreads = threads;
-			(*encoder).speed = speed;
-			(*encoder).quality = quality;
-			(*encoder).timescale = 1000;
-			(*encoder).autoTiling = AVIF_TRUE as avifBool;
-		}
-		Encoder { encoder, frame_ms, xmp, profile, frames: 0 }
-	}
-
-	/// Encodes one frame. libavif reads the planes in place; it neither copies nor frees them.
-	pub fn add(&mut self, frame: &crate::yuv::Yuv) -> Result<(), String> {
-		unsafe {
-			let image = avifImageCreate(frame.width as u32, frame.height as u32, 8, AVIF_PIXEL_FORMAT_YUV420);
-			assert!(!image.is_null(), "libavif could not allocate a frame");
-			(*image).yuvRange = AVIF_RANGE_FULL;
-			(*image).colorPrimaries = self.profile.primaries();
-			(*image).transferCharacteristics = colour::SRGB_TRANSFER;
-			(*image).matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT601 as _;
-			for (i, plane) in frame.planes.iter().enumerate() {
-				(*image).yuvPlanes[i] = plane.as_ptr() as *mut u8;
-				(*image).yuvRowBytes[i] = (if i == 0 { frame.width } else { frame.width / 2 }) as u32;
-			}
-			(*image).imageOwnsYUVPlanes = AVIF_FALSE as avifBool;
-			if let Some(alpha) = &frame.alpha {
-				(*image).alphaPlane = alpha.as_ptr() as *mut u8;
-				(*image).alphaRowBytes = frame.width as u32;
-				(*image).imageOwnsAlphaPlane = AVIF_FALSE as avifBool;
-			}
-			let mut result = AVIF_RESULT_OK;
-			if self.frames == 0 {
-				result = avifImageSetMetadataXMP(image, self.xmp.as_ptr(), self.xmp.len());
-			}
-			if result == AVIF_RESULT_OK {
-				result = avifEncoderAddImage(self.encoder, image, self.frame_ms, AVIF_ADD_IMAGE_FLAG_NONE);
-			}
-			avifImageDestroy(image);
-			check(result, "encode frame")?;
-		}
-		self.frames += 1;
-		Ok(())
-	}
-
-	pub fn finish(self, out: &Path) -> Result<(), String> {
-		let mut data = avifRWData::default();
-		unsafe { check(avifEncoderFinish(self.encoder, &mut data), "finish clip")? };
-		let bytes = unsafe { std::slice::from_raw_parts(data.data, data.size) };
-		let written = std::fs::write(out, bytes).map_err(|e| format!("{}: {e}", out.display()));
-		unsafe { avifRWDataFree(&mut data) };
-		written
 	}
 }

@@ -21,7 +21,7 @@ cargo build --release --manifest-path src-tauri/Cargo.toml -p stabilize
 This needs Rust stable, cmake, meson and ninja, libclang for bindgen (Xcode or the Command Line Tools on macOS, `libclang-dev` on Debian/Ubuntu), nasm on x86, and network access on the first build. The build downloads pinned releases of libavif, dav1d and libaom and links them in statically, so the binary runs without Homebrew. The first build takes about 40 s; later builds take a couple of seconds. See [docs/rust.md](rust.md) for the full build notes and the licences that come with distributing it.
 
 ```sh
-src-tauri/target/release/stabilize "samples/train clouds"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --out out/heart.avif
+src-tauri/target/release/stabilize "samples/train clouds"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --out out/heart.mp4
 ```
 
 There's no point-drawing window: `--points x,y[/x,y]...` is required, in first-photo pixels, and gives the feature to hold still. A point is `x,y`; mark several with the same feature's spread, joined by `/` (`675,345/985,345/675,595/985,595` above, a cloud's four quarter points). The anchor that stays still in the clip is their mean.
@@ -43,22 +43,22 @@ If a building or trees hide the feature entirely rather than just losing the tra
 When the feature is visible but too hazy or half-hidden to place precisely, `--near PHOTO=x,y/x,y...@zoom` soft-marks it instead. The photo is placed at those points and zoom, like `--at`, but tracking carries on from the last tracked or marked photo as if this one were lost, so a rough position never becomes the reference for the photos after it. It takes the same points, zoom and checks as `--at`, and cannot share a photo with `--at` or `--skip`.
 
 ```sh
-src-tauri/target/release/stabilize "samples/train clouds"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.avif=846,641.5/1046,641.5/846,816.5/1046,816.5 --out out/turbines.avif
+src-tauri/target/release/stabilize "samples/train clouds"/IMG_{4698,4699,4700,4701,4702,4703,4704,4705}.avif --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.avif=846,641.5/1046,641.5/846,816.5/1046,816.5 --out out/turbines.mp4
 ```
 
 By default the crop shrinks until every photo fills it. `--pad` lets it overhang photos instead, filled with `black`, `white`, a `#rrggbb` colour, or `transparent`:
 
 ```sh
-src-tauri/target/release/stabilize "samples/train clouds"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --points 535,985/805,985/535,1075/805,1075 --pad transparent --out out/portrait.avif
+src-tauri/target/release/stabilize "samples/train clouds"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --points 535,985/805,985/535,1075/805,1075 --pad transparent --out out/portrait.mov
 ```
 
 Every photo is scaled so the feature stays the same size, so a photo where the feature is small is magnified and shows only a patch of itself. `--zoom PHOTO=scale` shows that photo at `scale` (relative to the first photo, like a mark's `@zoom`) whatever tracking found; tracking and the estimates for lost photos are unchanged. `--canvas WxH` sets the clip's size in pixels, both even: photos keep their scale and the anchor keeps its place in the frame, so a larger canvas shows more around the feature. A canvas larger than the crop every photo fills needs `--pad`:
 
 ```sh
-src-tauri/target/release/stabilize "samples/train clouds"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --points 535,985/805,985/535,1075/805,1075 --zoom IMG_4720.avif=1.5 --canvas 1536x1536 --pad black --out out/canvas.avif
+src-tauri/target/release/stabilize "samples/train clouds"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --points 535,985/805,985/535,1075/805,1075 --zoom IMG_4720.avif=1.5 --canvas 1536x1536 --pad black --out out/canvas.mp4
 ```
 
-The extension of `--out` picks the format. The default, `.avif`, is an animated AVIF that keeps transparency and plays in browsers as an image. On the 57-photo train clouds clip it encodes as fast as ProRes, and the file is 9 MB instead of 109 MB. `.mp4` writes H.264 with a built-in encoder, no ffmpeg needed. Through ffmpeg, `.mov` writes ProRes 4444 when transparent (for video editors), and `.webm` writes VP9.
+The extension of `--out` picks the format. The default, `.mp4`, writes H.264 with a built-in encoder, no ffmpeg needed; it has no alpha channel. Through ffmpeg, `.mov` writes ProRes 4444 when transparent (for video editors), and `.webm` writes VP9; transparent padding needs one of these two.
 
 Colour stays as the photos have it. Stabilize keeps their pixel values and labels the clip, the `--frames` PNGs and the video outputs with their colour profile, so the Display P3 photos from an iPhone stay Display P3. A set mixing sRGB and Display P3 photos becomes Display P3: the sRGB photos are converted, which loses nothing, since Display P3 holds every sRGB colour. Unlabelled photos count as sRGB. A photo with any other profile, such as Adobe RGB, stops the run with its name.
 
@@ -73,7 +73,7 @@ src-tauri/target/release/stabilize "samples/train clouds"/IMG_479{1,2,3,4,5}.avi
 
 Writes the clip and a `.json` beside it: `{"run": ..., "clip": ..., "photos": [...]}`. Each entry in `photos` has the photo's crop rect, normalized to 0–1 like enframe's coordinates. With padding, rects can extend past 0 and 1. Each entry also has the photo's `scale` relative to the first photo and its `source`: `tracked`, `mark` (placed by `--points` or `--at`), `lost` (position estimated from neighbours, the photos to mark next), `soft` (placed by `--near`), or `skipped` (position estimated the same way, for a photo marked `--skip`). `points` lists every point of that photo, `[[x, y], ...]` normalized the same way as the crop rect, in the order given (or carried forward by tracking); the anchor that stays still in the clip is their mean.
 
-Both files are written under names unique to the run, then renamed into place together while holding a lock on the output folder. A failed run leaves the previous clip and `.json` untouched, and runs that share an output never mix their files. `run` is a random ID that is also stored in the clip's metadata (XMP for `.avif`, `comment` for video outputs), so a reader can confirm a clip and its `.json` belong together. A reader can also take a shared lock on the folder while reading the pair.
+Both files are written under names unique to the run, then renamed into place together while holding a lock on the output folder. A failed run leaves the previous clip and `.json` untouched, and runs that share an output never mix their files. `run` is a random ID that is also stored in the clip's metadata (the `comment` tag), so a reader can confirm a clip and its `.json` belong together. A reader can also take a shared lock on the folder while reading the pair.
 
 `--frames DIR` also saves every aligned photo as `DIR/0001.png`, `0002.png`, …, so other tools can take over: re-encode at another speed with `ffmpeg -framerate 8 -i DIR/%04d.png`, stack them in Siril, or preview them in enframe. The directory must hold no PNGs yet.
 
@@ -86,7 +86,7 @@ src-tauri/target/release/stabilize "samples/train clouds"/IMG_{4698,4699,4700,47
 The whole sample folder, with every mark, is one script:
 
 ```sh
-BIN=src-tauri/target/release/stabilize bash analysis/stabilize/train_clouds_all.sh out/all.avif
+BIN=src-tauri/target/release/stabilize bash analysis/stabilize/train_clouds_all.sh out/all.mov
 ```
 
 The marking UI is enframe's `/stabilize`; enframe's `bun run test:e2e` covers the walkthrough.

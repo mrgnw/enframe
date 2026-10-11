@@ -4,9 +4,9 @@
 import type { Canvas, SidecarPhoto } from './types';
 
 export type PadChoice = 'none' | 'black' | 'white' | 'transparent' | 'custom';
-export type Format = 'avif' | 'mp4' | 'mov' | 'webm';
+export type Format = 'mp4' | 'mov' | 'webm';
 
-export const FORMATS: Format[] = ['avif', 'mp4', 'mov', 'webm'];
+export const FORMATS: Format[] = ['mp4', 'mov', 'webm'];
 export const FPS_PRESETS = [2, 4, 8, 12];
 export const FPS_DEFAULT = 4;
 /** The longest side of a preview frame in pixels; the export is as large as the photos allow. */
@@ -70,7 +70,7 @@ export const fillOf = (pad: PadChoice, custom: string): string | null =>
 
 /** Why a format cannot be chosen with this pad, or null. Only MP4 (H.264) has no alpha channel. */
 export const formatBlocked = (format: Format, pad: PadChoice): string | null =>
-	format === 'mp4' && pad === 'transparent' ? 'Transparent padding needs AVIF, MOV or WebM' : null;
+	format === 'mp4' && pad === 'transparent' ? 'Transparent padding needs MOV or WebM' : null;
 
 /** The path without a clip extension, so the format picks it. */
 export const stripExt = (path: string) => path.replace(/\.(avif|mp4|mov|webm)$/i, '');

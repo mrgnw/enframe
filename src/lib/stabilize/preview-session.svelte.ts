@@ -84,7 +84,7 @@ export class Preview {
 	fps = $state(FPS_DEFAULT);
 	pad = $state<PadChoice>('none');
 	custom = $state('#4b8bf5');
-	format = $state<Format>('avif');
+	format = $state<Format>('mp4');
 	frames = $state(false);
 	features = $state.raw<Feature[]>([]);
 	/** The feature on screen, an index into `features`. */
@@ -333,7 +333,7 @@ export class Preview {
 		if (custom !== undefined) this.custom = custom;
 		this.pad = pad;
 		this.resetExport();
-		if (formatBlocked(this.format, pad)) this.format = 'avif';
+		if (formatBlocked(this.format, pad)) this.format = 'webm';
 		if ((pad !== 'none') !== this.padded) await this.retrack();
 	}
 

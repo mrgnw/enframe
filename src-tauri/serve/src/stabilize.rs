@@ -506,7 +506,7 @@ fn export_output(
     Ok(output)
 }
 
-// The clip defaults to `<folder>-<feature>.avif`, and never lands inside the folder
+// The clip defaults to `<folder>-<feature>.mp4`, and never lands inside the folder
 // itself: the next run would read it as a photo.
 fn export_out(
     state: &AppState,
@@ -514,7 +514,7 @@ fn export_out(
     feature: &str,
     out: Option<String>,
 ) -> ApiResult<PathBuf> {
-    let requested = out.unwrap_or_else(|| format!("{}-{feature}.avif", folder.display()));
+    let requested = out.unwrap_or_else(|| format!("{}-{feature}.mp4", folder.display()));
     let checked = state.roots.check_write(&requested).map_err(denied)?;
     if checked
         .parent()

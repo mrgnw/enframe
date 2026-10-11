@@ -1099,12 +1099,12 @@ mod tests {
         }
 
         let f = feature(good);
-        let inside = format!("{folder}/clip.avif");
+        let inside = format!("{folder}/clip.mp4");
         let outside = text(std::env::temp_dir().canonicalize().unwrap());
         let unwritable = sandbox.base.join("unwritable");
         std::fs::create_dir_all(&unwritable).unwrap();
         let unwritable = text(unwritable);
-        let beside_root = text(sandbox.base.join("clip.avif"));
+        let beside_root = text(sandbox.base.join("clip.mp4"));
         let rejected = [
             (
                 "track",
@@ -1277,7 +1277,7 @@ mod tests {
         );
         let data = body[done.unwrap()..].lines().nth(1).unwrap();
         let done: Value = serde_json::from_str(data.strip_prefix("data: ").unwrap()).unwrap();
-        assert_eq!(done["out"], format!("{}-f.avif", folder.display()));
+        assert_eq!(done["out"], format!("{}-f.mp4", folder.display()));
         assert_eq!(done["sidecar"]["run"], "3,3");
         assert_eq!(done["sidecar"]["photos"][0]["width"], 10);
     }

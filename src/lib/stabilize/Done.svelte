@@ -9,8 +9,8 @@ const out = $derived(session.exp.out);
 const url = $derived(clipUrl(out));
 const name = $derived(out.split('/').pop() ?? out);
 const ext = $derived(out.slice(out.lastIndexOf('.') + 1).toLowerCase());
-// AVIF is an image to the browser, MP4 and WebM are video. MOV (ProRes 4444) no browser plays but Safari's.
-const kind = $derived(ext === 'avif' ? 'image' : ext === 'mp4' || ext === 'webm' ? 'video' : 'none');
+// MP4 and WebM play in a browser. MOV (ProRes 4444) no browser plays but Safari's.
+const playable = $derived(ext === 'mp4' || ext === 'webm');
 // A browser that cannot decode the clip says so with an error; the download link is left.
 let broken = $state(false);
 let revealError = $state('');
@@ -28,15 +28,11 @@ async function reveal() {
 
 <div class="done" id="done">
 	<b>Wrote {name}</b>
-	{#if kind !== 'none' && !broken && clip}
+	{#if playable && !broken && clip}
 		<div class="shown" class:checker={session.pad === 'transparent'} style:--r="{clip.w} / {clip.h}">
-			{#if kind === 'image'}
-				<img id="clip-shown" src={url} alt="The exported clip" width={clip.w} height={clip.h} onerror={() => (broken = true)} />
-			{:else}
-				<video id="clip-shown" src={url} width={clip.w} height={clip.h} controls loop muted playsinline autoplay onerror={() => (broken = true)}></video>
-			{/if}
+			<video id="clip-shown" src={url} width={clip.w} height={clip.h} controls loop muted playsinline autoplay onerror={() => (broken = true)}></video>
 		</div>
-	{:else if kind === 'none'}
+	{:else if !playable}
 		<span class="note">A browser cannot play {ext.toUpperCase()}; open it in a video editor.</span>
 	{:else if broken}
 		<span class="note">This browser cannot play the clip; download it instead.</span>

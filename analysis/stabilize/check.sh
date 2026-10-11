@@ -33,16 +33,16 @@ check 'cargo fmt --check' cargo fmt --check --manifest-path src-tauri/Cargo.toml
 check 'clippy -D warnings' cargo clippy --release --manifest-path src-tauri/Cargo.toml -p stabilize --all-targets -- -D warnings
 check 'cargo test' cargo test --release --manifest-path src-tauri/Cargo.toml -p stabilize
 
-check 'README: heart.avif' $P "$G"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --out $OUT/heart.avif
-check 'README: turbines.avif' $P "${TURBINES[@]}" "${MARKS[@]}" --out $OUT/turbines.avif
-check 'README: padded portrait.avif' $P "$G"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --points 535,985/805,985/535,1075/805,1075 --pad transparent --out $OUT/portrait.avif
-check 'README: --zoom and --canvas' $P "$G"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --points 535,985/805,985/535,1075/805,1075 --zoom IMG_4720.avif=1.5 --canvas 1536x1536 --pad black --out $OUT/canvas.avif
+check 'README: heart.mp4' $P "$G"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --out $OUT/heart.mp4
+check 'README: turbines.mp4' $P "${TURBINES[@]}" "${MARKS[@]}" --out $OUT/turbines.mp4
+check 'README: padded portrait.mov' $P "$G"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --points 535,985/805,985/535,1075/805,1075 --pad transparent --out $OUT/portrait.mov
+check 'README: --zoom and --canvas' $P "$G"/IMG_47{18,19,20,21,22,23,24,25,26,27,28,29}.avif --points 535,985/805,985/535,1075/805,1075 --zoom IMG_4720.avif=1.5 --canvas 1536x1536 --pad black --out $OUT/canvas.mp4
 check 'README: JSON only' $P "$G"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --out $OUT/track.json
 check 'README: --cache' $P "$G"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --cache $OUT/cache --out $OUT/cached.json
-check 'README: .mp4 with --vf' $P "${TURBINES[@]}" "${MARKS[@]}" --vf deflicker,tpad=stop_mode=clone:stop_duration=2 --out $OUT/turbines.mp4
+check 'README: .mp4 with --vf' $P "${TURBINES[@]}" "${MARKS[@]}" --vf deflicker,tpad=stop_mode=clone:stop_duration=2 --out $OUT/vf.mp4
 check '.mp4 with ffmpeg off PATH' env PATH=/usr/bin:/bin $P "${TURBINES[@]}" "${MARKS[@]}" --out $OUT/native.mp4
-check 'README: --frames' $P "${TURBINES[@]}" "${MARKS[@]}" --frames $OUT/frames --out $OUT/frames.avif
-check 'train clouds, all 57 photos' env BIN="$P --no-cache" bash analysis/stabilize/train_clouds_all.sh $OUT/all.avif
+check 'README: --frames' $P "${TURBINES[@]}" "${MARKS[@]}" --frames $OUT/frames --out $OUT/frames.mp4
+check 'train clouds, all 57 photos' env BIN="$P --no-cache" bash analysis/stabilize/train_clouds_all.sh $OUT/all.mov
 
 # Each input format: the 8 turbine photos converted, with the same marks. macOS converts with sips and cjxl.
 # Elsewhere Pillow writes the JPEG and PNG sets, and HEIC and JPEG XL, which decode through ImageIO, must be
@@ -116,8 +116,8 @@ for f in "${TURBINES[@]}"; do
 	convert "$f" "$OUT/srgb/$(basename "$f" .avif).jpeg" --srgb
 done
 cp "$G"/IMG_{4698,4700,4702,4704}.avif "$OUT"/srgb/IMG_{4699,4701,4703,4705}.jpeg "$OUT/mixed/"
-check 'colour: sRGB set' $P "$OUT/srgb"/*.jpeg --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.jpeg=846,641.5/1046,641.5/846,816.5/1046,816.5 --out $OUT/srgb.avif
-check 'colour: mixed set' $P "$OUT/mixed"/* --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.jpeg=846,641.5/1046,641.5/846,816.5/1046,816.5 --out $OUT/mixed.avif
+check 'colour: sRGB set' $P "$OUT/srgb"/*.jpeg --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.jpeg=846,641.5/1046,641.5/846,816.5/1046,816.5 --out $OUT/srgb.mp4
+check 'colour: mixed set' $P "$OUT/mixed"/* --points 940,637.5/1140,637.5/940,812.5/1140,812.5 --at IMG_4703.jpeg=846,641.5/1046,641.5/846,816.5/1046,816.5 --out $OUT/mixed.mp4
 
 cat > "$OUT/verify.py" <<'PY'
 """The outputs are real, and the train clouds job still matches the committed tracking baseline."""
@@ -130,25 +130,24 @@ from pathlib import Path
 from PIL import Image, ImageOps
 
 out = Path(sys.argv[1])
-for name, frames in (('heart', 5), ('turbines', 8), ('portrait', 12), ('all', 57)):
-	with Image.open(out / f'{name}.avif') as im:
-		assert im.n_frames == frames, (name, im.n_frames)
-	sidecar = json.loads((out / f'{name}.json').read_text())
-	assert len(sidecar['photos']) == frames and sidecar['run'], name
-with Image.open(out / 'portrait.avif') as im:
-	assert im.mode == 'RGBA', 'a transparent-padded clip keeps alpha'
 
 
 def video(path):
-	probe = ['ffprobe', '-v', 'error', '-count_frames', '-show_entries', 'stream=codec_name,nb_read_frames']
+	probe = ['ffprobe', '-v', 'error', '-count_frames']
+	probe += ['-show_entries', 'stream=codec_name,nb_read_frames,pix_fmt']
 	return json.loads(
 		subprocess.run([*probe, '-of', 'json', str(path)], capture_output=True, check=True).stdout
 	)['streams'][0]
 
 
-assert video(out / 'turbines.mp4')['codec_name'] == 'h264'
-native = video(out / 'native.mp4')
-assert (native['codec_name'], native['nb_read_frames']) == ('h264', '8'), native
+for name, frames in (('heart.mp4', 5), ('turbines.mp4', 8), ('portrait.mov', 12), ('all.mov', 57)):
+	assert video(out / name)['nb_read_frames'] == str(frames), (name, video(out / name))
+	sidecar = json.loads((out / name).with_suffix('.json').read_text())
+	assert len(sidecar['photos']) == frames and sidecar['run'], name
+assert video(out / 'portrait.mov')['pix_fmt'].startswith('yuva'), 'a transparent-padded clip keeps alpha'
+for name in ('turbines.mp4', 'vf.mp4', 'native.mp4'):
+	assert video(out / name)['codec_name'] == 'h264', name
+assert video(out / 'native.mp4')['nb_read_frames'] == '8'
 assert len(list((out / 'frames').glob('*.png'))) == 8
 assert json.loads((out / 'track.json').read_text())['clip'] is None
 
@@ -161,11 +160,11 @@ def colour(path):
 
 p3, srgb = ('smpte432', 'iec61966-2-1'), ('bt709', 'iec61966-2-1')
 expected_colours = (
-	('turbines.avif', p3),
 	('turbines.mp4', p3),
+	('vf.mp4', p3),
 	('native.mp4', p3),
-	('srgb.avif', srgb),
-	('mixed.avif', p3),
+	('srgb.mp4', srgb),
+	('mixed.mp4', p3),
 )
 for name, expected in expected_colours:
 	assert colour(out / name) == expected, (name, colour(out / name))

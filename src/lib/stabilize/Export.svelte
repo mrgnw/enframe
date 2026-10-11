@@ -9,18 +9,16 @@ import type { Preview } from './preview-session.svelte';
 let { session }: { session: Preview } = $props();
 
 const TITLES: Record<Format, string> = {
-	avif: 'Animated AVIF. Keeps transparency, plays in a browser as an image.',
 	mp4: 'H.264. No transparency.',
 	mov: 'ProRes 4444 when transparent.',
 	webm: 'VP9. Keeps transparency.'
 };
 const NOTES: Record<Format, string> = {
-	avif: 'Plays in a browser as an image.',
 	mp4: 'H.264. Plays everywhere.',
 	mov: 'ProRes 4444 through ffmpeg, for video editors.',
 	webm: 'VP9 through ffmpeg.'
 };
-const LABELS: Record<Format, string> = { avif: 'AVIF', mp4: 'MP4', mov: 'MOV', webm: 'WebM' };
+const LABELS: Record<Format, string> = { mp4: 'MP4', mov: 'MOV', webm: 'WebM' };
 
 const running = $derived(session.exporting);
 const several = $derived(session.features.length > 1);

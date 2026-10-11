@@ -104,6 +104,7 @@ test('export: preview a marked folder, change the padding, export, match the CLI
 	await page.click('.swatch.transparent');
 	expect(tracks).toEqual(['none', 'black']);
 	await expect(page.locator('#format button', { hasText: 'MP4' })).toBeDisabled();
+	await expect(page.locator('#format button.on')).toHaveText('WebM');
 	await shot(page, '2-padded');
 
 	await page.fill('.export .field .path', OUT);
@@ -111,16 +112,16 @@ test('export: preview a marked folder, change the padding, export, match the CLI
 	await expect(page.locator('#progress')).toBeVisible();
 	await shot(page, '3-exporting');
 	await expect(page.locator('#done')).toBeVisible({ timeout: 480_000 });
-	await expect(page.locator('#done b')).toHaveText('Wrote e4 clip.avif');
+	await expect(page.locator('#done b')).toHaveText('Wrote e4 clip.webm');
 	await page.waitForFunction(() => {
-		const img = document.querySelector('#clip-shown') as HTMLImageElement | null;
-		return !!img && img.complete && img.naturalWidth > 0;
+		const video = document.querySelector('#clip-shown') as HTMLVideoElement | null;
+		return !!video && video.readyState >= 2 && video.videoWidth > 0;
 	});
 	await expect(page.locator('#download')).toBeVisible();
 	await expect(page.locator('#sidecar')).toBeVisible();
 	await expect(page.locator('#reveal')).toBeVisible();
 	await shot(page, '4-done');
-	expect(existsSync(`${OUT}.avif`) && existsSync(`${OUT}.json`)).toBe(true);
+	expect(existsSync(`${OUT}.webm`) && existsSync(`${OUT}.json`)).toBe(true);
 
 	const sidecarResponse = await page.request.get((await page.locator('#sidecar').getAttribute('href')) ?? 'missing');
 	expect(sidecarResponse.ok()).toBe(true);
@@ -164,8 +165,8 @@ test('export: Reveal in Finder is offered only on a local instance', async ({ ba
 		await page.click('#export-btn');
 		await expect(page.locator('#done')).toBeVisible({ timeout: 480_000 });
 		await page.waitForFunction(() => {
-			const img = document.querySelector('#clip-shown') as HTMLImageElement | null;
-			return !!img && img.complete && img.naturalWidth > 0;
+			const video = document.querySelector('#clip-shown') as HTMLVideoElement | null;
+			return !!video && video.readyState >= 2 && video.videoWidth > 0;
 		});
 		await expect(page.locator('#download')).toBeVisible();
 		await expect(page.locator('#sidecar')).toBeVisible();

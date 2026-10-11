@@ -212,7 +212,7 @@ just check-stabilize
   tracks the feature named `feature` without rendering, using the feature cache, and
   answers with the sidecar: each photo's crop, plus its size and the tracker's note. One run per folder: a newer request stops the one in flight.
 - `POST /api/stabilize/export` `{folder, features, feature, out?, pad?, fps?, frames?, vf?}`
-  renders the feature's clip, `<folder>-<feature>.avif` by default, and answers with server-sent events: `progress`
+  renders the feature's clip, `<folder>-<feature>.mp4` by default, and answers with server-sent events: `progress`
   `{line}` for each line the tracker reports, then `done` `{out, sidecar}` or `error`
   `{error, superseded?}`. A bad request still answers 400 or 403 before anything runs.
   Closing the connection stops the run.

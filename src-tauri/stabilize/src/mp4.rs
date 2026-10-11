@@ -143,9 +143,7 @@ mod tests {
 			File::create(&path).unwrap();
 			let mut writer = Writer::new(&path, (64, 48), 4.0, "test-run", profile).unwrap();
 			for t in 0..frames {
-				writer
-					.add(&crate::yuv::to_yuv420(&gradient(t), crate::yuv::BT709, crate::yuv::LIMITED))
-					.unwrap();
+				writer.add(&crate::yuv::to_yuv420(&gradient(t))).unwrap();
 			}
 			writer.finish().unwrap();
 			let probe = std::process::Command::new("ffprobe")
