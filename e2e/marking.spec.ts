@@ -46,9 +46,13 @@ const CLICKED = [
 	'IMG_4791',
 	'IMG_4798'
 ].map((f) => `${f}.avif`);
+// IMG_4700 links to IMG_4699 by 8 features under libavif (off macOS) and 6 under ImageIO (macOS), against a
+// minimum of 8, so on macOS it and the two photos matched after it stay lost and are skipped.
+const MAC_ONLY = process.platform === 'darwin' ? ['IMG_4700', 'IMG_4701', 'IMG_4702'] : [];
 const SKIPPED = [
 	'IMG_4675',
 	'IMG_4681',
+	...MAC_ONLY,
 	'IMG_4704',
 	'IMG_4705',
 	'IMG_4721',
