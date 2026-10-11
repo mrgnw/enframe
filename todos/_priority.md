@@ -1,8 +1,11 @@
-Active, tracked as GitHub issues (order and parallel lanes from 2026-10-10):
+Open GitHub issues (2026-10-11):
 
-- Lane A: #32 EXIF orientation at export, then #35 ImageIO AVIF (both change `crop_and_export`)
-- Lane B: #30 `.mp4` clips without ffmpeg, then #33 drop the libavif build
-- Lane C: #31 face focal points (its decode uses #32's orientation fix)
+- #43 three more lost photos in the marking e2e since AVIF decodes through ImageIO on macOS (in progress)
+- #44 lossless JPEG XL export as a smaller alternative to PNG (not scheduled)
+
+Done from the storytold exploration: #30 native .mp4, #31 face focal points, #32 EXIF orientation,
+#33 no libavif C build on macOS, #35 ImageIO AVIF with Display P3, and the AVIF speedup (#34).
+
 
 1. one-writer-instance-connection — phases 1 and 2 done. Remaining: phase 3, export
    destination chosen per export, which is what a remotely-connected app needs to write

@@ -58,6 +58,9 @@ Tauri v2 + SvelteKit 5, with Lightroom catalog integration.
 - Cmd+E with radial progress; default output dir matches the source photo
 - AVIF encodes on every core at speed 9, default quality 0.87: about 11x faster and
   30% smaller than before (#34)
+- EXIF orientation applied at export, so rotated phone photos crop the region the
+  editor shows (#32)
+- AVIF through ImageIO on macOS, keeping the Display P3 profile (#35)
 
 ### Stabilize
 - Hold one feature still across a photo series: mark it, Track, fix lost photos,
@@ -67,30 +70,31 @@ Tauri v2 + SvelteKit 5, with Lightroom catalog integration.
   tracking from it; colour keeps the photos' Display P3 or sRGB values; a document
   holds named features, one run each; serve calls the crate in-process, one run per
   folder. The full list and its history is in [docs/stabilize/PLAN.md](docs/stabilize/PLAN.md)
+- `.mp4` clips without ffmpeg: filmcraft's pure-Rust H.264 encoder and MP4 muxer,
+  vendored (#30)
+- No C build on macOS: AVIF photos decode through ImageIO; Linux keeps libavif; no
+  animated `.avif` clip (#33)
+
+### Framing
+- Suggest focal points from detected faces: lightcraft's pure-Rust YuNet, vendored,
+  model bundled (#31)
 
 ---
 
 ## 📋 Planned
 
 ### Framing
-- Suggest focal points from detected faces: lightcraft's pure-Rust YuNet, vendored,
-  model bundled (#31)
 - Tab-cycle 2nd/3rd-best auto placements as alternatives (creative exploration)
 - Tunable engine weights (composition vs crop vs zoom)
 
 ### Export
-- Apply EXIF orientation at export, so rotated phone photos crop the right region (#32)
-- AVIF through ImageIO on macOS, keeping the Display P3 profile (#35)
-- JXL **encode** export: lossless exists (`zune-jpegxl`, no colour profile); no
+- JXL **encode** export: lossless exists (`zune-jpegxl`, no colour profile; #44); no
   permissive lossy encoder yet
 - Per-format quality and speed controls in the export UI
 - Arbitrary-angle frame rotation (stored but never set; export ignores it)
 
 ### Stabilize
-- Write `.mp4` clips without ffmpeg: filmcraft's pure-Rust H.264 encoder and MP4
-  muxer, vendored (#30)
-- Drop the libavif C build: AVIF photos decode through ImageIO, no animated `.avif`
-  clip (#33, after #30)
+- Three more photos lost in the marking e2e since ImageIO decode (#43)
 
 ### Lightroom integration
 - Write crops/metadata back to Lightroom (currently read-only)
