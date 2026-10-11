@@ -1,7 +1,8 @@
 //! Comparisons with dumps from `anchor.py`'s own functions (`uv run analysis/dump_sift.py NAME`).
 //! Run with `cargo test --release -- --ignored --nocapture`.
 
-use crate::{avif, pixels};
+use crate::decode::{decode, oriented_size};
+use crate::pixels;
 use std::path::Path;
 
 const SAMPLES: &str = "../../samples/train clouds";
@@ -18,7 +19,7 @@ fn read_npy_f32(path: &str) -> Vec<f32> {
 #[ignore]
 fn sift_matches_opencv() {
 	for name in ["IMG_4667", "IMG_4791"] {
-		let rgb = avif::decode(&Path::new(SAMPLES).join(format!("{name}.avif")), 1).unwrap();
+		let rgb = decode(&Path::new(SAMPLES).join(format!("{name}.avif"))).unwrap();
 		let small = pixels::shrink_area(&pixels::gray(&rgb), 0.5);
 		let started = std::time::Instant::now();
 		let features = crate::sift::detect_and_compute(&small);
@@ -50,7 +51,7 @@ fn sift_matches_opencv() {
 #[ignore]
 fn decode_and_gray_match_python() {
 	for name in ["IMG_4667", "IMG_4791"] {
-		let rgb = avif::decode(&Path::new(SAMPLES).join(format!("{name}.avif")), 1).unwrap();
+		let rgb = decode(&Path::new(SAMPLES).join(format!("{name}.avif"))).unwrap();
 		let python = std::fs::read(format!("{DUMPS}/{name}.rgb.raw")).unwrap();
 		assert_eq!(rgb.pixels.len(), python.len());
 		let off = rgb.pixels.iter().zip(&python).filter(|(a, b)| a != b).count();
@@ -82,9 +83,7 @@ fn gray_from_python_rgb_matches() {
 	let mut gray = vec![0; reader.output_buffer_size().unwrap()];
 	reader.next_frame(&mut gray).unwrap();
 	let off = small.pixels.iter().zip(&gray).filter(|(a, b)| a != b).count();
-	println!("from Python's RGB: {off} gray values differ; libyuv {}", unsafe {
-		crate::avif_sys::avifLibYUVVersion()
-	});
+	println!("from Python's RGB: {off} gray values differ");
 	assert_eq!(off, 0);
 }
 
@@ -92,7 +91,7 @@ fn gray_from_python_rgb_matches() {
 #[ignore]
 fn sift_exactness() {
 	let name = "IMG_4667";
-	let rgb = avif::decode(&Path::new(SAMPLES).join(format!("{name}.avif")), 1).unwrap();
+	let rgb = decode(&Path::new(SAMPLES).join(format!("{name}.avif"))).unwrap();
 	let features = crate::sift::detect_and_compute(&pixels::shrink_area(&pixels::gray(&rgb), 0.5));
 	let text = std::fs::read_to_string(format!("{DUMPS}/{name}.kp.json")).unwrap();
 	let opencv: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap();
@@ -119,7 +118,7 @@ fn sift_exactness() {
 #[ignore]
 fn blur_matches_opencv() {
 	let name = "IMG_4667";
-	let rgb = avif::decode(&Path::new(SAMPLES).join(format!("{name}.avif")), 1).unwrap();
+	let rgb = decode(&Path::new(SAMPLES).join(format!("{name}.avif"))).unwrap();
 	let layers = crate::sift::first_octave(&pixels::shrink_area(&pixels::gray(&rgb), 0.5));
 	for (i, ours) in layers.iter().enumerate() {
 		let bytes = std::fs::read(format!("{DUMPS}/{name}.g{i}.f32")).unwrap();
@@ -136,7 +135,7 @@ fn blur_matches_opencv() {
 #[test]
 #[ignore]
 fn sift_bench() {
-	let rgb = avif::decode(&Path::new(SAMPLES).join("IMG_4667.avif"), 1).unwrap();
+	let rgb = decode(&Path::new(SAMPLES).join("IMG_4667.avif")).unwrap();
 	let small = pixels::shrink_area(&pixels::gray(&rgb), 0.5);
 	let mut best = std::time::Duration::MAX;
 	let mut sum = 0u64;
@@ -154,21 +153,19 @@ fn sift_bench() {
 	}
 	println!("sift_bench: fastest {best:?}, checksum {sum}");
 }
-/// Decode time split: dav1d alone versus dav1d plus the conversion to RGB.
+/// Decode time against the gray conversion and half-size shrink that follow it.
 #[test]
 #[ignore]
 fn decode_bench() {
 	let path = Path::new(SAMPLES).join("IMG_4667.avif");
-	for threads in [1, 2, 4] {
-		let mut best = std::time::Duration::MAX;
-		for _ in 0..7 {
-			let started = std::time::Instant::now();
-			std::hint::black_box(avif::decode(&path, threads).unwrap());
-			best = best.min(started.elapsed());
-		}
-		println!("decode_bench: {threads} dav1d threads, decode + RGB {best:?}");
+	let mut best = std::time::Duration::MAX;
+	for _ in 0..7 {
+		let started = std::time::Instant::now();
+		std::hint::black_box(decode(&path).unwrap());
+		best = best.min(started.elapsed());
 	}
-	let rgb = avif::decode(&path, 1).unwrap();
+	println!("decode_bench: decode to RGB {best:?}");
+	let rgb = decode(&path).unwrap();
 	let mut best = std::time::Duration::MAX;
 	for _ in 0..7 {
 		let started = std::time::Instant::now();
@@ -215,7 +212,7 @@ fn matching_matches_opencv() {
 #[ignore]
 fn box_step_4699() {
 	let features = |n: u32| {
-		let rgb = avif::decode(&Path::new(SAMPLES).join(format!("IMG_{n}.avif")), 1).unwrap();
+		let rgb = decode(&Path::new(SAMPLES).join(format!("IMG_{n}.avif"))).unwrap();
 		crate::sift::detect_and_compute(&pixels::shrink_area(&pixels::gray(&rgb), 0.5))
 	};
 	let (a, b) = (features(4698), features(4699));
@@ -240,7 +237,7 @@ fn box_step_4699() {
 #[test]
 #[ignore]
 fn box_descriptor_diffs() {
-	let rgb = avif::decode(&Path::new(SAMPLES).join("IMG_4698.avif"), 1).unwrap();
+	let rgb = decode(&Path::new(SAMPLES).join("IMG_4698.avif")).unwrap();
 	let a = crate::sift::detect_and_compute(&pixels::shrink_area(&pixels::gray(&rgb), 0.5));
 	let photo = crate::track::Photo { small: (1024, 768), features: a };
 	let boxed = crate::track::features_in(&photo, 520.0, 362.5, 200.0, 175.0);
@@ -284,7 +281,7 @@ fn task_memory() {
 	let Ok(photo) = std::env::var("TASK_PHOTO") else { return };
 	let before = crate::profile::peak_rss();
 	let path = Path::new(&photo);
-	let rgb = crate::decode::decode(path).unwrap();
+	let rgb = decode(path).unwrap();
 	let (w, h) = (rgb.width, rgb.height);
 	if std::env::var("TASK").as_deref() == Ok("render") {
 		let frame = crate::render::place(
@@ -315,7 +312,7 @@ fn retrack_bench() {
 		.filter(|p| p.extension().is_some_and(|x| x == "avif"))
 		.collect();
 	paths.sort();
-	let sizes: Vec<(u32, u32)> = paths.iter().map(|p| avif::oriented_size(p).unwrap()).collect();
+	let sizes: Vec<(u32, u32)> = paths.iter().map(|p| oriented_size(p).unwrap()).collect();
 	let k = crate::track::track_factor(&sizes);
 	let features: Vec<crate::sift::Features> = std::thread::scope(|scope| {
 		let handles: Vec<_> = paths
@@ -325,7 +322,7 @@ fn retrack_bench() {
 					chunk
 						.iter()
 						.map(|p| {
-							let gray = pixels::gray(&avif::decode(p, 1).unwrap());
+							let gray = pixels::gray(&decode(p).unwrap());
 							crate::sift::detect_and_compute(&pixels::shrink_area(&gray, k))
 						})
 						.collect::<Vec<_>>()

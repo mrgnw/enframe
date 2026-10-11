@@ -15,6 +15,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 zune-jpeg = "0.5.15"
 
-[build-dependencies]
+# Off macOS, build.rs builds libavif and dav1d from source for AVIF input.
+[target.'cfg(not(target_os = "macos"))'.build-dependencies]
 bindgen = "0.72"
 cmake = "0.1.58"

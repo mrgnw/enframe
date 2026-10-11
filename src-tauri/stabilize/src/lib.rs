@@ -8,7 +8,9 @@
 //! is the message the CLI prints after `stabilize: `, naming its flags (`--at`, `--pad`). Progress lines,
 //! the ones the CLI prints, go to a `log` callback. Setting [`Job::cancel`] stops a run at the next photo.
 
+#[cfg(not(target_os = "macos"))]
 mod avif;
+#[cfg(not(target_os = "macos"))]
 mod avif_sys;
 mod cache;
 #[cfg(test)]
@@ -42,7 +44,7 @@ use track::{Hit, Photo, Rect};
 
 /// Threads and memory are planned at start from the cores, the free memory and these measured costs
 /// (`analysis/rust_task_memory.py`, M4 Pro, 2026-10-05), rounded up. Re-measure them after changing
-/// libraries or TRACK_EDGE. PNG's measured working set is larger than AVIF and JPEG's.
+/// libraries or TRACK_EDGE; `decode::memory_cost` holds the per-format decode costs.
 const PREPARE_FIXED_BYTES: usize = 130 << 20; // SIFT's pyramid at TRACK_EDGE, whatever the photo size
 const FEATURE_BYTES: usize = 1 << 20; // one photo's keypoints and byte descriptors; train clouds's are under 1 MB
 const CACHE_HASH_BYTES: usize = 1 << 20; // one streaming BLAKE3 input buffer per prepare worker

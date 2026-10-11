@@ -1,6 +1,6 @@
 """Peak memory of one Rust prepare and render task per photo size, each in a fresh process.
 
-uv run analysis/stabilize/rust_task_memory.py
+uv run analysis/stabilize/rust_task_memory.py [KIND ...]
 Makes 12 MP and 48 MP AVIF, JPEG, PNG, HEIC and JPEG XL inputs from IMG_4698 once (out/large/), runs the task_memory
 check in the Rust test binary for each, and prints the cost over the process's starting memory with a
 fixed + per-pixel fit.
@@ -8,6 +8,7 @@ fixed + per-pixel fit.
 
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 from PIL import Image
@@ -46,9 +47,9 @@ build = subprocess.run(
 	capture_output=True,
 	text=True,
 )
-binary = re.search(r'Executable unittests src/main.rs \((.+)\)', build.stderr).group(1)
+binary = re.search(r'Executable unittests src/lib.rs \((.+)\)', build.stderr).group(1)
 rows = []
-for kind in ('avif', 'jpeg', 'png', 'heic8', 'heic10', 'jxl_lossless', 'jxl_lossy'):
+for kind in sys.argv[1:] or ('avif', 'jpeg', 'png', 'heic8', 'heic10', 'jxl_lossless', 'jxl_lossy'):
 	photos = [SOURCE if kind == 'avif' else upscaled((2048, 1536), kind), upscaled((4032, 3024), kind), upscaled((8064, 6048), kind)]
 	for task in ('prepare', 'render'):
 		for photo in photos:

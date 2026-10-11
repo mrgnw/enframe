@@ -283,9 +283,9 @@ mod tests {
 		let photo = root.join("photo.avif");
 		std::fs::write(&photo, b"pixels").unwrap();
 		let keys: Vec<String> = [
-			"libavif 1.4.2; dav1d [dec]:1.5.4, aom [enc]:3.15.0",
-			"libavif 1.4.2; dav1d [dec]:1.5.5, aom [enc]:3.15.0",
-			"libavif 1.4.3; dav1d [dec]:1.5.4, aom [enc]:3.15.0",
+			"libavif 1.4.2; dav1d [dec]:1.5.4",
+			"libavif 1.4.2; dav1d [dec]:1.5.5",
+			"libavif 1.4.3; dav1d [dec]:1.5.4",
 			"ImageIO macOS 25A354",
 			"ImageIO macOS 25B78",
 		]
@@ -302,8 +302,9 @@ mod tests {
 		let root = temp("warm");
 		let cache = FeatureCache { root: root.clone(), cap: u64::MAX };
 		let sample = sample();
+		let avif = if cfg!(target_os = "macos") { "ImageIO macOS " } else { "dav1d [dec]:" };
 		let mut photos = vec![
-			("../../samples/train clouds/IMG_4667.avif", "dav1d [dec]:"),
+			("../../samples/train clouds/IMG_4667.avif", avif),
 			("testdata/orientation-6.png", "png 0."),
 		];
 		if cfg!(target_os = "macos") {

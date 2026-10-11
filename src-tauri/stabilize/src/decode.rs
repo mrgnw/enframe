@@ -7,6 +7,12 @@ use std::io::{BufReader, Read};
 use std::path::Path;
 use std::sync::OnceLock;
 
+// AVIF decodes through ImageIO on macOS, so the macOS build has no C; elsewhere through libavif.
+#[cfg(not(target_os = "macos"))]
+use crate::avif;
+#[cfg(target_os = "macos")]
+use crate::imageio as avif;
+
 const PNG_SIGNATURE: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -27,6 +33,9 @@ pub fn memory_cost(path: &Path) -> Result<(usize, usize), String> {
 		// (using the higher lossless/lossy result) at 10/14 B/px; always round up.
 		Format::Heic => (8, 11),
 		Format::Jxl => (10, 14),
+		// AVIF through ImageIO measured 12/16 B/px at 12 MP (over the planner's fixed costs), more than its
+		// 8/10 at 48 MP; libavif, off macOS, fits within JPEG's 6/11.
+		Format::Avif if cfg!(target_os = "macos") => (12, 16),
 		Format::Avif | Format::Jpeg => (6, 11),
 	})
 }
@@ -73,7 +82,7 @@ pub fn decoder_id(path: &Path) -> Result<&'static str, String> {
 	static AVIF: OnceLock<String> = OnceLock::new();
 	static IMAGEIO: OnceLock<String> = OnceLock::new();
 	Ok(match format(path)? {
-		Format::Avif => AVIF.get_or_init(crate::avif::decoder_version),
+		Format::Avif => AVIF.get_or_init(avif::decoder_version),
 		Format::Heic | Format::Jxl => IMAGEIO.get_or_init(crate::imageio::decoder_version),
 		Format::Jpeg => concat!("zune-jpeg ", env!("PINFRAME_VERSION_ZUNE_JPEG")),
 		Format::Png => concat!("png ", env!("PINFRAME_VERSION_PNG")),
@@ -83,7 +92,7 @@ pub fn decoder_id(path: &Path) -> Result<&'static str, String> {
 /// The first image as 8-bit RGB, oriented for display.
 pub fn decode(path: &Path) -> Result<Image, String> {
 	match format(path)? {
-		Format::Avif => crate::avif::decode(path, 1),
+		Format::Avif => avif::decode(path),
 		Format::Heic | Format::Jxl => crate::imageio::decode(path),
 		Format::Jpeg => decode_jpeg(path),
 		Format::Png => decode_png(path),
@@ -93,7 +102,7 @@ pub fn decode(path: &Path) -> Result<Image, String> {
 /// The photo's colour profile from its header. A photo with no label is sRGB, as browsers show it.
 pub fn profile(path: &Path) -> Result<Profile, String> {
 	match format(path)? {
-		Format::Avif => crate::avif::profile(path),
+		Format::Avif => avif::profile(path),
 		Format::Heic | Format::Jxl => crate::imageio::profile(path),
 		Format::Jpeg => jpeg_profile(path),
 		Format::Png => png_profile(path),
@@ -103,7 +112,7 @@ pub fn profile(path: &Path) -> Result<Profile, String> {
 /// Width and height after orientation, without decoding pixels.
 pub fn oriented_size(path: &Path) -> Result<(u32, u32), String> {
 	match format(path)? {
-		Format::Avif => crate::avif::oriented_size(path),
+		Format::Avif => avif::oriented_size(path),
 		Format::Heic | Format::Jxl => crate::imageio::oriented_size(path),
 		Format::Jpeg => jpeg_size(path),
 		Format::Png => png_size(path),
@@ -438,7 +447,6 @@ mod tests {
 	#[ignore]
 	fn decode_bench() {
 		let dir = std::env::var("BENCH_DIR").unwrap();
-		let decoder = std::env::var("BENCH_DECODER").unwrap();
 		let mut paths: Vec<_> = std::fs::read_dir(dir)
 			.unwrap()
 			.flatten()
@@ -454,13 +462,7 @@ mod tests {
 			unsafe { libc::getrusage(libc::RUSAGE_SELF, &raw mut before) };
 			let start = std::time::Instant::now();
 			for path in &paths {
-				let image = if decoder == "imageio" {
-					crate::imageio::decode(path)
-				} else {
-					crate::avif::decode(path, 1)
-				}
-				.unwrap();
-				std::hint::black_box(image);
+				std::hint::black_box(decode(path).unwrap());
 			}
 			wall.push(start.elapsed().as_secs_f64() / paths.len() as f64);
 			let mut after = before;
@@ -476,7 +478,7 @@ mod tests {
 		wall.sort_by(f64::total_cmp);
 		cpu.sort_by(f64::total_cmp);
 		println!(
-			"decode_bench {decoder}: wall fastest {:.4}, median {:.4}; CPU fastest {:.4}, median {:.4} s/photo",
+			"decode_bench: wall fastest {:.4}, median {:.4}; CPU fastest {:.4}, median {:.4} s/photo",
 			wall[0],
 			wall[wall.len() / 2],
 			cpu[0],

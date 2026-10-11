@@ -1,4 +1,4 @@
-//! AVIF photos through libavif: headers and decode (dav1d).
+//! AVIF photos through libavif and dav1d, off macOS; macOS decodes them through ImageIO (`imageio.rs`).
 
 use crate::avif_sys::*;
 use crate::colour::{self, Profile};
@@ -68,7 +68,7 @@ impl Decoder {
 	}
 }
 
-/// libavif's version and its codecs' (dav1d, aom), for the feature cache key.
+/// libavif's version and its codec's (dav1d), for the feature cache key.
 pub fn decoder_version() -> String {
 	let mut codecs = [0 as std::ffi::c_char; 256];
 	unsafe { avifCodecVersions(codecs.as_mut_ptr()) };
@@ -96,9 +96,9 @@ pub fn profile(path: &Path) -> Result<Profile, String> {
 	colour::from_cicp(image.colorPrimaries, image.transferCharacteristics)
 }
 
-/// The first frame as 8-bit RGB, oriented for display.
-pub fn decode(path: &Path, threads: i32) -> Result<Image, String> {
-	let decoder = Decoder::open(path, threads)?;
+/// The first frame as 8-bit RGB, oriented for display, on one thread: photos decode in parallel instead.
+pub fn decode(path: &Path) -> Result<Image, String> {
+	let decoder = Decoder::open(path, 1)?;
 	unsafe { check(avifDecoderNextImage(decoder.0), "decode")? };
 	let image = decoder.image();
 	let (w, h) = (image.width as usize, image.height as usize);
