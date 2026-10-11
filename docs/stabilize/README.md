@@ -10,15 +10,16 @@ Turn a series of photos into a short clip where one chosen feature, like a cloud
 Build the Rust CLI, `stabilize`, from the enframe root:
 
 ```sh
-brew install cmake meson ninja                                # macOS
-sudo apt install cmake meson ninja-build nasm libclang-dev    # Debian/Ubuntu
-```
-
-```sh
 cargo build --release --manifest-path src-tauri/Cargo.toml -p stabilize
 ```
 
-This needs Rust stable, cmake, meson and ninja, libclang for bindgen (Xcode or the Command Line Tools on macOS, `libclang-dev` on Debian/Ubuntu), nasm on x86, and network access on the first build. The build downloads pinned releases of libavif, dav1d and libaom and links them in statically, so the binary runs without Homebrew. The first build takes about 40 s; later builds take a couple of seconds. See [docs/rust.md](rust.md) for the full build notes and the licences that come with distributing it.
+On macOS this needs only Rust stable; AVIF, HEIC and JPEG XL decode through ImageIO, and a clean build takes about 5 s. On Linux, AVIF decodes through libavif and dav1d, which the build downloads and links in statically; that needs cmake, meson and ninja, libclang for bindgen, nasm on x86, and network access on the first build:
+
+```sh
+sudo apt install cmake meson ninja-build nasm libclang-dev
+```
+
+See [docs/rust.md](rust.md) for the full build notes and the licences that come with distributing it.
 
 ```sh
 src-tauri/target/release/stabilize "samples/train clouds"/IMG_479{1,2,3,4,5}.avif --points 675,345/985,345/675,595/985,595 --out out/heart.mp4
@@ -26,7 +27,7 @@ src-tauri/target/release/stabilize "samples/train clouds"/IMG_479{1,2,3,4,5}.avi
 
 There's no point-drawing window: `--points x,y[/x,y]...` is required, in first-photo pixels, and gives the feature to hold still. A point is `x,y`; mark several with the same feature's spread, joined by `/` (`675,345/985,345/675,595/985,595` above, a cloud's four quarter points). The anchor that stays still in the clip is their mean.
 
-Input photos may be AVIF, HEIC/HEIF, JPEG XL, JPEG, or PNG. Stabilize identifies them from their contents rather than their file extension; other formats are refused before decoding. HEIC and JPEG XL decode through macOS ImageIO, so on Linux those two are refused before decoding, with a message naming the platform. Stabilize is built and tested on macOS and Linux; the two track the train clouds set identically (see [docs/rust.md](rust.md#platforms)).
+Input photos may be AVIF, HEIC/HEIF, JPEG XL, JPEG, or PNG. Stabilize identifies them from their contents rather than their file extension; other formats are refused before decoding. HEIC and JPEG XL decode through macOS ImageIO, so on Linux those two are refused before decoding, with a message naming the platform. AVIF decodes through ImageIO on macOS and libavif on Linux; their pixels differ by up to 3 levels, so the two track the train clouds set slightly differently, by up to about 2 px (see [docs/rust.md](rust.md#platforms)).
 
 Photos are ordered by EXIF capture time (`DateTimeOriginal`, with `SubSecTimeOriginal` breaking ties), falling back to filename order if any photo lacks one, such as a mix of cameras or an export that stripped EXIF. `--order name` always orders by filename. Either way, the run prints which order it used and why.
 

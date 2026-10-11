@@ -92,7 +92,7 @@ Memory per task, each in a fresh process (`analysis/rust_task_memory.py`; Python
 | 4032x3024 (12.2 MP) | 325 MB | 174 MB | 309 MB | 123 MB |
 | 8064x6048 (48.8 MP) | 1019 MB | 347 MB | 1203 MB | 480 MB |
 
-The Rust planner uses its own costs: 130 MB + 6 B per pixel to prepare, 11 B per pixel to render. Eight 48 MP photos (`BIN=rust/target/release/pinframe uv run analysis/large_photos.py`), two runs each, interleaved:
+The Rust planner uses its own costs: 130 MB + 6 B per pixel to prepare, 11 B per pixel to render (libavif's; ImageIO AVIF on macOS now uses 12 and 16, see "HEIC and JPEG XL input"). Eight 48 MP photos (`BIN=rust/target/release/pinframe uv run analysis/large_photos.py`), two runs each, interleaved:
 
 | version | wall | peak | threads (prepare, render) |
 |-|-|-|-|
@@ -146,7 +146,7 @@ Other code-generation questions from the brief:
 
 | comparison | result |
 |-|-|
-| AVIF decode to RGB, IMG_4667 and IMG_4791 | bit-exact with Pillow (see "AVIF" below) |
+| AVIF decode to RGB, IMG_4667 and IMG_4791 | off macOS (libavif) bit-exact with Pillow; on macOS (ImageIO, since #33) within 3 levels (see "AVIF decode" below) |
 | gray + INTER_AREA to 1024 px | bit-exact with OpenCV |
 | SIFT, first-octave Gaussian pyramid | bit-exact with OpenCV |
 | SIFT keypoints, IMG_4667 / IMG_4791 | same counts (5415 / 5053), positions within 0.002 px, 98.5% of descriptors identical |
@@ -183,16 +183,15 @@ cd rust && cargo test --release -- --ignored --nocapture
 - **The port is derived from OpenCV's code** (Apache-2.0): same algorithm, constants and operation order. Shipping it means keeping OpenCV's copyright notice and Apache-2.0 text beside pinframe's MIT license.
 - **GPU SIFT** (Metal through wgpu) would pay only if it existed and could be trusted. SIFT is 8 of Python's 20 CPU-seconds and 12.8 of Rust's 20.7 thread-seconds. If it cost nothing, prepare would be decode-bound (4.2 thread-seconds across 12 cores, about 0.4 s) and the whole run would drop from 2.3 s to about 1.2 s. But no Rust SIFT runs on Metal today: sift-wgpu is a 0.1.0, and kornia's GPU path is CUDA only. A GPU SIFT also cannot match OpenCV bit for bit (histogram updates through atomics come in no fixed order), so its rects would drift at least as much as the port's. For enframe's click-to-mark loop, keeping features in memory gives more (145 ms per re-track) for no GPU work.
 
-## AVIF decode and encode
+## AVIF decode
 
-- **libavif through bindgen** (`rust/build.rs`), built from source and linked statically: libavif 1.4.2 with dav1d 1.5.4 for decode and libaom 3.15.0 for encode, the versions Homebrew ships. Animated AVIF needs libavif or something like it; the pure-Rust options cannot write it.
-- **The libavif build has no libyuv** (Homebrew's has none either), while Pillow's does. Its YUV to RGB conversion differed from Pillow's by up to 3 levels, so the 4:4:4 full-range BT.601 case (the Girona photos) converts in Rust the way libyuv does: bit-exact with Pillow. Other layouts fall back to libavif's own conversion (`avif.rs`, marked `ponytail:`). Its RGB to YUV conversion for encoding was slow (above), so frames convert in Rust on the render threads.
+- **macOS decodes AVIF through ImageIO** (#33), like HEIC and JPEG XL, so the macOS build compiles no C and needs no cmake, meson, nasm or bindgen. On all 104 samples (57 train clouds, 47 fl clouds) ImageIO gives the same size, orientation and profile (Display P3) as libavif; pixels differ by up to 3 levels, mean 0.61, 6% of values by more than 1. That is enough to move tracking: on train clouds 33 of 57 anchors move more than 0.01 px, up to 2.18 px (IMG_4777), median 0.15 px, with the same three LOST photos. `analysis/stabilize/tracking_baseline.json` was regenerated from the ImageIO run, so a macOS run is no longer bit-exact with the retired Python reference at decode.
+- **Off macOS, AVIF decodes through libavif** (`avif.rs`, bindgen over `build.rs`'s static build): libavif 1.4.2 with dav1d 1.5.4, the versions Homebrew ships. libaom is gone with the animated clip output. This path is still bit-exact with Pillow, and `check.sh` compares it against `analysis/stabilize/tracking_baseline_libavif.json`, the libavif result kept from before #33.
+- **The libavif build has no libyuv** (Homebrew's has none either), while Pillow's does. Its YUV to RGB conversion differed from Pillow's by up to 3 levels, so the 4:4:4 full-range BT.601 case (the train clouds photos) converts in Rust the way libyuv does: bit-exact with Pillow. Other layouts fall back to libavif's own conversion (`avif.rs`, marked `ponytail:`).
 - **Orientation** comes from the AVIF `irot` and `imir` boxes, as Pillow reports it. It is unit-tested on synthetic images only: no rotated AVIF was at hand.
-- **Encoder settings** follow `anchor.py`'s Pillow call: speed 10, quality 75, 4:2:0, full range, alpha kept, 250 ms frames, run ID in the XMP. ffmpeg outputs (`.mov`, `.webm`, and `.mp4` with `--vf`) pipe RGB(A) as before, with the run ID in the comment tag.
-- **Alternatives considered:**
-  - `libavif-sys` 0.17 vendors libavif 1.0.4 and builds dav1d with meson and ninja (not installed) and aom with cmake. It also pulls rav1e by default.
-  - `image` with `avif` encodes still images through ravif only; decoding needs dav1d separately.
-  - `ravif` 0.13 (rav1e) encodes single images, not animations.
+- **The animated `.avif` clip output was removed** (#33); it was the only use of libaom. `.mp4` (native H.264) is the default, and transparent padding needs `.mov` or `.webm`.
+- **rav1d was tried and not taken** (#33). `rav1d` 1.1.0 (BSD-2-Clause, a Rust port of dav1d) with `mp4parse` 0.17 (MPL-2.0) for the container builds with cargo alone on macOS and Linux (aarch64) and decodes the 87 non-grid samples bit-exactly with libavif, so tracking matched the old baseline exactly. It was not taken because it decodes at 2.2x libavif's time without its `asm` feature (0.110 s against 0.050 s per train clouds photo; the whole 57-photo job 2.2 s against 1.7 s), the published crate's `asm` build fails on macOS (`src/arm/asm-offsets.h` is missing) and needs nasm on x86, and neither `mp4parse` nor `avif-parse` reads the grid AVIFs (17 of 47 fl clouds photos). rav1d also exports dav1d's C symbol names, so it cannot link beside libdav1d.
+- **Alternatives considered earlier:** `libavif-sys` 0.17 vendors libavif 1.0.4 and builds dav1d with meson and ninja and aom with cmake, and pulls rav1e by default; `image` with `avif` decodes only through dav1d, separately.
 
 ## MP4 encode
 
@@ -204,11 +203,11 @@ cd rust && cargo test --release -- --ignored --nocapture
 
 HEIC/HEIF and JPEG XL decode through macOS ImageIO (`CGImageSource`), linked to ImageIO, CoreGraphics and CoreFoundation rather than a new Rust or C codec dependency. It is the practical local choice: macOS uses the M4 media path for HEVC, supports both formats without a build-time codec library, and supplies their orientation metadata. The decoder reads the `CGImage` provider directly, avoiding a bitmap-context colour conversion; it accepts 8-bit RGB(A), 16-bit RGB(A), and Apple's packed HEVC Main 10 `l10r` layout. 10- and 16-bit samples are rounded to the nearest 8-bit sample, and premultiplied alpha is undone before alpha is dropped.
 
-On the M4 Pro, `analysis/rust_task_memory.py` measured HEIC Main 8 and Main 10 at 8 B/pixel to prepare and 11 B/pixel to render (both rounded up). ImageIO JXL cost 10/14 B/pixel; that is the conservative maximum of its lossless and lossy measurements. The planner uses those values rather than AVIF's 6/11 B/pixel.
+On the M4 Pro, `analysis/rust_task_memory.py` measured HEIC Main 8 and Main 10 at 8 B/pixel to prepare and 11 B/pixel to render (both rounded up). ImageIO JXL cost 10/14 B/pixel; that is the conservative maximum of its lossless and lossy measurements. The planner uses those values rather than JPEG's 6/11 B/pixel. AVIF through ImageIO measured 12/16 B/pixel at 12 MP, its worst size (8/10 at 48 MP), against libavif's 6/11; macOS uses 12/16.
 
 The Girona acceptance run used converted 2048×1536 fixtures and the normal `girona_all.sh` marks. Against the Rust AVIF originals, Main 8 HEIC differed by 4.71e-2 (IMG_4798), lossless JXL by 3.89e-2 (IMG_4798), and lossy JXL by 2.29e-2 (IMG_4689); all retained AVIF's three LOST photos. Main 10 HEIC first differed by 9.04e-1 (IMG_4681) with four extra LOST photos, because the decoder read ImageIO's packed `l10r` words with red and blue swapped. After the fix (`caf1a5b`) it differs by 4.47e-2 (IMG_4798) and keeps AVIF's three LOST photos. The lossless-JXL result is not pixel-identical because its source was an ffmpeg RGB decode of the AVIF rather than the AVIF's original decoded RGB path; it is a conversion-pipeline comparison, not a JXL round-trip claim.
 
-Rebuilding the lossless JXL inputs from Pillow's AVIF RGB (the same RGB as pinframe's libavif path) gives exactly zero rect and scale difference and the same three LOST photos.
+Rebuilding the lossless JXL inputs from Pillow's AVIF RGB (the same RGB as pinframe's libavif path then) gave exactly zero rect and scale difference and the same three LOST photos.
 
 ### Decode speed
 
@@ -227,40 +226,40 @@ M4 Pro, ten 2048×1536 Girona photos, five round-robin rounds. Values are second
 
 The Main 10 row was 0.0407 / 0.0416 s CPU before `unpack_l10r`; interleaved runs on the shared machine vary by about 3 ms. Its fixtures are 16-bit PNGs of the AVIF originals converted with `sips -s format heic`, which writes a 4×3 grid of 512×512 tiles with an ICC profile, as an iPhone does. The `imageio::tests::heic10_split` test (`HEIC10_DIR=<dir>`) splits the CPU per photo: ImageIO's decode and pixel copy take 34–42 ms, pinframe's `l10r` unpacking took 3.0 ms and now 1.9 ms. Most of ImageIO's time is system time: `sample` shows CMPhoto decoding each tile through VideoToolbox, then a VideoToolbox pixel transfer on the GPU through Metal, and the GPU command submissions run in the kernel. Tiled Main 8 (8-bit PNG through `sips`) costs 12 ms in total, and the same photos written untiled by `heif-enc -b 10` cost 8 ms in ImageIO, so the cost comes from tiles and 10 bits together. `sips` run directly on the AVIF originals, as `analysis/check.sh` does, also writes untiled Main 10. Asking ImageIO for SDR (`kCGImageSourceDecodeRequest` = `kCGImageSourceDecodeToSDR`) still returns 10-bit `l10r`, with identical pixels and no CPU change; no ImageIO option tried returns 8-bit pixels from these files.
 
-ImageIO makes AVIF roughly twice as fast here and consumes about one quarter of the CPU, plausibly using the media engine. It is not worth switching: libavif/dav1d is bit-exact with the Python reference while ImageIO's colour and conversion behavior is not that reference, and AVIF decoding is not the pipeline bottleneck.
+ImageIO makes AVIF roughly twice as fast here and consumes about one quarter of the CPU, plausibly using the media engine. This trial kept libavif for its bit-exactness with the Python reference; #33 later moved macOS to ImageIO anyway, to drop the C build (see "AVIF decode").
 
-A full-pipeline trial confirmed it. With AVIF routed through ImageIO, decoded pixels differ from libavif's by at most 2–3 levels (PSNR about 50 dB), yet the Girona rects moved by up to 1.60e-1 and the scale by 1.7e-1 at IMG_4689/4690, with 7 of 57 photos past 2e-2; the LOST set stayed the same. The whole run used about 3 CPU-seconds less but took longer: 2.37 / 2.45 s against 2.12 / 2.22 s (fastest / median, 9 interleaved rounds), so ImageIO does not scale across pinframe's decode threads the way its per-photo time suggests. AVIF therefore stays on libavif/dav1d on every platform. That such small pixel differences move a fit so far also shows the tracker is sensitive at some photos; see `todos/`.
+A full-pipeline trial confirmed it. With AVIF routed through ImageIO, decoded pixels differ from libavif's by at most 2–3 levels (PSNR about 50 dB), yet the Girona rects moved by up to 1.60e-1 and the scale by 1.7e-1 at IMG_4689/4690, with 7 of 57 photos past 2e-2; the LOST set stayed the same. The whole run used about 3 CPU-seconds less but took longer: 2.37 / 2.45 s against 2.12 / 2.22 s (fastest / median, 9 interleaved rounds), so ImageIO does not scale across pinframe's decode threads the way its per-photo time suggests. The trial kept libavif/dav1d then; the #33 measurements are in "AVIF decode". That such small pixel differences move a fit so far also shows the tracker is sensitive at some photos; see `todos/`.
 
-`jxl-oxide` is a portable pure-Rust alternative for JXL, but it would add a separate decoder and cannot use ImageIO's integration on this target. `djxl` is useful as an external reference, not an embeddable CLI dependency. `libheif` plus `libde265` would add LGPL components and a static-build/distribution obligation; it also gives up the system HEVC path. Linux and Windows builds need a feature-gated decoder (for example jxl-oxide for JXL and dynamically linked libheif, or platform-native APIs) instead of this macOS module. AVIF deliberately stays on libavif/dav1d for its existing bit-exact reference behavior.
+`jxl-oxide` is a portable pure-Rust alternative for JXL, but it would add a separate decoder and cannot use ImageIO's integration on this target. `djxl` is useful as an external reference, not an embeddable CLI dependency. `libheif` plus `libde265` would add LGPL components and a static-build/distribution obligation; it also gives up the system HEVC path. Linux and Windows builds need a feature-gated decoder (for example jxl-oxide for JXL and dynamically linked libheif, or platform-native APIs) instead of this macOS module. Off macOS, AVIF stays on libavif/dav1d.
 
 ## Colour
 
-Decoders keep each photo's own pixel values, and the clip carries the photos' label (`rust/src/colour.rs`). Each photo's profile is read from its header before decoding: AVIF's ICC profile or nclx code points, the colour space ImageIO reports for HEIC and JPEG XL, the ICC profile in JPEG, and cICP, then iCCP, then sRGB in PNG. ICC profiles are identified by their colorants and tone curves, not their description: sRGB and Display P3 are accepted, and anything else (Adobe RGB, ProPhoto, BT.709 or BT.2020 transfer, an unknown ICC) is an error naming the photo. Unlabelled photos count as sRGB.
+Decoders keep each photo's own pixel values, and the clip carries the photos' label (`rust/src/colour.rs`). Each photo's profile is read from its header before decoding: the colour space ImageIO reports for AVIF, HEIC and JPEG XL on macOS, AVIF's ICC profile or nclx code points through libavif elsewhere, the ICC profile in JPEG, and cICP, then iCCP, then sRGB in PNG. ICC profiles are identified by their colorants and tone curves, not their description: sRGB and Display P3 are accepted, and anything else (Adobe RGB, ProPhoto, BT.709 or BT.2020 transfer, an unknown ICC) is an error naming the photo. Unlabelled photos count as sRGB.
 
-The AVIF clip gets nclx primaries 1 (sRGB) or 12 (Display P3) with transfer 13 (sRGB). The native `.mp4` gets the same with matrix 1, limited range, in both the H.264 VUI and the `colr` box. ffmpeg outputs get the same through `setparams` on the frames, after an explicit BT.709 limited-range RGB to YUV step; ffmpeg 9 ignores `-color_primaries` and friends when the frames carry their own. `--frames` PNGs get the sRGB chunk or Apple's Display P3 ICC profile from CoreGraphics.
+The native `.mp4` gets nclx primaries 1 (sRGB) or 12 (Display P3) with transfer 13 (sRGB), matrix 1, limited range, in both the H.264 VUI and the `colr` box. ffmpeg outputs get the same through `setparams` on the frames, after an explicit BT.709 limited-range RGB to YUV step; ffmpeg 9 ignores `-color_primaries` and friends when the frames carry their own. `--frames` PNGs get the sRGB chunk or Apple's Display P3 ICC profile from CoreGraphics.
 
 A set mixing sRGB and Display P3 photos becomes Display P3. The sRGB photos are linearized, multiplied by the fixed sRGB to Display P3 matrix (both D65), and re-encoded to 8 bits on the render threads, just before placing. Tracking and the feature cache see the decoded values as before, so neither changes.
 
-In Playwright's Chromium, a Girona photo cropped to its clip frame and the clip itself now differ by 1.07 levels on average over 16×16 blocks (99th percentile 2.9); the `bt709`-labelled clip from before differed by 4.19 (99th percentile 24.9, red the worst). Playwright's WebKit renders animated AVIF without colour management, so old and new clips look identical there and it cannot judge this. Re-run with `analysis/colour_screenshot.py`.
+In Playwright's Chromium, a Girona photo cropped to its clip frame and the clip itself now differ by 1.07 levels on average over 16×16 blocks (99th percentile 2.9); the `bt709`-labelled clip from before differed by 4.19 (99th percentile 24.9, red the worst). Playwright's WebKit rendered the animated AVIF clip of the time without colour management, so old and new clips look identical there and it cannot judge this. Re-run with `analysis/colour_screenshot.py`.
 
 ## Platforms
 
 | | macOS | Linux |
 |-|-|-|
 | status | built and tested (M4 Pro, macOS 27) | built and tested (x86_64, Ubuntu 24.04, 4 cores) |
-| AVIF | libavif + dav1d (bit-exact with Python) | libavif + dav1d (rects identical to macOS) |
+| AVIF | ImageIO (within 3 levels of libavif; `tracking_baseline.json`) | libavif + dav1d (bit-exact with Python; `tracking_baseline_libavif.json`) |
 | HEIC/HEIF, JPEG XL | ImageIO | refused before decoding: `HEIC input needs macOS (ImageIO); not supported on this platform yet` |
 | JPEG, PNG | zune-jpeg, png | zune-jpeg, png |
 | feature cache | `~/Library/Caches/pinframe` | `$XDG_CACHE_HOME/pinframe`, default `~/.cache/pinframe` |
 
 What differs by platform, all behind `cfg(target_os = "macos")` so the macOS build is unchanged ([D1](../todos/done/1006-D1-linux-build.md)):
 
-- `src-tauri/stabilize/src/imageio.rs` and the ImageIO, CoreGraphics and CoreFoundation frameworks are macOS-only. Elsewhere `rust/src/imageio_unavailable.rs` stands in with the same signatures, and `decode::format` refuses HEIC and JPEG XL before any entry point reaches them, so `oriented_size`, `profile`, `exif`, `decoder_id`, `memory_cost` and `decode` all fail with the same message. Later, `jxl-oxide` could decode JPEG XL and libheif + libde265 HEIC on Linux.
+- `src-tauri/stabilize/src/imageio.rs` and the ImageIO, CoreGraphics and CoreFoundation frameworks are macOS-only; `avif.rs`, `avif_sys.rs` and `build.rs`'s libavif build exist only off macOS. Elsewhere `rust/src/imageio_unavailable.rs` stands in with the same signatures, and `decode::format` refuses HEIC and JPEG XL before any entry point reaches them, so `oriented_size`, `profile`, `exif`, `decoder_id`, `memory_cost` and `decode` all fail with the same message. Later, `jxl-oxide` could decode JPEG XL and libheif + libde265 HEIC on Linux.
 - Free memory comes from `MemAvailable` in `/proc/meminfo` instead of Mach's `host_statistics64`; the profiler's resident set from `/proc/self/statm`; run IDs from `getrandom(2)` instead of `arc4random_buf`.
 - The Display P3 ICC profile that labels `--frames` PNGs is Apple's on macOS and, elsewhere, a minimal v4 matrix/TRC profile built in `colour::minimal_p3_icc` with the same colorants and the sRGB parametric curve; `colour::from_icc` reads both back as Display P3.
 - Tests that need ImageIO fixtures or ColorSync's profiles run on macOS only; a Linux-only test checks the refusal. `analysis/check.sh` converts the format and colour sets with sips and cjxl on macOS and with Pillow elsewhere, where the HEIC and JPEG XL runs become refusal checks, so it is 19 checks on both.
 
-Measured on the Linux host above: a clean release build takes 3 min 10 s wall (10 CPU-min, nearly all the C libraries); the 57-photo train clouds job 56 s wall without the cache; `check.sh` passes 19 of 19, with the train clouds rects matching `analysis/tracking_baseline.json` to 1.8e-15 (float-parsing noise), scales exactly and anchor points to 5e-4 px, the same three LOST photos. The binary is 23 MB with debug info and links only libc, libm and libgcc_s.
+Measured on the Linux host above: a clean release build takes 3 min 10 s wall (10 CPU-min, nearly all the C libraries); the 57-photo train clouds job 56 s wall without the cache; `check.sh` passes 19 of 19, with the train clouds rects matching the baseline (now `analysis/stabilize/tracking_baseline_libavif.json`) to 1.8e-15 (float-parsing noise), scales exactly and anchor points to 5e-4 px, the same three LOST photos. The binary is 23 MB with debug info and links only libc, libm and libgcc_s.
 
 ## Crates and licenses
 
@@ -269,32 +268,32 @@ Measured on the Linux host above: a clean release build takes 3 min 10 s wall (1
 | libc 0.2 | memory statistics, `flock`, `arc4random_buf`, `getrusage` | MIT or Apache-2.0 |
 | png 0.18 | `--frames` PNGs and test fixtures | MIT or Apache-2.0 |
 | serde 1, serde_json 1 | the sidecar, profiles | MIT or Apache-2.0 |
-| bindgen 0.72, cmake 0.1 (build) | libavif bindings and build | BSD-3-Clause; MIT or Apache-2.0 |
+| bindgen 0.72, cmake 0.1 (build, off macOS) | libavif bindings and build | BSD-3-Clause; MIT or Apache-2.0 |
 | kornia-imgproc 0.2 (optional) | alternative SIFT | Apache-2.0 |
 | opencv 0.101 (optional) | OpenCV's SIFT | MIT (OpenCV itself Apache-2.0) |
 | filmcraft-h264enc, -isobmff, -bitstream 0.5 (vendored in `src-tauri/vendor/filmcraft`) | `.mp4`: H.264 encode and MP4 mux | MIT or Apache-2.0 |
 | thiserror 2, rayon 1 | filmcraft's errors and threads | MIT or Apache-2.0 |
-| libavif, dav1d, libaom (C, linked statically) | AVIF | BSD-2-Clause (libaom also carries the AOM patent license); see Build and install |
+| libavif, dav1d (C, linked statically, off macOS) | AVIF | BSD-2-Clause; see Build and install |
 
-A default build compiles 26 crates, 48 with the build dependencies. SIFT's patent expired in March 2020.
+The macOS build compiles Rust crates only; off macOS, bindgen and cmake are added as build dependencies. SIFT's patent expired in March 2020.
 
 ## Build and install
 
 ```sh
-brew install cmake meson ninja                                # macOS
+cd src-tauri && cargo build --release -p stabilize
+```
+
+On macOS that is all: Rust stable (1.97 here) and the Command Line Tools' linker. Off macOS the build also compiles libavif and dav1d, which need:
+
+```sh
 sudo apt install cmake meson ninja-build nasm libclang-dev    # Debian/Ubuntu
 ```
 
-```sh
-cd rust && cargo build --release
-```
-
-- **Requirements:** Rust stable (1.97 here), cmake, meson and ninja, libclang for bindgen (Xcode or the Command Line Tools on macOS, `libclang-dev` on Debian/Ubuntu), and network access on the first build. nasm is needed only on x86 (aom's and dav1d's assembly). Homebrew's libavif is not needed.
-- **Sources on a restricted network.** Verified tarballs are cached in `~/Library/Caches/pinframe-sources` on macOS and `$XDG_CACHE_HOME/pinframe-sources` (default `~/.cache/pinframe-sources`) elsewhere. A machine that cannot download one of them (a proxy that blocks github.com, say) can set `PINFRAME_SOURCES=DIR`, where `DIR` holds the unpacked sources under their names (`libavif-1.4.2/`, from `git clone --branch v1.4.2`, for example); those are used as they are, without a checksum. Changing the variable rebuilds the C libraries.
-- **The C libraries are built by `rust/build.rs`.** It downloads the release tarballs of libavif 1.4.2, dav1d 1.5.4 and libaom 3.15.0, checks their SHA-256 (the same as Homebrew's for libavif and dav1d; aom's tarball is identical to its git tag `v3.15.0`), and builds them as static libraries in cargo's build directory (`OUT_DIR`), aom and libavif with cmake and dav1d with meson. Tarballs rather than git submodules: a clean checkout needs no extra step, the pins and checksums sit in one file, and aom's history is not cloned. aom builds only its encoder, without apps, docs, tests or VMAF tuning; dav1d without tools or tests; libavif without apps and with aom for encoding only. On macOS the C code targets macOS 11.0, like rustc, unless `MACOSX_DEPLOYMENT_TARGET` says otherwise.
-- **Build cost:** a clean release build without sccache takes 37 s wall (116 CPU-s), most of it the C libraries; the C build leaves 107 MB in `OUT_DIR` (73 MB of it unpacked sources). The C libraries are rebuilt only when `build.rs` or `MACOSX_DEPLOYMENT_TARGET` changes, so a build after a Rust edit still takes about 1.5 s.
-- **The binary is 7.5 MB** (6.8 MB stripped; the dynamic build was 1.2 MB) and links only `/usr/lib/libSystem` and `/usr/lib/libiconv`. Its output is the same as the Homebrew-linked build: identical sidecar rects and decoded frames for the Girona job. The Girona job runs as fast (12 interleaved runs at load 35: fastest 2.19 s against 2.20 s, median 2.34 s against 2.36 s).
-- **Licenses for distribution.** libavif, dav1d and libaom are BSD-2-Clause: a binary must reproduce each copyright notice, the conditions and the disclaimer in its documentation or other materials. Also bundled are libyuv-derived scaling code in libavif (BSD-3-Clause, in libavif's `LICENSE`), and fastfeat (BSD-3-Clause) and vector (MIT) in libaom. libaom also comes under the Alliance for Open Media Patent License 1.0 (`PATENTS`), a royalty-free patent grant that ends for anyone who sues over AV1 patents; ship its text with the others. The texts are in each source tree under `OUT_DIR/src`.
+- **Requirements off macOS:** cmake, meson and ninja, libclang for bindgen (`libclang-dev`), and network access on the first build. nasm is needed only on x86 (dav1d's assembly).
+- **Sources on a restricted network (off macOS).** Verified tarballs are cached in `$XDG_CACHE_HOME/pinframe-sources` (default `~/.cache/pinframe-sources`). A machine that cannot download one of them (a proxy that blocks github.com, say) can set `PINFRAME_SOURCES=DIR`, where `DIR` holds the unpacked sources under their names (`libavif-1.4.2/`, from `git clone --branch v1.4.2`, for example); those are used as they are, without a checksum. Changing the variable rebuilds the C libraries. macOS no longer reads or fills `~/Library/Caches/pinframe-sources`; it can be deleted.
+- **The C libraries are built by `build.rs`, off macOS.** It downloads the release tarballs of libavif 1.4.2 and dav1d 1.5.4, checks their SHA-256 (the same as Homebrew's), and builds them as static libraries in cargo's build directory (`OUT_DIR`), libavif with cmake and dav1d with meson. Tarballs rather than git submodules: a clean checkout needs no extra step, and the pins and checksums sit in one file. dav1d builds without tools or tests, libavif without apps and with dav1d for decoding only.
+- **Build cost (macOS, #33):** a clean release build of the crate without sccache took 30–31 s with the C libraries (sources cached) and 5.0–5.2 s without them, 2 interleaved rounds each at load average 7 to 19. The binary went from 8.7 MB to 2.4 MB and links only ImageIO, CoreGraphics, CoreFoundation, `/usr/lib/libSystem` and `/usr/lib/libiconv`.
+- **Licenses for distribution (off macOS).** libavif and dav1d are BSD-2-Clause: a binary must reproduce each copyright notice, the conditions and the disclaimer in its documentation or other materials. Also bundled is libyuv-derived scaling code in libavif (BSD-3-Clause, in libavif's `LICENSE`). The texts are in each source tree under `OUT_DIR/src`. The macOS binary contains no C libraries.
 - **This spike installed** meson 1.12.1 and ninja 1.13.2 (Homebrew; meson pulled python@3.14 3.14.8), plus `cargo-pgo` 0.3.0 (4 MB, in `~/.cargo/bin`). The minimal OpenCV build lives in `/Volumes/disk/cache/opencv-spike` (375 MB with its source and build tree; safe to delete).
 
 The `kornia` and `opencv` SIFT backends compared below (`--features kornia`, `--features opencv`) were spike-only, to measure against the crate's own SIFT. They're not in the crate: see "Correctness" and "SIFT in Rust" for what the comparison found.
@@ -302,7 +301,7 @@ The `kornia` and `opencv` SIFT backends compared below (`--features kornia`, `--
 Run the train clouds job, and the checks against Python's dumps (`dump_sift.py` and `dump_ransac.py`, and with them `dump_pyramid.py`'s input, went with `anchor.py` in F1, so of the ignored tests in `rust/src/checks.rs` only the kernel comparison still has its dump):
 
 ```sh
-BIN=rust/target/release/pinframe bash analysis/train_clouds_all.sh out/rust.avif
+BIN=src-tauri/target/release/stabilize bash analysis/stabilize/train_clouds_all.sh out/rust.mov
 ```
 
 ```sh
@@ -318,7 +317,7 @@ cd rust && cargo test --release -- --include-ignored --test-threads=1 --nocaptur
 - **Integration.** Today's plan (`docs/wasm.md` on `spike-wasm`) runs `uv run anchor.py` from `enframe-serve` per click. With a Rust core, `enframe-serve` and the Tauri app call a `pinframe` library crate in-process.
   - The first run decodes and finds features (about 1.5 s for Girona). Later marks re-track from features held in memory in 145 ms, and a preview clip encodes in about 0.8 s.
   - Nothing Python ships with the app, and there is no 135 ms start-up per call.
-- **Dependencies.** enframe's Rust side has `image` with pure-Rust AVIF (ravif) and no C codec libraries. pinframe adds libavif, dav1d and libaom. `build.rs` builds them statically (cmake for libavif and aom, meson and ninja for dav1d, nasm on x86), so the binary needs no Homebrew.
+- **Dependencies.** enframe's Rust side has `image` with pure-Rust AVIF (ravif) and no C codec libraries. On macOS stabilize adds none either (AVIF decodes through ImageIO). Off macOS it adds libavif and dav1d, which `build.rs` builds statically (cmake for libavif, meson and ninja for dav1d, nasm on x86), so the binary needs no system codec.
 - **Platforms.** The Rust code is portable (no intrinsics). Free-memory and core-count queries are macOS-only (`host_statistics64`) and need Linux and Windows versions. The OpenCV backend would need OpenCV built for every target, which is the main argument for the own port or kornia.
 - **The web build** stays without pinframe, as `docs/wasm.md` concluded. The Rust core could compile to WASM later (no threads assumed in the algorithm), but libavif would need an Emscripten build, and nothing was measured here.
 
@@ -338,8 +337,8 @@ Measured on a 4-core Linux container (2026-10-08): an in-process re-track of the
 
 - `src-tauri/stabilize/src/lib.rs`: the library: input checks, resource planning, pipeline, outputs.
 - `src-tauri/stabilize/src/main.rs`: the CLI (same flags as `anchor.py` except box drawing), a thin layer over the library.
-- `src-tauri/stabilize/src/avif.rs`: libavif decode and encode, libyuv-exact YUV to RGB.
-- `src-tauri/stabilize/src/yuv.rs`: RGB to YUV 4:2:0 for the AVIF (BT.601 full range) and MP4 (BT.709 limited range) encoders.
+- `src-tauri/stabilize/src/avif.rs`: libavif decode off macOS, libyuv-exact YUV to RGB.
+- `src-tauri/stabilize/src/yuv.rs`: RGB to YUV 4:2:0 (BT.709 limited range) for the MP4 encoder.
 - `src-tauri/stabilize/src/mp4.rs`: `.mp4` clips through the vendored filmcraft H.264 encoder and MP4 writer.
 - `src-tauri/stabilize/src/colour.rs`: colour profiles from ICC and nclx, sRGB to Display P3.
 - `src-tauri/stabilize/src/pixels.rs`: orientation, OpenCV-exact gray and INTER_AREA.

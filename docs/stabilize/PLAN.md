@@ -40,7 +40,7 @@ One coordinating thread runs the plan; agents do the card work. The coordinator 
 **Gotchas**
 
 - A shell hook blocks `grep`/`rg`/`ls` on `.paseo` paths and some heredocs (it reads them as home-rooted walks). Write Python to a file in `/tmp` and `uv run` it; read logs with the Read tool.
-- C library sources are cached in `~/Library/Caches/pinframe-sources` (Linux: `~/.cache/pinframe-sources`); a fresh worktree builds in about 30 s on the Mac, 3 min on a 4-core Linux host. A host whose network blocks a source host (github.com for libavif) sets `PINFRAME_SOURCES=DIR` to unpacked sources; see `docs/rust.md`, "Build and install".
+- The Mac build has no C libraries (AVIF decodes through ImageIO, #33) and builds clean in about 5 s. Linux builds libavif and dav1d from sources cached in `~/.cache/pinframe-sources`, about 3 min on a 4-core host; a host whose network blocks a source host (github.com for libavif) sets `PINFRAME_SOURCES=DIR` to unpacked sources; see `docs/rust.md`, "Build and install".
 - Linux hosts: HEIC and JPEG XL inputs are refused there (ImageIO is macOS-only), so cards that need them run on the Mac. Everything else, `check.sh` included, runs on both.
 - The public mockups (https://mox.xcc.es/pinframe/) serve the main checkout, so they update only after a merge.
 
@@ -69,7 +69,7 @@ Made on 2026-10-06:
 - **E4 export progress:** E2's export answers once at the end; E4 streams pinframe's progress lines from the serve route as the MVP did, so the export screen can show them. Model raised to Opus because of the Rust half.
 - **One repo (S1):** made 2026-10-08. pinframe moves into enframe as the `stabilize` crate with its history; serve uses it as a library; the feature is named Stabilize. The pinframe repository is archived with a pointer.
 - **One app (R1, R2):** made 2026-10-08. enframe is the UI, pinframe the CLI and library; the standalone `web/` MVP is deleted once enframe's e2e covers its walkthrough, and the browser gate moves to enframe's `bun run test:e2e`.
-- **E6 scope:** made 2026-10-08. The document holds named features (`{version: 2, features: [{name, marks}]}`); the CLI and tracker are unchanged, N features are N runs; the serve lock stays per folder; export writes `<folder>-<feature>.avif`. Writing results into enframe's SQLite frames and focal points is a possible later card, not done.
+- **E6 scope:** made 2026-10-08. The document holds named features (`{version: 2, features: [{name, marks}]}`); the CLI and tracker are unchanged, N features are N runs; the serve lock stays per folder; export writes `<folder>-<feature>.avif` (`.mp4` since #33). Writing results into enframe's SQLite frames and focal points is a possible later card, not done.
 - **E2 binary, not crate:** enframe-serve calls the pinframe binary from a configured path rather than depending on the library crate, so enframe's build stays free of pinframe's C codec sources.
 - **Several features per sequence (E6):** researched 2026-10-08 and placed after the enframe integration, because enframe's frame model (a frame per photo with its focal points) and its frame selection are the natural home; the tracker needs no change. Not in scope: several features held still in one clip, which needs per-photo warping.
 - **Browser tests (W1):** in the repository under `web/e2e/`, opt-in through `check.sh --browser`, run for cards that touch `web/`; not a default gate, since it adds half again to every card and needs Chromium on the Mac. Screenshots are artifacts, not diffed against the mockups.

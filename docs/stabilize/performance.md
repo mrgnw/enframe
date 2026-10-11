@@ -122,7 +122,7 @@ FFMPEG=/opt/homebrew/bin/ffmpeg uv run analysis/codecs.py
 | AV1 SVT-AV1 preset 10, crf 23 | 0.44 | 2.1 | 8.1 | 39.4 |
 | animated AVIF, aom speed 10, q 75 | 0.84 | 3.6 | 9.2 | 40.0 |
 
-- **AVIF** is the default because it is the one format that is small, keeps alpha, and needs no ffmpeg. At 40 dB it is a twelfth of ProRes and encodes as fast. In Playwright's WebKit and Chromium, the animated transparent AVIF decodes at full size, animates, and shows the page background through its transparent areas. Real Safari was not tested.
+- **AVIF** was the default until #33 removed animated AVIF output with libaom (`.mp4`, native H.264, is the default now), because it was the one format that is small, keeps alpha, and needs no ffmpeg. At 40 dB it is a twelfth of ProRes and encodes as fast. In Playwright's WebKit and Chromium, the animated transparent AVIF decodes at full size, animates, and shows the page background through its transparent areas. Real Safari was not tested.
 - **The hardware HEVC encoder** uses almost no CPU, but at equal PSNR its files are as large as x264's. With alpha it is only as fast as AVIF, because feeding frames is the limit, and its colour is worse per megabyte.
 - **SVT-AV1** is the fastest small opaque encoder: 0.44 s, 8 MB. It has no alpha and needs the native ffmpeg.
 - **VP9 with alpha** takes 8.9 s, the slowest by far.
@@ -267,7 +267,7 @@ SIFT is the largest cost: 8.5 of the run's 19.8 CPU-seconds. The AVIF encoder is
    - A re-run would then load features and match. Estimated, not measured: about 0.3–0.5 s instead of about 4 s.
    - Output is unchanged by construction. This matters most for the enframe integration in `docs/wasm.md` (`spike-wasm`), which re-runs `anchor.py` on every click.
 1. **Smaller `TRACK_EDGE` (768)** would save about 0.5 s with the same LOST set on Girona. It needs an accuracy check first, for example `analysis/grids.py` contact sheets at lens switches, since 1024 was chosen for them.
-2. **Faster encode for previews.** Done differently: the default output is now animated AVIF. See "Output encoding" above.
+2. **Faster encode for previews.** Done differently: the default output became animated AVIF (see "Output encoding" above), and since #33 it is native `.mp4`; animated AVIF output was removed with libaom.
 3. **Overlap decode with tracking.** Done, with a bigger gain than expected (0.7 s): see "Threaded decode + SIFT".
 4. **Hold less in memory.** Decoding twice (downscaled gray for tracking, full RGB in render) would bring peak RSS from ~1.1 GB to ~200 MB. It costs a second 0.6 s decode, unless render decodes on its worker threads.
 5. **Threaded whole-photo SIFT.** Superseded by threading decode + SIFT together, which gains more for less memory.
