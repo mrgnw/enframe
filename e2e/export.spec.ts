@@ -164,10 +164,18 @@ test('export: Reveal in Finder is offered only on a local instance', async ({ ba
 		await page.fill('.export .field .path', REMOTE_OUT);
 		await page.click('#export-btn');
 		await expect(page.locator('#done')).toBeVisible({ timeout: 480_000 });
-		await page.waitForFunction(() => {
-			const video = document.querySelector('#clip-shown') as HTMLVideoElement | null;
-			return !!video && video.readyState >= 2 && video.videoWidth > 0;
-		});
+		// The default .mp4 is H.264, which Playwright's Chromium cannot play; Chrome and Safari can.
+		const h264 = await page.evaluate(
+			() => document.createElement('video').canPlayType('video/mp4; codecs="avc1.640028"') !== ''
+		);
+		if (h264) {
+			await page.waitForFunction(() => {
+				const video = document.querySelector('#clip-shown') as HTMLVideoElement | null;
+				return !!video && video.readyState >= 2 && video.videoWidth > 0;
+			});
+		} else {
+			await expect(page.locator('#done .note')).toHaveText('This browser cannot play the clip; download it instead.');
+		}
 		await expect(page.locator('#download')).toBeVisible();
 		await expect(page.locator('#sidecar')).toBeVisible();
 		await expect(page.locator('#reveal')).toHaveCount(0);
