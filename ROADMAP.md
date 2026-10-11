@@ -113,6 +113,27 @@ Tauri v2 + SvelteKit 5, with Lightroom catalog integration.
 ### Smarter framing
 - Saliency detection to seed focal points where there are no faces (faces: #31)
 
+### Photo library sources
+- **Lightcraft library as a source** (not scheduled; looked at 2026-10-11).
+  [Lightcraft](https://github.com/storytold/lightcraft) is an open-source Rust
+  rewrite of Lightroom (MIT/Apache-2.0, v0.5.0, changing daily). Unlike Lightroom
+  Classic, whose private SQLite catalog enframe reads read-only and whose Lua
+  plugin SDK has been static for years, it is open to outside tools:
+  - Its library is a plain folder (default `~/Pictures/LightCraft Library`):
+    `catalog.snap` (JSON snapshot: photos, ratings, flags, labels, albums,
+    keywords, develop settings incl. crop) plus `catalog.log` (JSON lines of
+    changes since the snapshot, which must be replayed). Its `catalog` crate does
+    the loading and could be vendored.
+  - `lightcraft --control 7980` runs a localhost JSON-lines API (no auth, app must
+    be running) where `engine.execute` runs any command: `catalog.query`,
+    `library.*`, `crop.set`, `photo.rate`, `app.export`. An MCP server exposes the
+    same commands, also headless.
+  - `library.importLightroom` imports a Lightroom Classic catalog with crops.
+  - Would let enframe read the library and write crops/ratings back. Only useful
+    if photos live in lightcraft. First step if picked up: import a Lightroom
+    catalog headless, read `catalog.snap` + `catalog.log` from a script, and check
+    a `crop.set` round trip.
+
 ### Throughput
 - Batch apply a set of frames/ratios across many selected photos
 - Folder → auto-export pipeline: pick a bookmarked folder, frame and export the
