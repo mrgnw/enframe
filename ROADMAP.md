@@ -93,9 +93,6 @@ Tauri v2 + SvelteKit 5, with Lightroom catalog integration.
 - Per-format quality and speed controls in the export UI
 - Arbitrary-angle frame rotation (stored but never set; export ignores it)
 
-### Stabilize
-- Three more photos lost in the marking e2e since ImageIO decode (#43)
-
 ### Lightroom integration
 - Write crops/metadata back to Lightroom (currently read-only)
 - Smarter proxy vs. original selection for large RAW files

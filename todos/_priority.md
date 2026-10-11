@@ -1,6 +1,5 @@
-Open GitHub issues (2026-10-11):
+Open GitHub issues (2026-10-11, after #43 closed):
 
-- #43 three more lost photos in the marking e2e since AVIF decodes through ImageIO on macOS (in progress)
 - #44 lossless JPEG XL export as a smaller alternative to PNG (not scheduled)
 
 Done from the storytold exploration: #30 native .mp4, #31 face focal points, #32 EXIF orientation,
