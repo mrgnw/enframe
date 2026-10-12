@@ -3,148 +3,123 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Stabilize · flipbook study</title>
+<title>Stabilize · frames in motion</title>
 <style>
   :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; background: #111113; color: #f4f4f5; }
   * { box-sizing: border-box; }
   body { margin: 0; }
   button { font: inherit; cursor: pointer; }
-  main { max-width: 1040px; margin: auto; padding: 42px 28px 70px; }
+  main { max-width: 1080px; margin: auto; padding: 42px 28px 70px; }
   .eyebrow { color: #f5a524; text-transform: uppercase; letter-spacing: .16em; font-size: 11px; font-weight: 700; }
   h1 { font-size: clamp(28px, 4vw, 46px); font-weight: 560; letter-spacing: -.045em; margin: 10px 0; }
   .intro { max-width: 640px; color: #a1a1aa; line-height: 1.55; margin: 0; }
-  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 48px; margin-top: 58px; align-items: center; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 48px; margin-top: 50px; align-items: center; }
   .study { min-width: 0; }
-  .stage { position: relative; height: 330px; display: grid; place-items: center; perspective: 1100px; }
-  .book { position: relative; width: 330px; height: 230px; isolation: isolate; transform: rotate(-3deg); }
-  .stack, .sheet, .turning { position: absolute; width: 330px; height: 230px; border-radius: 3px 8px 8px 3px; }
-  .stack { background: #ddd8ca; box-shadow: 1px 4px 0 #bcb7aa, 3px 7px 0 #88857e, 5px 10px 0 #55534f, 14px 23px 32px #000b; }
-  .sheet { background: #f4efe6; padding: 7px 7px 7px 13px; box-shadow: inset 6px 0 9px #0002, 1px 1px 2px #0008; overflow: hidden; }
-  .image { position: relative; width: 100%; height: 100%; overflow: hidden; background: #172f43; }
-  .image img { position: absolute; display: block; width: 314px; height: 260px; left: 0; top: -34px; max-width: none; }
-  .sheet::after, .turning::after { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 11px; background: linear-gradient(90deg, #393631aa, #fff2, transparent); pointer-events: none; }
-  .turning { z-index: 2; transform-origin: 9px center; transform-style: preserve-3d; will-change: transform; }
-  .turning .sheet { inset: 0; backface-visibility: hidden; }
-  .turning .paper-back { position: absolute; inset: 0; border-radius: inherit; background: #eee9df; transform: rotateY(180deg); backface-visibility: hidden; box-shadow: inset -7px 0 15px #0002; }
-  .book.is-turning .turning { animation: flip var(--flip-duration, 170ms) cubic-bezier(.25,.15,.5,.94) both; }
-  .book.is-turning .turning .sheet { animation: shade var(--flip-duration, 170ms) linear both; }
-  @keyframes flip { 0% { transform: rotateY(0); } 47% { transform: rotateY(-87deg); } 100% { transform: rotateY(-178deg); } }
-  @keyframes shade { 0%,100% { filter: brightness(1); } 50% { filter: brightness(.68); } }
-  .thumb { position: absolute; width: 25px; height: 18px; right: -10px; bottom: 17px; border-radius: 50% 40% 50% 45%; background: #c99672; box-shadow: inset 0 -3px 4px #7e4c38, 0 3px 8px #0007; z-index: 3; transform: rotate(-22deg); pointer-events: none; }
-  .pin { position: absolute; z-index: 4; left: 187px; top: 47px; width: 13px; height: 13px; border: 2px solid #f5a524; border-radius: 50%; transform: translate(-50%,-50%); box-shadow: 0 0 0 2px #1119, 0 0 0 5px #f5a52444; pointer-events: none; transition: opacity 160ms; }
-  .pin::after { content: ''; position: absolute; width: 3px; height: 3px; left: 3px; top: 3px; border-radius: 50%; background: #f5a524; }
-  .pin.hidden { opacity: 0; }
-  .guide { position: absolute; width: 1px; height: 30px; background: #f5a52466; left: 187px; top: 54px; pointer-events: none; transition: opacity 160ms; }
-  .guide.hidden { opacity: 0; }
-  .stage-label { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); color: #777780; font-size: 12px; white-space: nowrap; }
-  .controls { display: flex; gap: 9px; justify-content: center; align-items: center; flex-wrap: wrap; margin-top: 22px; }
+  .stage { position: relative; width: min(100%, 480px); aspect-ratio: 10 / 7; margin: auto; background: #172f43; overflow: hidden; border-radius: 4px; box-shadow: 0 18px 40px #0008; }
+  .stage img, .mini img, .thumb img { position: absolute; max-width: none; display: block; }
+  .filmstrip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; max-width: 480px; margin: 16px auto 0; }
+  .thumb { position: relative; aspect-ratio: 10 / 7; overflow: hidden; background: #252527; border: 2px solid transparent; border-radius: 3px; padding: 0; opacity: .56; transition: opacity 100ms, border-color 100ms; }
+  .thumb.active { border-color: #f5a524; opacity: 1; }
+  .thumb:hover { opacity: 1; }
+  .controls { display: flex; gap: 9px; justify-content: center; align-items: center; margin-top: 22px; }
   .controls button { border: 1px solid #444449; color: #dedee0; background: #222225; border-radius: 7px; padding: 8px 13px; font-size: 13px; }
   .controls button:first-child { background: #f5a524; border-color: #f5a524; color: #221704; font-weight: 650; }
   .counter { color: #777780; font: 12px ui-monospace, SFMono-Regular, monospace; margin-left: 5px; }
-  .caption { text-align: center; color: #a1a1aa; font-size: 13px; line-height: 1.5; margin: 22px auto 0; max-width: 440px; }
+  .caption { text-align: center; color: #a1a1aa; font-size: 13px; line-height: 1.5; margin: 17px auto 0; max-width: 440px; }
   .in-app { min-height: 390px; border: 1px solid #2d2d31; border-radius: 12px; background: #1a1a1a; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px 22px; text-align: center; }
-  .mini { width: 132px; height: 92px; position: relative; margin-bottom: 28px; transform: rotate(-3deg); }
-  .mini .back, .mini .base, .mini .front { position: absolute; inset: 0; border: 4px solid #e9e5dc; border-left-width: 7px; border-radius: 2px 4px 4px 2px; background: #18364c; overflow: hidden; }
-  .mini .back { translate: 4px 5px; background: #aaa69b; }
-  .mini img { position: absolute; width: 123px; height: 102px; left: 0; top: -14px; max-width: none; }
-  .mini .point { position: absolute; left: 75px; top: 19px; width: 7px; height: 7px; border: 1.5px solid #f5a524; border-radius: 50%; box-shadow: 0 0 0 1px #111; }
-  .mini .front { transform-origin: left center; backface-visibility: hidden; }
-  .mini.is-turning .front { animation: flip var(--flip-duration, 170ms) cubic-bezier(.25,.15,.5,.94) both; }
+  .mini { position: relative; width: 132px; height: 92px; overflow: hidden; margin-bottom: 32px; background: #172f43; border-radius: 2px; }
   .in-app h2 { font-size: 25px; letter-spacing: -.035em; line-height: 1.2; margin: 0 0 10px; }
   .in-app h2 em { color: #f5a524; font-style: normal; }
   .in-app p { color: #a1a1aa; font-size: 14px; line-height: 1.55; margin: 0 0 22px; }
   .in-app button { background: #f5a524; color: #271903; border: 0; border-radius: 7px; padding: 9px 17px; font-size: 13px; font-weight: 650; }
   .footnote { color: #777780; font-size: 12px; margin-top: 27px; line-height: 1.5; }
-  @media (max-width: 760px) { .layout { grid-template-columns: 1fr; gap: 38px; margin-top: 30px; } .stage { height: 280px; } .in-app { max-width: 360px; width: 100%; margin: auto; } }
-  @media (prefers-reduced-motion: reduce) { .mini.is-turning .front, .book.is-turning .turning, .book.is-turning .turning .sheet { animation-duration: 1ms; } }
+  @media (max-width: 760px) { .layout { grid-template-columns: 1fr; gap: 38px; margin-top: 30px; } .in-app { max-width: 360px; width: 100%; margin: auto; } }
 </style>
 </head>
 <body>
 <main>
   <div class="eyebrow">Stabilize · start screen study</div>
-  <h1>A flipbook you can actually flip.</h1>
-  <p class="intro">One cloud stays under the amber point while the land, light, and foreground change from photo to photo. The paper turns; the subject holds.</p>
+  <h1>Photographs become motion.</h1>
+  <p class="intro">The cloud holds its place. Fields, trees, and light pass beneath it as each photograph replaces the last.</p>
   <div class="layout">
-    <section class="study" aria-label="Interactive flipbook">
-      <div class="stage">
-        <div class="book" id="book">
-          <div class="stack"></div>
-          <div class="sheet"><div class="image"><img id="base" src="assets/frame-0051.webp" alt="Cloud above changing countryside"></div></div>
-          <div class="turning" id="turning" hidden><div class="paper-back"></div><div class="sheet"><div class="image"><img id="top" src="assets/frame-0051.webp" alt=""></div></div></div>
-          <span class="pin" id="pin"></span><span class="guide" id="guide"></span><span class="thumb"></span>
-        </div>
-        <span class="stage-label">Same point in every photograph</span>
-      </div>
+    <section class="study" aria-label="Frame sequence preview">
+      <div class="stage" id="stage"><img id="large" src="assets/IMG_4722.jpg" alt="Cloud over changing countryside"></div>
+      <div class="filmstrip" id="filmstrip" aria-label="Seven photos in the sequence"></div>
       <div class="controls">
         <button id="play" type="button">Pause</button>
-        <button id="next" type="button">Turn a page</button>
-        <button id="alignment" type="button" aria-pressed="true">Hide alignment point</button>
-        <span class="counter" id="counter">01 / 04</span>
+        <button id="next" type="button">Next frame</button>
+        <span class="counter" id="counter">01 / 07</span>
       </div>
-      <p class="caption">Watch the cloud, then the horizon. The cloud remains in place while the view beneath it changes.</p>
+      <p class="caption">Seven real photos, shown in capture order. No fade or page turn between frames.</p>
     </section>
     <aside>
       <div class="in-app">
-        <div class="mini" id="mini" aria-hidden="true"><div class="back"></div><div class="base"><img id="mini-base" src="assets/frame-0051.webp" alt=""></div><div class="front" id="mini-front" hidden><img id="mini-top" src="assets/frame-0051.webp" alt=""></div><span class="point"></span></div>
+        <div class="mini" id="mini" aria-hidden="true"><img id="small" src="assets/IMG_4722.jpg" alt=""></div>
         <h2>Many photos.<br><em>One thing.</em></h2>
         <p>Pick what should stay put. Turn your photos into a moving scene around it.</p>
         <button type="button">Open folder</button>
       </div>
-      <p class="footnote">At right: the proposed start-screen footprint. At left: the motion and imagery at a size where the page turn can be judged.</p>
+      <p class="footnote">At right: the proposed start-screen size. At left: the same sequence large enough to inspect, with every source frame below it.</p>
     </aside>
   </div>
 </main>
 <script>
-  const frames = [51, 52, 53, 54].map(n => `assets/frame-${String(n).padStart(4, '0')}.webp`);
-  const book = document.querySelector('#book');
-  const base = document.querySelector('#base');
-  const topImage = document.querySelector('#top');
-  const turning = document.querySelector('#turning');
+  // Tracked coordinates keep the cloud centered while the surroundings change.
+  const frames = [
+    [4722, .3929, .4417], [4723, .4024, .4322], [4724, .4139, .4337],
+    [4726, .5028, .4326], [4727, .5155, .4262], [4728, .4526, .4477],
+    [4729, .4722, .4399]
+  ].map(([number, x, y]) => ({ src: `assets/IMG_${number}.jpg`, x, y }));
+  const stage = document.querySelector('#stage');
+  const mini = document.querySelector('#mini');
+  const large = document.querySelector('#large');
+  const small = document.querySelector('#small');
+  const strip = document.querySelector('#filmstrip');
   const counter = document.querySelector('#counter');
   const play = document.querySelector('#play');
   const next = document.querySelector('#next');
-  const alignment = document.querySelector('#alignment');
-  const mini = document.querySelector('#mini');
-  const miniFront = document.querySelector('#mini-front');
-  let index = 0, busy = false, timer;
+  const thumbs = frames.map((frame, index) => {
+    const button = document.createElement('button');
+    button.className = 'thumb';
+    button.type = 'button';
+    button.setAttribute('aria-label', `Show frame ${index + 1}`);
+    const img = document.createElement('img');
+    img.src = frame.src;
+    img.alt = '';
+    button.append(img);
+    button.addEventListener('click', () => { pause(); show(index); });
+    strip.append(button);
+    return button;
+  });
+  let index = 0, timer;
   let playing = !matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  function turn(slow = false) {
-    if (busy) return;
-    busy = true;
-    book.style.setProperty('--flip-duration', slow ? '630ms' : '170ms');
-    mini.style.setProperty('--flip-duration', slow ? '630ms' : '170ms');
-    topImage.src = frames[index];
-    document.querySelector('#mini-top').src = frames[index];
-    index = (index + 1) % frames.length;
-    base.src = frames[index];
-    document.querySelector('#mini-base').src = frames[index];
-    turning.hidden = false;
-    miniFront.hidden = false;
-    book.classList.remove('is-turning');
-    mini.classList.remove('is-turning');
-    void book.offsetWidth;
-    book.classList.add('is-turning');
-    mini.classList.add('is-turning');
+  function position(img, frame) {
+    const view = img.parentElement;
+    const width = view.clientWidth * 825 / 640;
+    const height = width * 4 / 3;
+    img.style.width = `${width}px`;
+    img.style.height = `${height}px`;
+    img.style.left = `${(view.clientWidth / 2) - frame.x * width}px`;
+    img.style.top = `${(view.clientHeight * .4) - frame.y * height}px`;
+  }
+  function show(nextIndex) {
+    index = nextIndex;
+    const frame = frames[index];
+    large.src = small.src = frame.src;
+    position(large, frame);
+    position(small, frame);
+    thumbs.forEach((thumb, i) => thumb.classList.toggle('active', i === index));
     counter.textContent = `${String(index + 1).padStart(2, '0')} / ${String(frames.length).padStart(2, '0')}`;
   }
-  turning.addEventListener('animationend', event => {
-    if (event.animationName !== 'flip') return;
-    book.classList.remove('is-turning');
-    mini.classList.remove('is-turning');
-    turning.hidden = true;
-    miniFront.hidden = true;
-    busy = false;
-  });
-  function schedule() { clearInterval(timer); if (playing) timer = setInterval(() => turn(), 215); }
+  function schedule() { clearInterval(timer); if (playing) timer = setInterval(() => show((index + 1) % frames.length), 125); }
+  function pause() { playing = false; play.textContent = 'Play'; schedule(); }
   play.addEventListener('click', () => { playing = !playing; play.textContent = playing ? 'Pause' : 'Play'; schedule(); });
-  next.addEventListener('click', () => turn(true));
-  alignment.addEventListener('click', () => {
-    const hidden = document.querySelector('#pin').classList.toggle('hidden');
-    document.querySelector('#guide').classList.toggle('hidden', hidden);
-    alignment.textContent = hidden ? 'Show alignment point' : 'Hide alignment point';
-    alignment.setAttribute('aria-pressed', String(!hidden));
-  });
+  next.addEventListener('click', () => { pause(); show((index + 1) % frames.length); });
+  for (const frame of frames) { const image = new Image(); image.src = frame.src; }
+  addEventListener('resize', () => { show(index); thumbs.forEach((thumb, i) => position(thumb.firstElementChild, frames[i])); });
+  thumbs.forEach((thumb, i) => position(thumb.firstElementChild, frames[i]));
+  show(0);
   if (!playing) play.textContent = 'Play';
   schedule();
 </script>
