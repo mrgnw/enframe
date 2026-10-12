@@ -21,7 +21,7 @@
   .stack { background: #ddd8ca; box-shadow: 1px 4px 0 #bcb7aa, 3px 7px 0 #88857e, 5px 10px 0 #55534f, 14px 23px 32px #000b; }
   .sheet { background: #f4efe6; padding: 7px 7px 7px 13px; box-shadow: inset 6px 0 9px #0002, 1px 1px 2px #0008; overflow: hidden; }
   .image { position: relative; width: 100%; height: 100%; overflow: hidden; background: #172f43; }
-  .image img { position: absolute; display: block; width: 310px; height: 257px; left: 0; top: -34px; max-width: none; }
+  .image img { position: absolute; display: block; width: 314px; height: 260px; left: 0; top: -34px; max-width: none; }
   .sheet::after, .turning::after { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 11px; background: linear-gradient(90deg, #393631aa, #fff2, transparent); pointer-events: none; }
   .turning { z-index: 2; transform-origin: 9px center; transform-style: preserve-3d; will-change: transform; }
   .turning .sheet { inset: 0; backface-visibility: hidden; }
@@ -31,10 +31,10 @@
   @keyframes flip { 0% { transform: rotateY(0); } 47% { transform: rotateY(-87deg); } 100% { transform: rotateY(-178deg); } }
   @keyframes shade { 0%,100% { filter: brightness(1); } 50% { filter: brightness(.68); } }
   .thumb { position: absolute; width: 25px; height: 18px; right: -10px; bottom: 17px; border-radius: 50% 40% 50% 45%; background: #c99672; box-shadow: inset 0 -3px 4px #7e4c38, 0 3px 8px #0007; z-index: 3; transform: rotate(-22deg); pointer-events: none; }
-  .pin { position: absolute; z-index: 4; left: 185px; top: 51px; width: 13px; height: 13px; border: 2px solid #f5a524; border-radius: 50%; transform: translate(-50%,-50%); box-shadow: 0 0 0 2px #1119, 0 0 0 5px #f5a52444; pointer-events: none; transition: opacity 160ms; }
+  .pin { position: absolute; z-index: 4; left: 187px; top: 47px; width: 13px; height: 13px; border: 2px solid #f5a524; border-radius: 50%; transform: translate(-50%,-50%); box-shadow: 0 0 0 2px #1119, 0 0 0 5px #f5a52444; pointer-events: none; transition: opacity 160ms; }
   .pin::after { content: ''; position: absolute; width: 3px; height: 3px; left: 3px; top: 3px; border-radius: 50%; background: #f5a524; }
   .pin.hidden { opacity: 0; }
-  .guide { position: absolute; width: 1px; height: 30px; background: #f5a52466; left: 185px; top: 58px; pointer-events: none; transition: opacity 160ms; }
+  .guide { position: absolute; width: 1px; height: 30px; background: #f5a52466; left: 187px; top: 54px; pointer-events: none; transition: opacity 160ms; }
   .guide.hidden { opacity: 0; }
   .stage-label { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); color: #777780; font-size: 12px; white-space: nowrap; }
   .controls { display: flex; gap: 9px; justify-content: center; align-items: center; flex-wrap: wrap; margin-top: 22px; }
@@ -46,8 +46,8 @@
   .mini { width: 132px; height: 92px; position: relative; margin-bottom: 28px; transform: rotate(-3deg); }
   .mini .back, .mini .base, .mini .front { position: absolute; inset: 0; border: 4px solid #e9e5dc; border-left-width: 7px; border-radius: 2px 4px 4px 2px; background: #18364c; overflow: hidden; }
   .mini .back { translate: 4px 5px; background: #aaa69b; }
-  .mini img { position: absolute; width: 121px; height: 100px; left: 0; top: -14px; max-width: none; }
-  .mini .point { position: absolute; left: 73px; top: 18px; width: 7px; height: 7px; border: 1.5px solid #f5a524; border-radius: 50%; box-shadow: 0 0 0 1px #111; }
+  .mini img { position: absolute; width: 123px; height: 102px; left: 0; top: -14px; max-width: none; }
+  .mini .point { position: absolute; left: 75px; top: 19px; width: 7px; height: 7px; border: 1.5px solid #f5a524; border-radius: 50%; box-shadow: 0 0 0 1px #111; }
   .mini .front { transform-origin: left center; backface-visibility: hidden; }
   .mini.is-turning .front { animation: flip var(--flip-duration, 170ms) cubic-bezier(.25,.15,.5,.94) both; }
   .in-app h2 { font-size: 25px; letter-spacing: -.035em; line-height: 1.2; margin: 0 0 10px; }
@@ -79,7 +79,7 @@
         <button id="play" type="button">Pause</button>
         <button id="next" type="button">Turn a page</button>
         <button id="alignment" type="button" aria-pressed="true">Hide alignment point</button>
-        <span class="counter" id="counter">01 / 05</span>
+        <span class="counter" id="counter">01 / 04</span>
       </div>
       <p class="caption">Watch the cloud, then the horizon. The cloud remains in place while the view beneath it changes.</p>
     </section>
@@ -95,7 +95,7 @@
   </div>
 </main>
 <script>
-  const frames = [51, 52, 53, 54, 55].map(n => `assets/frame-${String(n).padStart(4, '0')}.webp`);
+  const frames = [51, 52, 53, 54].map(n => `assets/frame-${String(n).padStart(4, '0')}.webp`);
   const book = document.querySelector('#book');
   const base = document.querySelector('#base');
   const topImage = document.querySelector('#top');
@@ -126,7 +126,7 @@
     void book.offsetWidth;
     book.classList.add('is-turning');
     mini.classList.add('is-turning');
-    counter.textContent = `${String(index + 1).padStart(2, '0')} / 05`;
+    counter.textContent = `${String(index + 1).padStart(2, '0')} / ${String(frames.length).padStart(2, '0')}`;
   }
   turning.addEventListener('animationend', event => {
     if (event.animationName !== 'flip') return;
