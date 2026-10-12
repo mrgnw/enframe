@@ -4,6 +4,7 @@
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import { pickDirectory } from '$lib/bridge';
+import StartVisual from '$lib/StartVisual.svelte';
 import Marking from '$lib/stabilize/Marking.svelte';
 import { trailModeFrom } from '$lib/stabilize/trail';
 
@@ -28,10 +29,11 @@ async function choose() {
 	<main class="stage">
 		<section class="drop">
 			<div>
-				<h1>Hold one thing <b>still</b></h1>
+				<div class="visual"><StartVisual kind="hold" /></div>
+				<h1>Many photos, <b>one thing</b></h1>
 				<p>
-					Open a folder of photos. Click points on the cloud, the mountain, the moon, whatever should stay
-					put. Everything else moves around it.
+					Open a folder of photos. Mark the cloud, the mountain, the moon, whatever should stay put, and
+					every photo lines up around it.
 				</p>
 				<div class="actions">
 					<button class="btn primary large" onclick={choose}>Open folder</button>

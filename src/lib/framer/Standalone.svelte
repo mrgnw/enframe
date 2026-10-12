@@ -1,8 +1,8 @@
 <script lang="ts">
 import { onMount } from 'svelte';
-import { useDock } from '$lib/components/dock.svelte';
 import { toast } from 'svelte-sonner';
 import { getImageSrc, hasNativeShell, onDragDrop, pickFiles, readTextFile } from '$lib/bridge';
+import { useDock } from '$lib/components/dock.svelte';
 import {
 	AVIF_SPEED,
 	cropToBlob,
@@ -33,6 +33,7 @@ import {
 	type Frame
 } from '$lib/framer/types';
 import { loadRecents, type Recent, recentId, relativeTime, rememberRecent, type StandaloneRecent } from '$lib/recents';
+import StartVisual from '$lib/StartVisual.svelte';
 
 type Report = (done: number, total: number) => void;
 
@@ -446,16 +447,10 @@ function setFormat(next: ExportFormat) {
 		{/key}
 	{:else}
 		<div class="empty">
-			<div class="marks" aria-hidden="true">
-				<span class="mark tl"></span>
-				<span class="mark tr"></span>
-				<span class="mark bl"></span>
-				<span class="mark br"></span>
-				<span class="grain"></span>
-			</div>
-			<h1>Frame your image</h1>
+			<div class="visual"><StartVisual kind="frame" /></div>
+			<h1>One photo, <b>many stories</b></h1>
 			<p class="lede">
-				Drop an image and create multiple ways to frame it. One photo can tell many stories.
+				Drop an image and frame it more than one way. Each crop is its own story, saved next to the photo.
 			</p>
 			<p class="lede small">
 				Bring its <code>.metadata.json</code> along and the crops you made last time come back with it.
@@ -592,44 +587,12 @@ function setFormat(next: ExportFormat) {
 		text-align: center;
 	}
 
-	.marks {
-		position: relative;
-		width: 132px;
-		height: 92px;
+	.visual {
 		margin-bottom: 2.5rem;
+		transition: opacity 0.2s;
 	}
-
-	.mark {
-		position: absolute;
-		width: 26px;
-		height: 26px;
-		border: 2px solid #3f3f46;
-		transition: border-color 0.2s;
-	}
-
-	.tl { top: 0; left: 0; border-right: none; border-bottom: none; }
-	.tr { top: 0; right: 0; border-left: none; border-bottom: none; }
-	.bl { bottom: 0; left: 0; border-right: none; border-top: none; }
-	.br { bottom: 0; right: 0; border-left: none; border-top: none; }
-
-	.grain {
-		position: absolute;
-		inset: 50% auto auto 50%;
-		width: 7px;
-		height: 7px;
-		margin: -3.5px 0 0 -3.5px;
-		background: #2563eb;
-		border-radius: 999px;
-		animation: drift 5s ease-in-out infinite;
-	}
-
-	.standalone.dragging .mark {
-		border-color: #2563eb;
-	}
-
-	@keyframes drift {
-		0%, 100% { transform: translate(-22px, -14px); }
-		50% { transform: translate(24px, 15px); }
+	.standalone.dragging .visual {
+		opacity: 0.4;
 	}
 
 	h1 {
@@ -638,6 +601,11 @@ function setFormat(next: ExportFormat) {
 		font-size: 1.65rem;
 		font-weight: 600;
 		letter-spacing: -0.02em;
+		line-height: 1.2;
+	}
+	h1 b {
+		color: var(--brand);
+		font-weight: inherit;
 	}
 
 	.lede {
@@ -750,7 +718,4 @@ function setFormat(next: ExportFormat) {
 		line-height: 1.6;
 	}
 
-	@media (prefers-reduced-motion: reduce) {
-		.grain { animation: none; }
-	}
 </style>
