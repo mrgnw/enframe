@@ -11,8 +11,11 @@
 		--amber: #f5a524;
 		--mark: #52525b;
 		--screen: #1a1a1a;
-		--step: 0.8s;
-		--loop: 4.8s;
+		--sketch-loop: 3.0s;
+		--sketch-step: 0.1s;
+		--clip-loop: 7.125s;
+		--crop-loop: 4.0s;
+		--crop-step: 0.5s;
 	}
 	* { box-sizing: border-box; }
 	body {
@@ -37,18 +40,10 @@
 	.note label { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; cursor: pointer; }
 	.note input { accent-color: var(--amber); }
 
-	.row {
-		max-width: 1120px;
-		margin: 0 auto;
-		padding: 18px 24px 8px;
-	}
+	.row { max-width: 1120px; margin: 0 auto; padding: 18px 24px 8px; }
 	.row h2 { margin: 0 0 10px; color: #e4e4e7; font-size: 0.9rem; font-weight: 600; }
 	.row h2 span { color: #71717a; font-weight: 400; }
-	.pair {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 16px;
-	}
+	.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 	@media (max-width: 820px) { .pair { grid-template-columns: 1fr; } }
 
 	/* The start screen, as Standalone.svelte's .empty and Stabilize's .drop */
@@ -100,66 +95,120 @@
 	}
 	.scene { position: absolute; inset: 0; width: 100%; height: 100%; }
 
-	/* Every move is a cut, a page of a flip book: step-end holds each keyframe until the next. */
-	.visual [class*="flip-"] { animation-duration: var(--loop); animation-timing-function: step-end; animation-iteration-count: infinite; }
+	/* Every move is a cut: step-end holds each keyframe until the next, like a page of a flip book. */
+	.visual .flip, .visual .flip::after { animation-timing-function: step-end; animation-iteration-count: infinite; }
 
-	/* ── A · Marks ───────────────────────────────────────────────────────────────
-	   enframe: the image holds, the crop jumps between six framings.
-	   Stabilize: the moon holds under the point, the photo jumps around it. */
-	.a.enframe .scene { opacity: 0.55; }
-	.a.enframe .crop { position: absolute; animation-name: crops; box-shadow: 0 0 0 200px rgba(26, 26, 26, 0.55); }
-	.a.enframe .crop .mark { border-color: var(--blue); }
-	@keyframes crops {
-		0%, 100% { inset: 8px 44px 8px 6px; }
-		16.67% { inset: 4px 10px 4px 68px; }
-		33.33% { inset: 22px 24px 28px 22px; }
-		50% { inset: 0 56px 0 0; }
-		66.67% { inset: 34px 6px 6px 44px; }
-		83.33% { inset: 10px 10px 10px 10px; }
-	}
-
-	.a.stabilize .photo { position: absolute; inset: 0; animation-name: photo-clip; }
-	.a.stabilize .photo .scene { opacity: 0.55; }
-	.a.stabilize .photo::after { content: ""; position: absolute; inset: 0; border: 2px solid #71717a; animation: photo-edge var(--loop) step-end infinite; }
-	.a.stabilize .dot { left: 66px; top: 44px; }
-	/* photo is 96 × 72; the moon at (66, 44) is inside every placement */
-	@keyframes photo-clip {
-		0%, 100% { clip-path: inset(10px 36px 10px 0); }
-		16.67% { clip-path: inset(0 6px 20px 30px); }
-		33.33% { clip-path: inset(20px 18px 0 18px); }
-		50% { clip-path: inset(14px 0 6px 36px); }
-		66.67% { clip-path: inset(2px 30px 18px 6px); }
-		83.33% { clip-path: inset(8px 12px 12px 24px); }
-	}
-	@keyframes photo-edge {
-		0%, 100% { inset: 10px 36px 10px 0; }
-		16.67% { inset: 0 6px 20px 30px; }
-		33.33% { inset: 20px 18px 0 18px; }
-		50% { inset: 14px 0 6px 36px; }
-		66.67% { inset: 2px 30px 18px 6px; }
-		83.33% { inset: 8px 12px 12px 24px; }
-	}
-
-	/* ── B · Photos ──────────────────────────────────────────────────────────────
-	   enframe: one real photo, the crop jumps. Stabilize: eight stabilized frames
-	   of train clouds cut one to the next; the cloud never moves. */
-	.b .visual img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; filter: saturate(0.75) brightness(0.9); }
-	.b.enframe .crop { position: absolute; animation-name: crops; box-shadow: 0 0 0 200px rgba(0, 0, 0, 0.6); }
+	/* ── enframe: the image holds, the crop cuts between eight framings, 2 a second.
+	   Two ghosts hold the previous framings, the stories already told. */
+	.enframe .crop { position: absolute; animation-name: crops; animation-duration: var(--crop-loop); }
+	.enframe .crop.ghost { opacity: 0.35; animation-delay: calc(var(--crop-step) - var(--crop-loop)); }
+	.enframe .crop.ghost2 { opacity: 0.15; animation-delay: calc(2 * var(--crop-step) - var(--crop-loop)); }
+	.enframe .crop.live { box-shadow: 0 0 0 200px rgba(26, 26, 26, 0.55); }
+	.a.enframe .crop.live .mark { border-color: var(--blue); }
+	.a.enframe .crop.ghost .mark, .a.enframe .crop.ghost2 .mark { border-color: var(--blue); }
 	.b.enframe .crop .mark { border-color: #fff; }
-	.b.stabilize img { opacity: 0; animation: page var(--loop) step-end calc((var(--i) - 8) * 0.6s) infinite; }
+	.b.enframe .crop.live { box-shadow: 0 0 0 200px rgba(0, 0, 0, 0.6); }
+	@keyframes crops {
+		0% { inset: 8px 44px 8px 6px; }
+		12.5% { inset: 4px 10px 4px 68px; }
+		25% { inset: 22px 24px 28px 22px; }
+		37.5% { inset: 0 56px 0 0; }
+		50% { inset: 34px 6px 6px 44px; }
+		62.5% { inset: 10px 10px 10px 10px; }
+		75% { inset: 0 0 40px 30px; }
+		87.5% { inset: 26px 50px 0 10px; }
+	}
+
+	/* ── A · Sketch: the moon holds under the point; the photo flips 10 pages a second around it,
+	   30 pages, each a little off the last. Two ghosts show the pages just turned. */
+	.a .scene { opacity: 0.55; }
+	.a.stabilize .photo { position: absolute; inset: 0; animation-name: sketch-clip; animation-duration: var(--sketch-loop); }
+	.a.stabilize .photo::after { content: ""; position: absolute; inset: 0; border: 2px solid #71717a; animation-name: sketch-edge; animation-duration: var(--sketch-loop); }
+	.a.stabilize .edge { position: absolute; border: 1.5px solid #71717a; animation-name: sketch-edge; animation-duration: var(--sketch-loop); }
+	.a.stabilize .edge.ghost { opacity: 0.4; animation-delay: calc(var(--sketch-step) - var(--sketch-loop)); }
+	.a.stabilize .edge.ghost2 { opacity: 0.18; animation-delay: calc(2 * var(--sketch-step) - var(--sketch-loop)); }
+	.a.stabilize .dot { left: 66px; top: 44px; }
+	@keyframes sketch-clip {
+		0% { clip-path: inset(6.5px 21.3px 13.5px 14.7px); }
+		3.333% { clip-path: inset(4.3px 16.5px 15.7px 19.5px); }
+		6.667% { clip-path: inset(2.8px 16.4px 17.2px 19.6px); }
+		10% { clip-path: inset(7.5px 17.5px 12.5px 18.5px); }
+		13.333% { clip-path: inset(7.0px 23.1px 13.0px 12.9px); }
+		16.667% { clip-path: inset(5.5px 26.9px 14.5px 9.1px); }
+		20% { clip-path: inset(3.8px 20.0px 16.2px 16.0px); }
+		23.333% { clip-path: inset(3.0px 18.4px 17.0px 17.6px); }
+		26.667% { clip-path: inset(2.4px 15.2px 17.6px 20.8px); }
+		30% { clip-path: inset(1.8px 19.8px 18.2px 16.2px); }
+		33.333% { clip-path: inset(4.7px 21.1px 15.3px 14.9px); }
+		36.667% { clip-path: inset(1.7px 20.2px 18.3px 15.8px); }
+		40% { clip-path: inset(0px 17.8px 20px 18.2px); }
+		43.333% { clip-path: inset(0px 17.6px 20px 18.4px); }
+		46.667% { clip-path: inset(2.9px 18.9px 17.1px 17.1px); }
+		50% { clip-path: inset(5.4px 18.7px 14.6px 17.3px); }
+		53.333% { clip-path: inset(6.3px 15.1px 13.7px 20.9px); }
+		56.667% { clip-path: inset(5.2px 13.0px 14.8px 23.0px); }
+		60% { clip-path: inset(8.0px 11.4px 12.0px 24.6px); }
+		63.333% { clip-path: inset(12.4px 17.0px 7.6px 19.0px); }
+		66.667% { clip-path: inset(8.8px 18.9px 11.2px 17.1px); }
+		70% { clip-path: inset(7.2px 23.8px 12.8px 12.2px); }
+		73.333% { clip-path: inset(6.2px 29.8px 13.8px 6.2px); }
+		76.667% { clip-path: inset(7.7px 31.0px 12.3px 5.0px); }
+		80% { clip-path: inset(12.1px 31.5px 7.9px 4.5px); }
+		83.333% { clip-path: inset(10.3px 29.2px 9.7px 6.8px); }
+		86.667% { clip-path: inset(12.3px 24.0px 7.7px 12.0px); }
+		90% { clip-path: inset(14.6px 17.4px 5.4px 18.6px); }
+		93.333% { clip-path: inset(11.7px 10.9px 8.3px 25.1px); }
+		96.667% { clip-path: inset(16.4px 14.0px 3.6px 22.0px); }
+	}
+	@keyframes sketch-edge {
+		0% { inset: 6.5px 21.3px 13.5px 14.7px; }
+		3.333% { inset: 4.3px 16.5px 15.7px 19.5px; }
+		6.667% { inset: 2.8px 16.4px 17.2px 19.6px; }
+		10% { inset: 7.5px 17.5px 12.5px 18.5px; }
+		13.333% { inset: 7.0px 23.1px 13.0px 12.9px; }
+		16.667% { inset: 5.5px 26.9px 14.5px 9.1px; }
+		20% { inset: 3.8px 20.0px 16.2px 16.0px; }
+		23.333% { inset: 3.0px 18.4px 17.0px 17.6px; }
+		26.667% { inset: 2.4px 15.2px 17.6px 20.8px; }
+		30% { inset: 1.8px 19.8px 18.2px 16.2px; }
+		33.333% { inset: 4.7px 21.1px 15.3px 14.9px; }
+		36.667% { inset: 1.7px 20.2px 18.3px 15.8px; }
+		40% { inset: 0px 17.8px 20px 18.2px; }
+		43.333% { inset: 0px 17.6px 20px 18.4px; }
+		46.667% { inset: 2.9px 18.9px 17.1px 17.1px; }
+		50% { inset: 5.4px 18.7px 14.6px 17.3px; }
+		53.333% { inset: 6.3px 15.1px 13.7px 20.9px; }
+		56.667% { inset: 5.2px 13.0px 14.8px 23.0px; }
+		60% { inset: 8.0px 11.4px 12.0px 24.6px; }
+		63.333% { inset: 12.4px 17.0px 7.6px 19.0px; }
+		66.667% { inset: 8.8px 18.9px 11.2px 17.1px; }
+		70% { inset: 7.2px 23.8px 12.8px 12.2px; }
+		73.333% { inset: 6.2px 29.8px 13.8px 6.2px; }
+		76.667% { inset: 7.7px 31.0px 12.3px 5.0px; }
+		80% { inset: 12.1px 31.5px 7.9px 4.5px; }
+		83.333% { inset: 10.3px 29.2px 9.7px 6.8px; }
+		86.667% { inset: 12.3px 24.0px 7.7px 12.0px; }
+		90% { inset: 14.6px 17.4px 5.4px 18.6px; }
+		93.333% { inset: 11.7px 10.9px 8.3px 25.1px; }
+		96.667% { inset: 16.4px 14.0px 3.6px 22.0px; }
+	}
+
+	/* ── B · Photos: one train-clouds photo cropped eight ways; the stabilized clip itself,
+	   all 57 frames at 8 fps, the cloud under the point throughout. */
+	.b .visual img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; filter: saturate(0.75) brightness(0.9); }
+	.b.stabilize img { opacity: 0; animation: page var(--clip-loop) step-end calc((var(--i) - 57) * 0.125s) infinite; }
 	@keyframes page {
 		0% { opacity: 1; }
-		12.5%, 100% { opacity: 0; }
+		1.7544%, 100% { opacity: 0; }
 	}
 	.b.stabilize .dot { left: 65.3px; top: 24.1px; }
 
-	/* ── C · Strip ───────────────────────────────────────────────────────────────
-	   The flip book laid flat: four pages side by side, the brand colour steps along them. */
-	.c .strip { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(2, 62px); gap: 8px; align-content: center; }
-	.c .page { position: relative; height: 42px; border: 1.5px solid var(--mark); overflow: hidden; animation: lit var(--loop) step-end calc(var(--i) * -1.2s) infinite; }
+	/* ── C · Pages: the flip book laid flat, four pages at once, the brand colour steps along them at 4 a second. */
+	.c .pages { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(2, 62px); gap: 8px; align-content: center; }
+	.c .page { position: relative; height: 42px; border: 1.5px solid var(--mark); overflow: hidden; animation: lit 1s step-end calc(var(--i) * -0.25s) infinite; }
 	.c .page .scene { opacity: 0.5; }
 	.c.enframe .page { animation-name: none; }
-	.c.enframe .page .crop { position: absolute; border: 1.5px solid var(--blue); animation: lit-box var(--loop) step-end calc(var(--i) * -1.2s) infinite; }
+	.c.enframe .page .crop { position: absolute; border: 1.5px solid var(--blue); animation: lit-box 1s step-end calc(var(--i) * -0.25s) infinite; }
 	@keyframes lit {
 		0% { border-color: var(--amber); }
 		25%, 100% { border-color: var(--mark); }
@@ -168,12 +217,10 @@
 		0% { opacity: 1; }
 		25%, 100% { opacity: 0.3; }
 	}
-	.c.stabilize .page .scene { animation: none; }
 	.c.stabilize .page .dot { width: 6px; height: 6px; margin: -3px 0 0 -3px; box-shadow: none; }
 
 	@media (prefers-reduced-motion: reduce) {
-		.visual * { animation: none !important; }
-		.visual *::after { animation: none !important; }
+		.visual *, .visual *::after { animation: none !important; }
 		.b.stabilize img:first-child { opacity: 1; }
 	}
 	body:has(#still:checked) .visual *, body:has(#still:checked) .visual *::after { animation: none !important; }
@@ -193,20 +240,20 @@
 <header class="note">
 	<div>
 		<h1>Start screens, as a pair · 3 variants</h1>
-		<p>enframe tells many stories from one image: the image holds, the frame moves. Stabilize tells one thing's story across many images: the thing holds, the images move. Every move is a cut, like a page of a flip book, 0.8 s a page. Taglines and visuals mix freely across rows.</p>
+		<p>enframe tells many stories from one image: the image holds, the framing changes. Stabilize tells one thing's story across many images: the thing holds, the images flip past like the pages of a flip book, 10 a second drawn and 8 a second on photos. Every move is a cut. Taglines and visuals mix freely across rows.</p>
 	</div>
 	<label><input type="checkbox" id="still"> Still frames (reduced motion)</label>
 </header>
 
 <section class="row">
-	<h2>A · Marks <span>· enframe's corner marks on a drawn scene; the crop jumps, or the photo jumps</span></h2>
+	<h2>A · Sketch <span>· enframe's corner marks on a drawn scene; the crop steps, the photo flips</span></h2>
 	<div class="pair">
 		<div class="screen enframe a">
 			<div class="visual" aria-hidden="true">
 				<svg class="scene"><use href="#scene"/></svg>
-				<div class="crop flip-">
-					<span class="mark tl"></span><span class="mark tr"></span><span class="mark bl"></span><span class="mark br"></span>
-				</div>
+				<div class="crop flip ghost2"><span class="mark tl"></span><span class="mark tr"></span><span class="mark bl"></span><span class="mark br"></span></div>
+				<div class="crop flip ghost"><span class="mark tl"></span><span class="mark tr"></span><span class="mark bl"></span><span class="mark br"></span></div>
+				<div class="crop flip live"><span class="mark tl"></span><span class="mark tr"></span><span class="mark bl"></span><span class="mark br"></span></div>
 			</div>
 			<h1>One photo, <b>many stories</b></h1>
 			<p class="lede">Drop an image and frame it more than one way. Each crop is its own story, saved next to the photo.</p>
@@ -214,7 +261,9 @@
 		</div>
 		<div class="screen stabilize a">
 			<div class="visual" aria-hidden="true">
-				<div class="photo flip-"><svg class="scene"><use href="#scene"/></svg></div>
+				<span class="edge flip ghost2"></span>
+				<span class="edge flip ghost"></span>
+				<div class="photo flip"><svg class="scene"><use href="#scene"/></svg></div>
 				<span class="dot"></span>
 			</div>
 			<h1>Many photos, <b>one thing</b></h1>
@@ -225,14 +274,14 @@
 </section>
 
 <section class="row">
-	<h2>B · Photos <span>· the same cuts on real photos: one train-clouds frame cropped six ways, eight stabilized frames in a row</span></h2>
+	<h2>B · Photos <span>· one train-clouds photo framed eight ways; the stabilized clip, all 57 frames at 8 fps</span></h2>
 	<div class="pair">
 		<div class="screen enframe b">
 			<div class="visual" aria-hidden="true">
 				<img src="assets/IMG_4667.jpg" alt="">
-				<div class="crop flip-">
-					<span class="mark tl"></span><span class="mark tr"></span><span class="mark bl"></span><span class="mark br"></span>
-				</div>
+				<div class="crop flip ghost2"><span class="mark tl"></span><span class="mark tr"></span><span class="mark bl"></span><span class="mark br"></span></div>
+				<div class="crop flip ghost"><span class="mark tl"></span><span class="mark tr"></span><span class="mark bl"></span><span class="mark br"></span></div>
+				<div class="crop flip live"><span class="mark tl"></span><span class="mark tr"></span><span class="mark bl"></span><span class="mark br"></span></div>
 			</div>
 			<h1>Every story <b>in one image</b></h1>
 			<p class="lede">Drop an image and frame it more than one way. Each crop is its own story, saved next to the photo.</p>
@@ -240,14 +289,63 @@
 		</div>
 		<div class="screen stabilize b">
 			<div class="visual" aria-hidden="true">
-				<img src="assets/frame-0002.webp" alt="" style="--i:0">
-				<img src="assets/frame-0005.webp" alt="" style="--i:1">
-				<img src="assets/frame-0011.webp" alt="" style="--i:2">
-				<img src="assets/frame-0022.webp" alt="" style="--i:3">
-				<img src="assets/frame-0027.webp" alt="" style="--i:4">
-				<img src="assets/frame-0042.webp" alt="" style="--i:5">
-				<img src="assets/frame-0047.webp" alt="" style="--i:6">
-				<img src="assets/frame-0052.webp" alt="" style="--i:7">
+				<img src="assets/frame-0001.webp" alt="" style="--i:0">
+				<img src="assets/frame-0002.webp" alt="" style="--i:1">
+				<img src="assets/frame-0003.webp" alt="" style="--i:2">
+				<img src="assets/frame-0004.webp" alt="" style="--i:3">
+				<img src="assets/frame-0005.webp" alt="" style="--i:4">
+				<img src="assets/frame-0006.webp" alt="" style="--i:5">
+				<img src="assets/frame-0007.webp" alt="" style="--i:6">
+				<img src="assets/frame-0008.webp" alt="" style="--i:7">
+				<img src="assets/frame-0009.webp" alt="" style="--i:8">
+				<img src="assets/frame-0010.webp" alt="" style="--i:9">
+				<img src="assets/frame-0011.webp" alt="" style="--i:10">
+				<img src="assets/frame-0012.webp" alt="" style="--i:11">
+				<img src="assets/frame-0013.webp" alt="" style="--i:12">
+				<img src="assets/frame-0014.webp" alt="" style="--i:13">
+				<img src="assets/frame-0015.webp" alt="" style="--i:14">
+				<img src="assets/frame-0016.webp" alt="" style="--i:15">
+				<img src="assets/frame-0017.webp" alt="" style="--i:16">
+				<img src="assets/frame-0018.webp" alt="" style="--i:17">
+				<img src="assets/frame-0019.webp" alt="" style="--i:18">
+				<img src="assets/frame-0020.webp" alt="" style="--i:19">
+				<img src="assets/frame-0021.webp" alt="" style="--i:20">
+				<img src="assets/frame-0022.webp" alt="" style="--i:21">
+				<img src="assets/frame-0023.webp" alt="" style="--i:22">
+				<img src="assets/frame-0024.webp" alt="" style="--i:23">
+				<img src="assets/frame-0025.webp" alt="" style="--i:24">
+				<img src="assets/frame-0026.webp" alt="" style="--i:25">
+				<img src="assets/frame-0027.webp" alt="" style="--i:26">
+				<img src="assets/frame-0028.webp" alt="" style="--i:27">
+				<img src="assets/frame-0029.webp" alt="" style="--i:28">
+				<img src="assets/frame-0030.webp" alt="" style="--i:29">
+				<img src="assets/frame-0031.webp" alt="" style="--i:30">
+				<img src="assets/frame-0032.webp" alt="" style="--i:31">
+				<img src="assets/frame-0033.webp" alt="" style="--i:32">
+				<img src="assets/frame-0034.webp" alt="" style="--i:33">
+				<img src="assets/frame-0035.webp" alt="" style="--i:34">
+				<img src="assets/frame-0036.webp" alt="" style="--i:35">
+				<img src="assets/frame-0037.webp" alt="" style="--i:36">
+				<img src="assets/frame-0038.webp" alt="" style="--i:37">
+				<img src="assets/frame-0039.webp" alt="" style="--i:38">
+				<img src="assets/frame-0040.webp" alt="" style="--i:39">
+				<img src="assets/frame-0041.webp" alt="" style="--i:40">
+				<img src="assets/frame-0042.webp" alt="" style="--i:41">
+				<img src="assets/frame-0043.webp" alt="" style="--i:42">
+				<img src="assets/frame-0044.webp" alt="" style="--i:43">
+				<img src="assets/frame-0045.webp" alt="" style="--i:44">
+				<img src="assets/frame-0046.webp" alt="" style="--i:45">
+				<img src="assets/frame-0047.webp" alt="" style="--i:46">
+				<img src="assets/frame-0048.webp" alt="" style="--i:47">
+				<img src="assets/frame-0049.webp" alt="" style="--i:48">
+				<img src="assets/frame-0050.webp" alt="" style="--i:49">
+				<img src="assets/frame-0051.webp" alt="" style="--i:50">
+				<img src="assets/frame-0052.webp" alt="" style="--i:51">
+				<img src="assets/frame-0053.webp" alt="" style="--i:52">
+				<img src="assets/frame-0054.webp" alt="" style="--i:53">
+				<img src="assets/frame-0055.webp" alt="" style="--i:54">
+				<img src="assets/frame-0056.webp" alt="" style="--i:55">
+				<img src="assets/frame-0057.webp" alt="" style="--i:56">
 				<span class="dot"></span>
 			</div>
 			<h1>One thing <b>through every image</b></h1>
@@ -262,7 +360,7 @@
 	<div class="pair">
 		<div class="screen enframe c">
 			<div class="visual" aria-hidden="true">
-				<div class="strip">
+				<div class="pages">
 					<div class="page" style="--i:0"><svg class="scene"><use href="#scene"/></svg><span class="crop" style="inset:4px 20px 4px 3px"></span></div>
 					<div class="page" style="--i:1"><svg class="scene"><use href="#scene"/></svg><span class="crop" style="inset:3px 4px 3px 32px"></span></div>
 					<div class="page" style="--i:2"><svg class="scene"><use href="#scene"/></svg><span class="crop" style="inset:10px 12px 12px 10px"></span></div>
@@ -275,7 +373,7 @@
 		</div>
 		<div class="screen stabilize c">
 			<div class="visual" aria-hidden="true">
-				<div class="strip">
+				<div class="pages">
 					<div class="page" style="--i:0"><svg class="scene" style="translate:0 0"><use href="#scene"/></svg><span class="dot" style="left:31px;top:20.7px"></span></div>
 					<div class="page" style="--i:1"><svg class="scene" style="translate:-8px 3px"><use href="#scene"/></svg><span class="dot" style="left:23px;top:23.7px"></span></div>
 					<div class="page" style="--i:2"><svg class="scene" style="translate:6px -4px"><use href="#scene"/></svg><span class="dot" style="left:37px;top:16.7px"></span></div>
