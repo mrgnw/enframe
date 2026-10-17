@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>enframe · carved versions</title>
+<style>
+	:root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; background: #111113; color: #f4f4f5; --brand: #2563eb; --edge: rgba(255, 255, 255, .1); --surface: rgba(0, 0, 0, .7); --subtle: #a1a1aa; }
+	* { box-sizing: border-box; }
+	body { margin: 0; }
+	button { font: inherit; cursor: pointer; }
+	main { max-width: 1080px; margin: auto; padding: 42px 28px 70px; }
+	.eyebrow { color: #60a5fa; text-transform: uppercase; letter-spacing: .16em; font-size: 11px; font-weight: 700; }
+	h1 { font-size: clamp(28px, 4vw, 44px); font-weight: 560; letter-spacing: -.045em; margin: 10px 0; }
+	.intro { max-width: 680px; color: var(--subtle); line-height: 1.55; margin: 0; }
+	.stage { position: relative; margin-top: 36px; background: #1a1a1a; border-radius: 10px; overflow: hidden; aspect-ratio: 4 / 3; max-height: 72vh; margin-inline: auto; }
+	canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+	.overlay { position: absolute; inset: 0; pointer-events: none; transition: opacity 160ms; }
+	.overlay.hidden { opacity: 0; }
+	.frame { position: absolute; border: 1.5px solid rgba(255, 255, 255, .85); box-shadow: 0 0 0 1px rgba(0, 0, 0, .35); }
+	.frame.selected { border-color: #60a5fa; box-shadow: 0 0 0 1px rgba(0, 0, 0, .35), 0 0 0 9999px rgba(0, 0, 0, .38); }
+	.frame span { position: absolute; left: 6px; top: 6px; font-size: 11px; padding: 2px 7px; border-radius: 999px; background: var(--surface); white-space: nowrap; }
+	.point { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; border: 2px solid #fff; background: #ef4444; box-shadow: 0 1px 4px #0008; }
+	.island { position: absolute; display: flex; align-items: center; gap: 4px; height: 38px; padding: 0 5px; border: 1px solid var(--edge); border-radius: 999px; background: var(--surface); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 2px 12px rgba(0, 0, 0, .35); }
+	.versions { left: 50%; bottom: 14px; transform: translateX(-50%); }
+	.chip { border: 0; background: transparent; color: #d4d4d8; font-size: 13px; height: 28px; padding: 0 11px; border-radius: 999px; display: flex; align-items: center; gap: 6px; }
+	.chip small { color: #71717a; font-size: 11px; }
+	.chip:hover { background: rgba(255, 255, 255, .08); }
+	.chip.active { background: rgba(255, 255, 255, .14); color: #fff; }
+	.chip.active small { color: #a1a1aa; }
+	.chip.add { color: #93c5fd; }
+	.menu { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); width: 250px; padding: 6px; border: 1px solid var(--edge); border-radius: 12px; background: #1e1e1e; box-shadow: 0 8px 32px rgba(0, 0, 0, .45); font-size: 13px; }
+	.menu[hidden] { display: none; }
+	.menu button { width: 100%; text-align: left; border: 0; background: transparent; color: #f4f4f5; padding: 8px 10px; border-radius: 8px; display: flex; justify-content: space-between; }
+	.menu button:hover { background: rgba(255, 255, 255, .08); }
+	.menu button:disabled { color: #52525b; cursor: default; background: transparent; }
+	.menu small { color: #71717a; }
+	.menu label { display: flex; gap: 8px; align-items: center; padding: 9px 10px 5px; border-top: 1px solid var(--edge); margin-top: 4px; color: var(--subtle); }
+	.status { right: 14px; top: 14px; padding: 0 14px; font-size: 12px; color: var(--subtle); gap: 8px; }
+	.status[hidden] { display: none; }
+	.spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #3f3f46; border-top-color: #93c5fd; animation: spin .7s linear infinite; }
+	@keyframes spin { to { transform: rotate(360deg); } }
+	.notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin-top: 28px; color: var(--subtle); font-size: 13px; line-height: 1.55; }
+	.notes b { color: #f4f4f5; font-weight: 600; display: block; margin-bottom: 4px; }
+	kbd { font: 11px ui-monospace, SFMono-Regular, monospace; border: 1px solid #3f3f46; border-radius: 4px; padding: 1px 5px; color: #d4d4d8; }
+	@media (max-width: 760px) { .notes { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+	<div class="eyebrow">enframe · carved versions study</div>
+	<h1>A narrower photo, before the crop.</h1>
+	<p class="intro">A carved version is a copy of the photo with its least noticeable columns taken out, so a tall frame keeps more of the scene. Each version is a photo of its own with its own frames. The cloud is a focal point, so no seam crosses it.</p>
+
+	<div class="stage" id="stage">
+		<canvas id="canvas" width="1536" height="1152"></canvas>
+		<div class="overlay" id="overlay"></div>
+		<div class="island versions" id="versions"></div>
+		<div class="menu" id="menu" hidden>
+			<button type="button" data-carve="1x1">Square <small>1:1 · 25% carved</small></button>
+			<button type="button" data-carve="4x5">Portrait <small>4:5 · 40% carved</small></button>
+			<button type="button" disabled>Tall <small>9:16 · 58%, too far</small></button>
+			<label><input type="checkbox" checked disabled> Keep focal points whole</label>
+		</div>
+		<div class="island status" id="status" hidden><div class="spinner"></div><span id="status-text"></span></div>
+	</div>
+
+	<div class="notes">
+		<p><b>Switch</b>Click a version, or press <kbd>V</kbd>. Every column slides from where it sits in one version to where it sits in the other; carved columns close up.</p>
+		<p><b>Frames belong to a version</b>Every version gets the same two frames, mobile 9:16 and instagram 4:5, centred on the cloud. On the original the 4:5 frame loses the tree; on the 4:5 version it holds the whole scene.</p>
+		<p><b>Real carve</b>Seams computed by the spike at 1536 × 1152 from IMG_4667 in the train clouds samples. The morph runs on this canvas from the kept-column masks alone.</p>
+	</div>
+</main>
+<script>
+	const W = 1536;
+	const H = 1152;
+	const FOCAL = { x: 0.72, y: 0.4 };
+	const DESTINATIONS = [
+		{ label: 'mobile 9:16', ratio: 9 / 16 },
+		{ label: 'instagram 4:5', ratio: 4 / 5 }
+	];
+	const CARVES = {
+		'1x1': { name: 'Carved', ratio: '1:1', mask: 'assets/train-1x1-mask.png' },
+		'4x5': { name: 'Carved', ratio: '4:5', mask: 'assets/train-4x5-mask.png' }
+	};
+	const BACKGROUND = 0xff1a1a1a;
+
+	const canvas = document.querySelector('#canvas');
+	const context = canvas.getContext('2d');
+	const overlay = document.querySelector('#overlay');
+	const versionsBar = document.querySelector('#versions');
+	const menu = document.querySelector('#menu');
+	const status = document.querySelector('#status');
+	const statusText = document.querySelector('#status-text');
+	const output = context.createImageData(W, H);
+	const outPixels = new Uint32Array(output.data.buffer);
+	let sourcePixels;
+
+	// A version is the original seen through a kept-column mask. `prefix` holds, per row, the
+	// output position of every source column: prefix[y * (W + 1) + x] is how many kept columns
+	// sit left of x. The original keeps every column, so its prefix is the identity.
+	const versions = [];
+	let current = 0;
+	let animating = false;
+
+	function identityPrefix() {
+		const prefix = new Float32Array(H * (W + 1));
+		for (let y = 0; y < H; y++) for (let x = 0; x <= W; x++) prefix[y * (W + 1) + x] = x;
+		return prefix;
+	}
+
+	function maskPrefix(mask) {
+		const prefix = new Float32Array(H * (W + 1));
+		let width = -1;
+		for (let y = 0; y < H; y++) {
+			let kept = 0;
+			for (let x = 0; x < W; x++) {
+				prefix[y * (W + 1) + x] = kept;
+				if (mask[(y * W + x) * 4] > 127) kept++;
+			}
+			prefix[y * (W + 1) + W] = kept;
+			if (width === -1) width = kept;
+			console.assert(kept === width, `row ${y} keeps ${kept}, expected ${width}`);
+		}
+		return { prefix, width };
+	}
+
+	async function pixelsOf(url) {
+		const image = new Image();
+		image.src = url;
+		await image.decode();
+		console.assert(image.naturalWidth === W && image.naturalHeight === H, `${url} is not ${W}x${H}`);
+		const scratch = new OffscreenCanvas(W, H).getContext('2d');
+		scratch.drawImage(image, 0, 0);
+		return scratch.getImageData(0, 0, W, H).data;
+	}
+
+	// One frame of the morph: column x of the source sits at lerp(a, b, t) and is
+	// lerp(widthA, widthB, t) wide, so walking source columns and output pixels together
+	// paints a row in one pass. Carved columns shrink to nothing as t reaches the end.
+	function paint(from, to, t) {
+		const width = from.width + (to.width - from.width) * t;
+		const offset = (W - width) / 2;
+		const stride = W + 1;
+		for (let y = 0; y < H; y++) {
+			const row = y * stride;
+			const out = y * W;
+			let x = 0;
+			for (let u = 0; u < W; u++) {
+				const centre = u + 0.5 - offset;
+				if (centre < 0 || centre >= width) {
+					outPixels[out + u] = BACKGROUND;
+					continue;
+				}
+				while (x < W - 1) {
+					const next = from.prefix[row + x + 1] + (to.prefix[row + x + 1] - from.prefix[row + x + 1]) * t;
+					if (next > centre) break;
+					x++;
+				}
+				outPixels[out + u] = sourcePixels[y * W + x];
+			}
+		}
+		context.putImageData(output, 0, 0);
+	}
+
+	function focalIn(version) {
+		const row = Math.round(FOCAL.y * H) * (W + 1);
+		return { x: version.prefix[row + Math.round(FOCAL.x * W)], y: FOCAL.y * H };
+	}
+
+	function framesFor(version) {
+		const focal = focalIn(version);
+		return DESTINATIONS.map(({ label, ratio }) => {
+			const width = Math.min(version.width, ratio * H);
+			const height = Math.min(H, width / ratio);
+			const x = Math.min(Math.max(focal.x - width / 2, 0), version.width - width);
+			const y = Math.min(Math.max(focal.y - height / 2, 0), H - height);
+			return { label, x, y, width, height };
+		});
+	}
+
+	function drawOverlay(version) {
+		const offset = (W - version.width) / 2;
+		const pct = (value, total) => `${(100 * value) / total}%`;
+		const focal = focalIn(version);
+		overlay.innerHTML = '';
+		framesFor(version).forEach((frame, index) => {
+			const box = document.createElement('div');
+			box.className = index === 0 ? 'frame selected' : 'frame';
+			box.style.left = pct(offset + frame.x, W);
+			box.style.top = pct(frame.y, H);
+			box.style.width = pct(frame.width, W);
+			box.style.height = pct(frame.height, H);
+			box.innerHTML = `<span>${frame.label}</span>`;
+			overlay.append(box);
+		});
+		const point = document.createElement('div');
+		point.className = 'point';
+		point.style.left = pct(offset + focal.x, W);
+		point.style.top = pct(focal.y, H);
+		overlay.append(point);
+	}
+
+	function drawVersions() {
+		versionsBar.innerHTML = '';
+		versions.forEach((version, index) => {
+			const chip = document.createElement('button');
+			chip.type = 'button';
+			chip.className = index === current ? 'chip active' : 'chip';
+			chip.innerHTML = `${version.name} <small>${version.ratio}</small>`;
+			chip.onclick = () => switchTo(index);
+			versionsBar.append(chip);
+		});
+		const add = document.createElement('button');
+		add.type = 'button';
+		add.className = 'chip add';
+		add.textContent = '+ Carve';
+		add.onclick = () => (menu.hidden = !menu.hidden);
+		versionsBar.append(add);
+		for (const button of menu.querySelectorAll('[data-carve]')) {
+			button.disabled = versions.some((v) => v.key === button.dataset.carve);
+		}
+	}
+
+	const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+	function morph(from, to) {
+		const duration = 750;
+		const start = performance.now();
+		overlay.classList.add('hidden');
+		return new Promise((resolve) => {
+			function step(now) {
+				const t = Math.min((now - start) / duration, 1);
+				paint(from, to, ease(t));
+				if (t < 1) return requestAnimationFrame(step);
+				drawOverlay(to);
+				overlay.classList.remove('hidden');
+				resolve();
+			}
+			requestAnimationFrame(step);
+		});
+	}
+
+	async function switchTo(index) {
+		if (animating || index === current) return;
+		animating = true;
+		const from = versions[current];
+		current = index;
+		drawVersions();
+		await morph(from, versions[index]);
+		animating = false;
+	}
+
+	// The spike carves a 1536-pixel photo in about 2.5 s; the wait is shown, not hidden.
+	async function carve(key) {
+		if (animating) return;
+		menu.hidden = true;
+		animating = true;
+		const carve = CARVES[key];
+		statusText.textContent = `Carving ${carve.ratio}…`;
+		status.hidden = false;
+		const started = performance.now();
+		const { prefix, width } = maskPrefix(await pixelsOf(carve.mask));
+		await new Promise((r) => setTimeout(r, Math.max(0, 1800 - (performance.now() - started))));
+		status.hidden = true;
+		const from = versions[current];
+		versions.push({ key, name: carve.name, ratio: carve.ratio, prefix, width });
+		current = versions.length - 1;
+		drawVersions();
+		await morph(from, versions[current]);
+		animating = false;
+	}
+
+	for (const button of menu.querySelectorAll('[data-carve]')) {
+		button.onclick = () => carve(button.dataset.carve);
+	}
+
+	document.addEventListener('keydown', (event) => {
+		if (event.key === 'v' || event.key === 'V') switchTo((current + 1) % versions.length);
+		if (event.key === 'Escape') menu.hidden = true;
+	});
+
+	(async () => {
+		sourcePixels = new Uint32Array((await pixelsOf('assets/train.jpg')).buffer);
+		versions.push({ key: 'original', name: 'Original', ratio: '4:3', prefix: identityPrefix(), width: W });
+		drawVersions();
+		paint(versions[0], versions[0], 0);
+		drawOverlay(versions[0]);
+	})();
+</script>
+</body>
+</html>
