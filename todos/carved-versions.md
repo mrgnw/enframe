@@ -15,6 +15,8 @@ The idea for enframe: carving makes a **version**, a separate copy of the origin
 
 `mockups/carve/01-versions.html`: the original and two carved versions of IMG_4667 (train clouds). "+ Carve" makes a 1:1 or 4:5 version; clicking a version, or `V`, morphs between them. Every column slides from its place in one version to its place in the other, and carved columns close up. The morph and the frames are computed from the spike's real masks.
 
+`mockups/carve/03-playground.html`: every knob on ten samples. The carver is ported to JavaScript and runs in a web worker. It draws each seam as it is removed, the way caire's progress window does, and carves once to 60% smaller so the size slider (40–140%) is instant afterwards. Widening repeats the first seams. Knobs: direction, size, protect and remove points (size, softness), a region band, a lean to one side, a straightness penalty, forward or gradient energy, blur, and working size. In the browser a 60% carve takes 0.4 s at 512 px, 1.0–1.3 s at 768 px and 2.9 s at 1024 px.
+
 ## Spike results
 
 A forward-energy seam carver in Rust (about 150 lines; dependencies `image` and `rayon`), written in /tmp and not committed. It carves a downscaled working copy, then stretches the resulting map of kept columns over the full-size photo. Apple M4 Pro; the carve runs on one core. Each case ran twice, with and without focal points protected; a range covers both runs, and which one was faster varied.

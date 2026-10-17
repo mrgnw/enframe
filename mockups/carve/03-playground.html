@@ -1,0 +1,772 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>enframe · seam carving playground</title>
+<style>
+	:root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; background: #111113; color: #f4f4f5; --edge: rgba(255, 255, 255, .1); --surface: rgba(0, 0, 0, .7); --subtle: #a1a1aa; --faint: #71717a; --brand: #60a5fa; }
+	* { box-sizing: border-box; }
+	body { margin: 0; }
+	button, select, input { font: inherit; }
+	button { cursor: pointer; }
+	main { max-width: 1320px; margin: auto; padding: 32px 24px 60px; }
+	.eyebrow { color: var(--brand); text-transform: uppercase; letter-spacing: .16em; font-size: 11px; font-weight: 700; }
+	h1 { font-size: clamp(24px, 3vw, 36px); font-weight: 560; letter-spacing: -.04em; margin: 8px 0; }
+	.intro { max-width: 760px; color: var(--subtle); line-height: 1.55; margin: 0; font-size: 14px; }
+	.layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; margin-top: 24px; align-items: start; }
+	.stage { position: relative; background: #1a1a1a; border-radius: 10px; min-height: 420px; display: flex; align-items: center; justify-content: center; padding: 56px 12px 56px; }
+	canvas { display: block; max-width: 100%; max-height: 66vh; cursor: crosshair; }
+	.island { position: absolute; display: flex; align-items: center; gap: 4px; height: 36px; padding: 0 4px; border: 1px solid var(--edge); border-radius: 999px; background: var(--surface); backdrop-filter: blur(14px); box-shadow: 0 2px 12px rgba(0, 0, 0, .35); }
+	.views { top: 10px; left: 50%; transform: translateX(-50%); }
+	.views button { border: 0; background: transparent; color: #d4d4d8; font-size: 13px; height: 28px; padding: 0 12px; border-radius: 999px; }
+	.views button:hover { background: rgba(255, 255, 255, .08); }
+	.views button.active { background: rgba(255, 255, 255, .14); color: #fff; }
+	.progress { bottom: 10px; left: 12px; right: 12px; height: 34px; padding: 0 14px; gap: 12px; border-radius: 10px; font-size: 12px; color: var(--subtle); font-variant-numeric: tabular-nums; }
+	.track { flex: 0 0 160px; height: 4px; border-radius: 2px; background: #3f3f46; overflow: hidden; }
+	.bar { height: 100%; width: 0; background: var(--brand); }
+	.progress button { margin-left: auto; border: 1px solid #3f3f46; background: #222225; color: #e4e4e7; border-radius: 6px; padding: 3px 10px; font-size: 12px; }
+	.hint { color: var(--faint); font-size: 12px; margin: 8px 2px 0; line-height: 1.5; }
+	aside { display: flex; flex-direction: column; gap: 14px; font-size: 13px; }
+	fieldset { border: 1px solid #27272a; border-radius: 10px; padding: 10px 12px 12px; margin: 0; display: flex; flex-direction: column; gap: 9px; }
+	legend { color: var(--subtle); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; padding: 0 4px; }
+	.field { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; }
+	.field > span { color: #e4e4e7; }
+	.field output { color: var(--subtle); font-variant-numeric: tabular-nums; font-size: 12px; }
+	.field output.warn { color: #fbbf24; }
+	.field input[type=range], .field select, .field .segmented { grid-column: 1 / -1; width: 100%; }
+	.field small { grid-column: 1 / -1; color: var(--faint); font-size: 11.5px; line-height: 1.4; }
+	select { background: #1e1e1e; color: #f4f4f5; border: 1px solid #3f3f46; border-radius: 6px; padding: 5px 6px; }
+	input[type=range] { accent-color: var(--brand); margin: 2px 0; }
+	.segmented { display: flex; border: 1px solid #3f3f46; border-radius: 7px; overflow: hidden; }
+	.segmented label { flex: 1; text-align: center; padding: 5px 0; cursor: pointer; color: #d4d4d8; }
+	.segmented input { display: none; }
+	.segmented label:has(input:checked) { background: rgba(96, 165, 250, .2); color: #fff; }
+	.row { display: flex; gap: 8px; }
+	.row button { flex: 1; border: 1px solid #3f3f46; background: #222225; color: #e4e4e7; border-radius: 6px; padding: 5px 0; font-size: 12px; }
+	@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+	<div class="eyebrow">enframe · carved versions study</div>
+	<h1>Seam carving playground</h1>
+	<p class="intro">Each change re-carves a small working copy in your browser and draws every seam as it is removed. One carve goes up to 60% smaller; after that the size slider is instant, including making the photo bigger by repeating the first seams.</p>
+
+	<div class="layout">
+		<section>
+			<div class="stage">
+				<canvas id="view"></canvas>
+				<div class="island views" id="views">
+					<button type="button" data-view="result" class="active">Result</button>
+					<button type="button" data-view="seams">Seams</button>
+					<button type="button" data-view="crop">Crop instead</button>
+				</div>
+				<div class="island progress">
+					<div class="track"><div class="bar" id="bar"></div></div>
+					<span id="status">Loading…</span>
+					<button type="button" id="replay">Replay</button>
+				</div>
+			</div>
+			<p class="hint">Click the photo to add a point, click a point to delete it. Seams shows the original with what the current size removes in red, or repeats in green. Crop instead shows a plain crop to the same size, centred on the protected points.</p>
+		</section>
+
+		<aside id="controls">
+			<fieldset>
+				<legend>Photo</legend>
+				<label class="field"><select id="photo"></select></label>
+				<div class="field">
+					<span>Direction</span>
+					<div class="segmented">
+						<label><input type="radio" name="direction" value="columns" checked>Narrower</label>
+						<label><input type="radio" name="direction" value="rows">Shorter</label>
+					</div>
+				</div>
+				<label class="field"><span>Size</span><output id="size-out"></output>
+					<input type="range" id="size" min="40" max="140" value="75">
+					<small>Instant once carved. Past 40% removed, anything unprotected starts to narrow.</small>
+				</label>
+			</fieldset>
+
+			<fieldset>
+				<legend>Points</legend>
+				<div class="field">
+					<span>A click adds</span>
+					<div class="segmented">
+						<label><input type="radio" name="tool" value="protect" checked>Protect</label>
+						<label><input type="radio" name="tool" value="remove">Remove</label>
+					</div>
+					<small>Protect keeps seams out of a disc. Remove sends the first seams through it, deleting what is there.</small>
+				</div>
+				<label class="field"><span>Point size</span><output id="point-size-out"></output>
+					<input type="range" id="point-size" min="2" max="30" value="12">
+				</label>
+				<label class="field"><span>Protection</span><output id="strength-out"></output>
+					<input type="range" id="strength" min="0" max="10" value="10">
+					<small>Soft lets a seam through a point when everything else costs more.</small>
+				</label>
+				<div class="row"><button type="button" id="clear">Clear points</button><button type="button" id="preset">Photo's preset</button></div>
+			</fieldset>
+
+			<fieldset>
+				<legend>Steering</legend>
+				<label class="field"><span>Region from</span><output id="from-out"></output>
+					<input type="range" id="from" min="0" max="100" value="0">
+				</label>
+				<label class="field"><span>Region to</span><output id="to-out"></output>
+					<input type="range" id="to" min="0" max="100" value="100">
+					<small>Seams may only run inside this band, measured across the cut.</small>
+				</label>
+				<label class="field"><span>Lean</span><output id="lean-out"></output>
+					<input type="range" id="lean" min="-10" max="10" value="0">
+					<small>Makes one side cheaper to cut, without forbidding the other.</small>
+				</label>
+				<label class="field"><span>Straightness</span><output id="straight-out"></output>
+					<input type="range" id="straight" min="0" max="40" value="0">
+					<small>Penalises seams for stepping sideways, so they wander less through lines.</small>
+				</label>
+			</fieldset>
+
+			<fieldset>
+				<legend>Detail measure</legend>
+				<label class="field"><span>Energy</span>
+					<select id="energy">
+						<option value="forward">Forward: cost of the edges a cut creates</option>
+						<option value="gradient">Gradient: edges the cut removes (caire)</option>
+					</select>
+				</label>
+				<label class="field"><span>Blur</span><output id="blur-out"></output>
+					<input type="range" id="blur" min="0" max="6" value="0">
+					<small>Smooths fine texture before measuring, as caire's blur flag does.</small>
+				</label>
+				<label class="field"><span>Working size</span>
+					<select id="working">
+						<option value="512">512 px, fastest</option>
+						<option value="768" selected>768 px</option>
+						<option value="1024">1024 px, as in the spike</option>
+					</select>
+				</label>
+			</fieldset>
+		</aside>
+	</div>
+</main>
+
+<script id="carver" type="text/plain">
+	function boxBlur(source, w, h, radius) {
+		const pass = (input, output, along, across, step, lineStep) => {
+			for (let line = 0; line < across; line++) {
+				const base = line * lineStep;
+				let sum = 0;
+				for (let i = -radius; i <= radius; i++) sum += input[base + Math.min(Math.max(i, 0), along - 1) * step];
+				for (let i = 0; i < along; i++) {
+					output[base + i * step] = sum / (2 * radius + 1);
+					sum += input[base + Math.min(i + radius + 1, along - 1) * step] - input[base + Math.max(i - radius, 0) * step];
+				}
+			}
+		};
+		const temp = new Float32Array(w * h);
+		const out = new Float32Array(w * h);
+		pass(source, temp, w, h, 1, w);
+		pass(temp, out, h, w, w, 1);
+		return out;
+	}
+
+	// One seam per step, top to bottom. Each step posts the seam in original columns so the
+	// page can draw it while the next one is found.
+	self.onmessage = ({ data }) => {
+		const { w, h, energy, straight, blur, seams } = data;
+		const luma = blur > 0 ? boxBlur(data.luma, w, h, blur) : data.luma;
+		const cost = data.cost;
+		const source = new Int32Array(w * h);
+		for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) source[y * w + x] = x;
+		const total = new Float32Array(w * h);
+		const back = new Int8Array(w * h);
+		const seam = new Int32Array(h);
+		const forward = energy === 'forward';
+		const started = performance.now();
+		let width = w;
+		for (let step = 0; step < seams; step++) {
+			for (let y = 0; y < h; y++) {
+				const row = y * w;
+				const prev = row - w;
+				for (let x = 0; x < width; x++) {
+					const l = luma[row + (x > 0 ? x - 1 : x)];
+					const r = luma[row + (x < width - 1 ? x + 1 : x)];
+					const across = Math.abs(r - l);
+					let up, left, right;
+					if (forward) {
+						const u = y > 0 ? luma[prev + x] : luma[row + x];
+						up = across;
+						left = across + Math.abs(u - l) + straight;
+						right = across + Math.abs(u - r) + straight;
+					} else {
+						const u = luma[(y > 0 ? prev : row) + x];
+						const d = luma[(y < h - 1 ? row + w : row) + x];
+						up = across + Math.abs(d - u);
+						left = up + straight;
+						right = up + straight;
+					}
+					if (y === 0) {
+						total[row + x] = up + cost[row + x];
+						back[row + x] = 0;
+						continue;
+					}
+					let best = total[prev + x] + up;
+					let dir = 0;
+					if (x > 0 && total[prev + x - 1] + left < best) {
+						best = total[prev + x - 1] + left;
+						dir = -1;
+					}
+					if (x < width - 1 && total[prev + x + 1] + right < best) {
+						best = total[prev + x + 1] + right;
+						dir = 1;
+					}
+					total[row + x] = best + cost[row + x];
+					back[row + x] = dir;
+				}
+			}
+			const last = (h - 1) * w;
+			let x = 0;
+			for (let i = 1; i < width; i++) if (total[last + i] < total[last + x]) x = i;
+			for (let y = h - 1; y >= 0; y--) {
+				seam[y] = x;
+				x += back[y * w + x];
+			}
+			const original = new Int32Array(h);
+			for (let y = 0; y < h; y++) {
+				const row = y * w;
+				const at = row + seam[y];
+				original[y] = source[at];
+				luma.copyWithin(at, at + 1, row + width);
+				source.copyWithin(at, at + 1, row + width);
+				cost.copyWithin(at, at + 1, row + width);
+			}
+			width--;
+			self.postMessage({ step, seam: original, elapsed: performance.now() - started }, [original.buffer]);
+		}
+		self.postMessage({ done: true, elapsed: performance.now() - started });
+	};
+</script>
+
+<script>
+	const PHOTOS = [
+		{ file: 'train.jpg', name: 'Train clouds (IMG_4667)', pointSize: 14, points: [[0.72, 0.4]] },
+		{ file: 'couple.jpg', name: 'Couple in Lisbon', pointSize: 10, points: [[0.49, 0.4], [0.49, 0.55], [0.49, 0.7]] },
+		{ file: 'bigben.jpg', name: 'Big Ben at night', pointSize: 8, points: [[0.34, 0.2], [0.34, 0.4], [0.34, 0.6]] },
+		{ file: 'drone-pano.jpg', name: 'Drone panorama, 3.7:1' },
+		{ file: 'moon.jpg', name: 'Moon (carve shorter)', rows: true },
+		{ file: 'elchalten.jpg', name: 'El Chaltén panorama' },
+		{ file: 'mountains.jpg', name: 'Autumn mountains' },
+		{ file: 'tower.jpg', name: 'Tower, plane, storm cloud' },
+		{ file: 'arches.jpg', name: 'Arches (hard case)' },
+		{ file: 'drops.jpg', name: 'Water drops (hard case)' }
+	];
+	const MAX_REMOVED = 0.6;
+	const BLOCKED = 2e4;
+	const REMOVE = -2e4;
+	const BACKGROUND = 0xff1a1a1a;
+	const RED = [239, 68, 68];
+	const GREEN = [74, 222, 128];
+
+	const $ = (selector) => document.querySelector(selector);
+	const canvas = $('#view');
+	const context = canvas.getContext('2d');
+	const workerUrl = URL.createObjectURL(new Blob([$('#carver').textContent], { type: 'text/javascript' }));
+
+	const state = { view: 'result', points: [], photo: null };
+	let photo = null;
+	let oriented = null;
+	let work = null;
+	let rank = null;
+	let steps = 0;
+	let maxSeams = 0;
+	let carving = false;
+	let elapsed = 0;
+	let worker = null;
+	let replayStep = null;
+	let drawQueued = false;
+	let carveTimer = null;
+
+	// ---- controls
+
+	const value = (id) => Number($(`#${id}`).value);
+	const radio = (name) => document.querySelector(`input[name=${name}]:checked`).value;
+	const rows = () => radio('direction') === 'rows';
+
+	function params() {
+		return {
+			pointSize: value('point-size') / 100,
+			strength: value('strength'),
+			from: value('from') / 100,
+			to: value('to') / 100,
+			lean: value('lean'),
+			straight: value('straight'),
+			energy: $('#energy').value,
+			blur: value('blur'),
+			working: value('working')
+		};
+	}
+
+	function showValues() {
+		const size = value('size');
+		const sizeOut = $('#size-out');
+		sizeOut.textContent = size < 100 ? `${size}% · ${100 - size}% removed` : size > 100 ? `${size}% · widened` : '100%';
+		sizeOut.classList.toggle('warn', size < 60);
+		$('#point-size-out').textContent = `${value('point-size')}% of short side`;
+		const strength = value('strength');
+		$('#strength-out').textContent = strength === 0 ? 'off' : strength === 10 ? 'never cross' : `soft ${strength}`;
+		$('#from-out').textContent = `${value('from')}%`;
+		$('#to-out').textContent = `${value('to')}%`;
+		const lean = value('lean');
+		const [before, after] = rows() ? ['top', 'bottom'] : ['left', 'right'];
+		$('#lean-out').textContent = lean === 0 ? 'none' : lean < 0 ? `cut ${before} ${-lean}` : `cut ${after} ${lean}`;
+		$('#straight-out').textContent = value('straight') === 0 ? 'off' : value('straight');
+		$('#blur-out').textContent = value('blur') === 0 ? 'off' : `${value('blur')} px`;
+	}
+
+	// ---- pixels and orientation. Shorter carves the transposed photo by columns, so every
+	// step below works on columns; only drawing and clicks swap the axes back.
+
+	function transpose(source, w, h, Type) {
+		const out = new Type(w * h);
+		for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) out[x * h + y] = source[y * w + x];
+		return out;
+	}
+
+	function pixelsAt(image, w, h) {
+		const scratch = new OffscreenCanvas(w, h).getContext('2d');
+		scratch.drawImage(image, 0, 0, w, h);
+		return new Uint32Array(scratch.getImageData(0, 0, w, h).data.buffer);
+	}
+
+	function orient(pixels, w, h, Type = Uint32Array) {
+		return rows() ? { w: h, h: w, pixels: transpose(pixels, w, h, Type) } : { w, h, pixels };
+	}
+
+	const orientPoint = (p) => (rows() ? { x: p.y, y: p.x } : { x: p.x, y: p.y });
+
+	function prepareWork() {
+		const { working } = params();
+		const { width, height } = photo.image;
+		const scale = Math.min(1, working / Math.max(width, height));
+		const w = Math.round(width * scale);
+		const h = Math.round(height * scale);
+		const pixels = pixelsAt(photo.image, w, h);
+		const luma = new Float32Array(w * h);
+		for (let i = 0; i < pixels.length; i++) {
+			const p = pixels[i];
+			luma[i] = 0.299 * (p & 255) + 0.587 * ((p >> 8) & 255) + 0.114 * ((p >> 16) & 255);
+		}
+		const turned = orient(luma, w, h, Float32Array);
+		return { w: turned.w, h: turned.h, luma: turned.pixels };
+	}
+
+	function costMap(w, h) {
+		const { pointSize, strength, from, to, lean } = params();
+		const cost = new Float32Array(w * h);
+		const protect = strength === 0 ? 0 : 2 ** strength;
+		for (let y = 0; y < h; y++) {
+			for (let x = 0; x < w; x++) {
+				const across = x / (w - 1);
+				let c = -lean * 3 * (across * 2 - 1);
+				if (across < from || across > to) c += BLOCKED;
+				cost[y * w + x] = c;
+			}
+		}
+		const radius = pointSize * Math.min(w, h);
+		for (const point of state.points) {
+			const o = orientPoint(point);
+			const cx = o.x * w;
+			const cy = o.y * h;
+			const add = point.kind === 'remove' ? REMOVE : protect;
+			for (let y = Math.max(0, Math.floor(cy - radius)); y < Math.min(h, Math.ceil(cy + radius)); y++) {
+				for (let x = Math.max(0, Math.floor(cx - radius)); x < Math.min(w, Math.ceil(cx + radius)); x++) {
+					if ((x - cx) ** 2 + (y - cy) ** 2 <= radius * radius) cost[y * w + x] += add;
+				}
+			}
+		}
+		return cost;
+	}
+
+	// ---- carving
+
+	function carve() {
+		worker?.terminate();
+		replayStep = null;
+		work = prepareWork();
+		const { w, h } = work;
+		const cost = costMap(w, h);
+		rank = new Uint16Array(w * h).fill(0xffff);
+		steps = 0;
+		maxSeams = Math.round(MAX_REMOVED * w);
+		carving = true;
+		const current = new Worker(workerUrl);
+		worker = current;
+		worker.onmessage = ({ data }) => {
+			if (worker !== current) return;
+			elapsed = data.elapsed;
+			if (data.done) {
+				carving = false;
+			} else {
+				const seam = data.seam;
+				for (let y = 0; y < h; y++) rank[y * w + seam[y]] = data.step;
+				steps = data.step + 1;
+			}
+			requestDraw();
+		};
+		const { energy, straight, blur } = params();
+		worker.postMessage({ w, h, luma: work.luma, cost, energy, straight, blur, seams: maxSeams }, [work.luma.buffer, cost.buffer]);
+		requestDraw();
+	}
+
+	function scheduleCarve() {
+		clearTimeout(carveTimer);
+		carveTimer = setTimeout(carve, 180);
+	}
+
+	// ---- what the current size asks for: n seams removed, or the first e seams doubled
+
+	function target() {
+		const size = value('size') / 100;
+		const n = size < 1 ? Math.min(Math.round((1 - size) * work.w), maxSeams) : 0;
+		const e = size > 1 ? Math.min(Math.round((size - 1) * work.w), maxSeams) : 0;
+		return { n, e };
+	}
+
+	// For every working row, the source column of each output column. A doubled seam adds a
+	// column half a pixel to its right, which samples between it and its neighbour.
+	function columnMap(n, e) {
+		const { w, h } = work;
+		const length = w - n + e;
+		const map = new Float32Array(h * length);
+		const marked = new Int32Array(h).fill(-1);
+		for (let y = 0; y < h; y++) {
+			let i = 0;
+			const row = y * w;
+			const out = y * length;
+			for (let x = 0; x < w; x++) {
+				const r = rank[row + x];
+				if (r === n) marked[y] = i;
+				if (r < n) continue;
+				map[out + i++] = x;
+				if (r < e) map[out + i++] = Math.min(x + 0.5, w - 1);
+			}
+			if (i !== length) throw new Error(`row ${y} has ${i} columns, expected ${length}`);
+		}
+		return { map, length, marked };
+	}
+
+	// ---- drawing
+
+	function lerpPixel(a, b, f) {
+		if (f === 0 || a === b) return a;
+		const g = 1 - f;
+		const r = (a & 255) * g + (b & 255) * f;
+		const gr = ((a >> 8) & 255) * g + ((b >> 8) & 255) * f;
+		const bl = ((a >> 16) & 255) * g + ((b >> 16) & 255) * f;
+		return 0xff000000 | (bl << 16) | (gr << 8) | r;
+	}
+
+	function tint(pixel, [r, g, b]) {
+		const mix = (c, t) => (c * 0.4 + t * 0.6) | 0;
+		return 0xff000000 | (mix((pixel >> 16) & 255, b) << 16) | (mix((pixel >> 8) & 255, g) << 8) | mix(pixel & 255, r);
+	}
+
+	let frameCache = null;
+
+	// The canvas stays the original's size while shrinking, so the photo keeps its scale, and
+	// grows only when the photo is widened.
+	function frame() {
+		const width = Math.ceil(oriented.w * Math.max(1, value('size') / 100)) + 2;
+		const height = oriented.h;
+		if (frameCache?.width !== width || frameCache.height !== height) {
+			frameCache = { width, height, buffer: new Uint32Array(width * height) };
+		}
+		frameCache.buffer.fill(BACKGROUND);
+		return frameCache;
+	}
+
+	function paintResult(out, layout, showSeam) {
+		const { map, length, marked } = layout;
+		const { w, h } = work;
+		const { w: dw, h: dh, pixels } = oriented;
+		const outW = Math.max(1, Math.round((dw * length) / w));
+		const offset = Math.round((out.width - outW) / 2);
+		for (let Y = 0; Y < dh; Y++) {
+			const yl = Math.min(Math.max(((Y + 0.5) * h) / dh - 0.5, 0), h - 1);
+			const y0 = yl | 0;
+			const y1 = Math.min(y0 + 1, h - 1);
+			const fy = yl - y0;
+			const r0 = y0 * length;
+			const r1 = y1 * length;
+			const source = Y * dw;
+			const row = Y * out.width + offset;
+			for (let X = 0; X < outW; X++) {
+				const il = Math.min(Math.max(((X + 0.5) * length) / outW - 0.5, 0), length - 1);
+				const i0 = il | 0;
+				const i1 = Math.min(i0 + 1, length - 1);
+				const fi = il - i0;
+				const m = (map[r0 + i0] * (1 - fi) + map[r0 + i1] * fi) * (1 - fy) + (map[r1 + i0] * (1 - fi) + map[r1 + i1] * fi) * fy;
+				const sx = Math.min(Math.max(((m + 0.5) * dw) / w - 0.5, 0), dw - 1);
+				const x0 = sx | 0;
+				out.buffer[row + X] = lerpPixel(pixels[source + x0], pixels[source + Math.min(x0 + 1, dw - 1)], sx - x0);
+			}
+			if (showSeam) {
+				const i = marked[Math.round(yl)];
+				if (i < 0) continue;
+				const start = Math.floor((i * outW) / length);
+				const end = Math.max(start + 1, Math.ceil(((i + 1) * outW) / length));
+				for (let X = start; X < end && X < outW; X++) out.buffer[row + X] = 0xff4444ef;
+			}
+		}
+		return { outW, offset, length };
+	}
+
+	function paintSeams(out, n, e) {
+		const { w, h } = work;
+		const { w: dw, h: dh, pixels } = oriented;
+		const offset = Math.round((out.width - dw) / 2);
+		for (let Y = 0; Y < dh; Y++) {
+			const wy = Math.min(((Y * h) / dh) | 0, h - 1) * w;
+			for (let X = 0; X < dw; X++) {
+				const r = rank[wy + Math.min(((X * w) / dw) | 0, w - 1)];
+				const p = pixels[Y * dw + X];
+				out.buffer[Y * out.width + offset + X] = r < n ? tint(p, RED) : r < e ? tint(p, GREEN) : p;
+			}
+		}
+		return { offset };
+	}
+
+	function cropStart(outW) {
+		const protect = state.points.filter((p) => p.kind === 'protect').map(orientPoint);
+		const centre = protect.length ? protect.reduce((s, p) => s + p.x, 0) / protect.length : 0.5;
+		return Math.min(Math.max(Math.round(centre * oriented.w - outW / 2), 0), oriented.w - outW);
+	}
+
+	function paintCrop(out, n) {
+		const { w: dw, h: dh, pixels } = oriented;
+		const outW = Math.round((dw * (work.w - n)) / work.w);
+		const start = cropStart(outW);
+		const offset = Math.round((out.width - outW) / 2);
+		for (let Y = 0; Y < dh; Y++) {
+			out.buffer.set(pixels.subarray(Y * dw + start, Y * dw + start + outW), Y * out.width + offset);
+		}
+		return { offset: offset - start };
+	}
+
+	// Where an original point lands in the current result: count the columns still standing
+	// to its left in its working row.
+	function resultX(o, n, e, geometry) {
+		const { w, h } = work;
+		const row = Math.min(Math.max(Math.round(o.y * h - 0.5), 0), h - 1) * w;
+		const px = o.x * w;
+		let count = 0;
+		for (let x = 0; x < Math.min(px, w); x++) {
+			const r = rank[row + x];
+			if (r >= n) count += r < e ? 2 : 1;
+		}
+		return geometry.offset + (count * geometry.outW) / geometry.length;
+	}
+
+	function drawPoints(n, e, geometry) {
+		const { w: dw, h: dh } = oriented;
+		const radius = params().pointSize * Math.min(dw, dh);
+		for (const point of state.points) {
+			const o = orientPoint(point);
+			const x = state.view === 'result' ? resultX(o, n, e, geometry) : geometry.offset + o.x * dw;
+			const y = o.y * dh;
+			const [vx, vy] = rows() ? [y, x] : [x, y];
+			context.beginPath();
+			context.arc(vx, vy, radius, 0, Math.PI * 2);
+			context.lineWidth = 2;
+			context.setLineDash(point.kind === 'remove' ? [6, 5] : []);
+			context.strokeStyle = point.kind === 'remove' ? '#f87171' : 'rgba(255, 255, 255, .9)';
+			context.stroke();
+			context.beginPath();
+			context.arc(vx, vy, 4, 0, Math.PI * 2);
+			context.fillStyle = point.kind === 'remove' ? '#f87171' : '#fff';
+			context.fill();
+		}
+		context.setLineDash([]);
+	}
+
+	let geometry = null;
+
+	function draw() {
+		drawQueued = false;
+		if (!work) return;
+		const wanted = target();
+		let n = wanted.n;
+		let e = wanted.e;
+		let showSeam = false;
+		if (replayStep !== null) {
+			n = Math.min(replayStep, wanted.n);
+			showSeam = replayStep < wanted.n;
+		} else if (carving) {
+			if (n > 0 && steps <= n) {
+				n = Math.max(steps - 1, 0);
+				showSeam = steps > 0;
+			}
+			e = Math.min(e, steps);
+		}
+		const out = frame();
+		if (state.view === 'seams') {
+			geometry = paintSeams(out, n, e);
+		} else if (state.view === 'crop' && e === 0) {
+			geometry = paintCrop(out, n);
+		} else {
+			const layout = columnMap(n, e);
+			geometry = paintResult(out, layout, showSeam);
+			geometry.map = layout.map;
+		}
+		geometry.n = n;
+		geometry.e = e;
+		const size = rows() ? [out.height, out.width] : [out.width, out.height];
+		if (canvas.width !== size[0] || canvas.height !== size[1]) [canvas.width, canvas.height] = size;
+		const image = new ImageData(new Uint8ClampedArray(out.buffer.buffer), out.width, out.height);
+		if (rows()) {
+			const turned = new OffscreenCanvas(out.width, out.height);
+			turned.getContext('2d').putImageData(image, 0, 0);
+			context.setTransform(0, 1, 1, 0, 0, 0);
+			context.drawImage(turned, 0, 0);
+			context.setTransform(1, 0, 0, 1, 0, 0);
+		} else {
+			context.putImageData(image, 0, 0);
+		}
+		drawPoints(n, e, geometry);
+		drawStatus();
+	}
+
+	function requestDraw() {
+		if (drawQueued) return;
+		drawQueued = true;
+		requestAnimationFrame(draw);
+	}
+
+	function drawStatus() {
+		const seconds = (elapsed / 1000).toFixed(2);
+		$('#bar').style.width = `${(100 * steps) / Math.max(maxSeams, 1)}%`;
+		const size = `${work.w}×${work.h} working copy`;
+		$('#status').textContent = carving
+			? `Carving · ${steps} of ${maxSeams} seams · ${seconds} s · ${size}`
+			: `${maxSeams} seams in ${seconds} s · ${size} · every size from 40% to 140% is ready`;
+	}
+
+	// ---- clicks: map a canvas pixel back to the original photo
+
+	function clickToPoint(event) {
+		const box = canvas.getBoundingClientRect();
+		const cx = ((event.clientX - box.left) * canvas.width) / box.width;
+		const cy = ((event.clientY - box.top) * canvas.height) / box.height;
+		const [X, Y] = rows() ? [cy, cx] : [cx, cy];
+		const { w: dw, h: dh } = oriented;
+		let ox;
+		if (state.view === 'result' && geometry.map) {
+			const { w, h } = work;
+			const i = Math.round(((X - geometry.offset + 0.5) * geometry.length) / geometry.outW - 0.5);
+			if (i < 0 || i >= geometry.length) return null;
+			const row = Math.min(Math.max(Math.round(((Y + 0.5) * h) / dh - 0.5), 0), h - 1);
+			ox = (geometry.map[row * geometry.length + i] + 0.5) / w;
+		} else {
+			ox = (X - geometry.offset) / dw;
+		}
+		const oy = Y / dh;
+		if (ox < 0 || ox > 1 || oy < 0 || oy > 1) return null;
+		return rows() ? { x: oy, y: ox } : { x: ox, y: oy };
+	}
+
+	canvas.addEventListener('click', (event) => {
+		if (!work) return;
+		const point = clickToPoint(event);
+		if (!point) return;
+		const { width, height } = photo.image;
+		const radius = params().pointSize * Math.min(width, height);
+		const hit = state.points.findIndex((p) => Math.hypot((p.x - point.x) * width, (p.y - point.y) * height) <= radius);
+		if (hit >= 0) state.points.splice(hit, 1);
+		else state.points.push({ ...point, kind: radio('tool') });
+		scheduleCarve();
+	});
+
+	// ---- replay: the same seams again, one per frame, without carving
+
+	$('#replay').addEventListener('click', () => {
+		if (carving || !work) return;
+		const { n } = target();
+		if (n === 0) return;
+		const perFrame = Math.max(1, Math.round(n / 120));
+		replayStep = 0;
+		const tick = () => {
+			replayStep += perFrame;
+			if (replayStep >= n) replayStep = null;
+			draw();
+			if (replayStep !== null) requestAnimationFrame(tick);
+		};
+		requestAnimationFrame(tick);
+	});
+
+	// ---- wiring
+
+	function applyPreset() {
+		const preset = state.photo;
+		state.points = (preset.points ?? []).map(([x, y]) => ({ x, y, kind: 'protect' }));
+		if (preset.pointSize) $('#point-size').value = preset.pointSize;
+	}
+
+	let loading = 0;
+
+	async function loadPhoto(index) {
+		const ticket = ++loading;
+		const preset = PHOTOS[index];
+		const image = new Image();
+		image.src = `assets/play/${preset.file}`;
+		await image.decode();
+		if (ticket !== loading) return;
+		state.photo = preset;
+		photo = { image, pixels: pixelsAt(image, image.naturalWidth, image.naturalHeight) };
+		document.querySelector(`input[name=direction][value=${preset.rows ? 'rows' : 'columns'}]`).checked = true;
+		applyPreset();
+		reorient();
+	}
+
+	function reorient() {
+		const { naturalWidth: w, naturalHeight: h } = photo.image;
+		oriented = orient(photo.pixels, w, h);
+		showValues();
+		carve();
+	}
+
+	PHOTOS.forEach((p, i) => $('#photo').append(new Option(p.name, i)));
+	$('#photo').addEventListener('change', (event) => loadPhoto(Number(event.target.value)));
+	for (const input of document.querySelectorAll('input[name=direction]')) input.addEventListener('change', reorient);
+	$('#size').addEventListener('input', () => {
+		showValues();
+		requestDraw();
+	});
+	for (const id of ['point-size', 'strength', 'from', 'to', 'lean', 'straight', 'blur']) {
+		$(`#${id}`).addEventListener('input', () => {
+			showValues();
+			scheduleCarve();
+		});
+	}
+	for (const id of ['energy', 'working']) $(`#${id}`).addEventListener('change', scheduleCarve);
+	$('#clear').addEventListener('click', () => {
+		state.points = [];
+		scheduleCarve();
+	});
+	$('#preset').addEventListener('click', () => {
+		applyPreset();
+		showValues();
+		scheduleCarve();
+	});
+	for (const button of document.querySelectorAll('#views button')) {
+		button.addEventListener('click', () => {
+			state.view = button.dataset.view;
+			for (const b of document.querySelectorAll('#views button')) b.classList.toggle('active', b === button);
+			requestDraw();
+		});
+	}
+
+	loadPhoto(0);
+</script>
+</body>
+</html>
