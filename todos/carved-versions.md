@@ -30,11 +30,31 @@ A forward-energy seam carver in Rust (about 150 lines; dependencies `image` and 
 
 What each hypothesis came to:
 
-1. **Fast enough to wait for.** Yes, with a working size. The cost of a carve grows with working-size pixels times seams removed, not with the photo's megapixels: 0.8–2.1 s at 1024 px for every photo tried, including 61 MP. Carving at full size is not viable: 5.6 s at 3 MP, so minutes at 24 MP and up.
+1. **Fast enough to wait for.** Yes, with a working size. The cost of a carve grows with working-size pixels times seams removed, not with the photo's megapixels: 0.3–2.1 s at 1024 px for all 15 photos tried, up to 77 MP. Carving at full size is not viable: 5.6 s at 3 MP, so minutes at 24 MP and up.
 2. **A working-size carve looks as good as a full-size one.** Yes. At 2× (IMG_4667) the result matched exact full-size carving. At 7.7× (the 61 MP pano) a gate's edges and fence posts stay straight with no steps, because the map is interpolated into a smooth squeeze instead of cutting blocky seams. 1536 px costs three times as long with no visible gain.
-3. **The result looks natural.** Up to about 40%. Landscapes and skies at 25% look untouched. At 40%, anything without a focal point narrows: the cloud in IMG_4667 got narrower until it was protected. The portrait at 44% kept the face but turned the round helmet into an oval and thinned the torso. Cap the carve at about 40% and let a frame crop the rest, which is what version-then-frame does anyway.
-4. **Focal points can protect subjects.** Yes. A disc around each focal point (radius 14% of the short side) makes crossing it so expensive that no seam does; at 4:5 the cloud kept its width. Detected faces can already be turned into focal points (#31), so faces get the same protection.
+3. **The result looks natural.** Up to about 40%. Landscapes and skies at 25% look untouched. At 40%, anything without a focal point narrows: the cloud in IMG_4667 got narrower until it was protected. The portrait at 44% kept the face but turned the round helmet into an oval and thinned the torso. Cap the carve at about 40% and let a frame crop the rest, which is what version-then-frame does anyway. Two kinds of photo carve badly at any level: detail everywhere (water drops on a leaf, where round drops turn oval) and regular architecture (a row of arches, where one window narrows and the symmetry breaks). The morph shows the result before any frame is drawn, so the person framing can delete a bad version; no automatic check is proposed.
+4. **Focal points can protect subjects.** Yes. A disc around each focal point (radius 14% of the short side) makes crossing it so expensive that no seam does; at 4:5 the cloud kept its width. Detected faces can already be turned into focal points (#31), so faces get the same protection. A disc covers a face, not a person: unprotected, the couple in IMG_0001 got thin even at 25%, while three points down their bodies kept them natural at 40%. Big Ben needed three points up the tower the same way.
 5. **The switch animation is cheap.** Yes. It needs only each version's mask of kept columns per row: 100 KB as PNG at 1024 px, 220–270 KB at 1536 px. The mockup paints a 1536×1152 morph frame in 10–12 ms with plain canvas 2D; no WebGL.
+
+### The eleven samples added on 2026-10-17
+
+Each carved 25% and 40% narrower (the moon, a tall photo, shorter) at a 1024 px working size, with no focal points, and compared with a plain crop of the same size. Times are for the 40% carve. Side-by-side sheets: https://mox.xcc.es/_preview/enframe/carve/02-samples.html (the page and its images live only in `~/dev/_preview/enframe/mockups/carve/`, not in the repo).
+
+| Photo | Size | Carve | Against a crop |
+|-|-|-|-|
+| 0-6, autumn mountains | 4928×2772 | 1.0 s | better |
+| IMG_0001, lake panorama | 10820×7133, 77 MP | 0.9 s | better: both shores stay in |
+| DJI_0145, drone panorama | 8405×2292, 3.7:1 | 0.4 s | better: islands keep their shape |
+| DJI_0386, aerial house and river | 4000×2250 | 0.8 s | better |
+| elchalten, mountain panorama | 6917×3541 | 1.4 s | better |
+| moon, carved by rows | 2250×4000 | 0.7 s | better: the moon stays round, empty sky goes |
+| untitled, tower, plane, storm cloud | 4898×2861 | 0.8 s | better |
+| 0, Big Ben at night | 4928×3264 | 1.0 s | fine at 25%; at 40% only with the tower protected |
+| IMG_0001, couple in Lisbon | 3342×2089 | 0.9 s | worse until the couple is protected, then better |
+| 0-7, water drops (macro) | 4435×2495 | 1.5 s | worse, protected or not |
+| IMG_6500, arches | 3977×2983 | 1.1 s | worse |
+
+Seven of eleven are better with no input, two more once focal points cover the subject, two are worse. Panoramas are the strongest case. The 3.7:1 drone panorama carves from a working copy only 279 px tall and still looks clean at 40%; a minimum working height for very wide photos is untested.
 
 Sizes for one version file, IMG_8115 carved to 3024×3024: 0.5 MB as AVIF (sips default quality), 7.1 MB as PNG.
 
@@ -67,5 +87,6 @@ Out of scope: the static web build, which has no backend to carve with; enlargin
 ## Open questions
 
 - Where version files live: next to the source (they then show in folder browsing, as exports already do) or in an enframe folder.
+- People need several focal points to stay whole. Is placing them by hand acceptable, or should protection come from a drawn box, or from a detected face extended down to a body?
 - Is 40% the right cap? A slider for any width instead of fixed ratios?
 - When the source changes (a Lightroom edit), re-carve the version automatically, or mark it stale?
