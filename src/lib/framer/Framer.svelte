@@ -26,6 +26,7 @@ interface Props {
 	onexport?: (frames: Frame[], doc: CropDoc, report: Report) => Promise<void>;
 	onsetoutputdir?: () => void;
 	onsetformat?: (format: ExportFormat) => void;
+	oncarve?: () => void;
 	imagePath?: string;
 }
 
@@ -40,6 +41,7 @@ let {
 	onexport,
 	onsetoutputdir,
 	onsetformat,
+	oncarve,
 	imagePath
 }: Props = $props();
 
@@ -420,6 +422,7 @@ function handleKeyDown(event: KeyboardEvent) {
 		ondetectfaces={detectFaces}
 		detectingFaces={detectingFaces}
 		ongenerate={() => (generateOpen = true)}
+		{oncarve}
 		onsave={save}
 		onexport={runExport}
 		ontoggle={() => (panelExpanded = !panelExpanded)}

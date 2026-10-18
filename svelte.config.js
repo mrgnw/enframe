@@ -23,7 +23,8 @@ export default {
 			$lib: 'src/lib',
 			$home: web ? 'src/lib/framer/Standalone.svelte' : 'src/routes/(enframe)/home-default.svelte',
 			$editor: web ? 'src/routes/(enframe)/redirect-home.svelte' : 'src/routes/(enframe)/edit/library-editor.svelte',
-			$library: web ? 'src/routes/(enframe)/redirect-home.svelte' : 'src/routes/(enframe)/library-browser.svelte'
+			$library: web ? 'src/routes/(enframe)/redirect-home.svelte' : 'src/routes/(enframe)/library-browser.svelte',
+			$carver: web ? 'src/routes/(enframe)/redirect-home.svelte' : 'src/routes/(enframe)/carve/library-carver.svelte'
 		}
 	}
 };

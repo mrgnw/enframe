@@ -125,6 +125,10 @@ export function columnMap(rank: Uint16Array, work: Work, n: number, e: number): 
 
 // ---- pixels
 
+export function imageDataOf(plane: Plane): ImageData {
+	return new ImageData(new Uint8ClampedArray(plane.pixels.buffer as ArrayBuffer), plane.w, plane.h);
+}
+
 export function lerpPixel(a: number, b: number, f: number): number {
 	if (f === 0 || a === b) return a;
 	const g = 1 - f;

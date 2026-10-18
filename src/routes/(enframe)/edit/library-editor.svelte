@@ -1,6 +1,7 @@
 <script lang="ts">
 import { onMount } from 'svelte';
 import { toast } from 'svelte-sonner';
+import { goto } from '$app/navigation';
 import { page } from '$app/stores';
 import { getImageSrc } from '$lib/bridge';
 import {
@@ -189,6 +190,7 @@ function setFormat(format: ExportFormat) {
 			onexport={runExport}
 			onsetoutputdir={setOutputDir}
 			onsetformat={setFormat}
+			oncarve={() => goto(`/carve/${photoId}`)}
 		/>
 	{:else}
 		<div class="loading">Photo not found</div>

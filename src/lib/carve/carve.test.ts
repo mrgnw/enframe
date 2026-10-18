@@ -43,7 +43,7 @@ describe('carveSeams', () => {
 		const disc: CarvePoint = { kind: 'remove', x: 0.75, y: 0.5, size: 0.2, strength: 10 };
 		const rank = carve(flat(), costMap(work, DEFAULT_SETTINGS, [disc], false), 1);
 		const y = H / 2;
-		const removed = [...rank.subarray(y * W, (y + 1) * W)].findIndex((r) => r === 0);
+		const removed = [...rank.subarray(y * W, (y + 1) * W)].indexOf(0);
 		expect(Math.abs(removed - 0.75 * W)).toBeLessThanOrEqual(0.2 * H);
 	});
 });

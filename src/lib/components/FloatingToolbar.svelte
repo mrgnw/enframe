@@ -11,6 +11,7 @@ import {
 	LayoutGrid,
 	Redo2,
 	ScanFace,
+	ScissorsLineDashed,
 	Undo2
 } from '@lucide/svelte';
 
@@ -28,6 +29,7 @@ interface Props {
 	ondetectfaces?: () => void;
 	detectingFaces?: boolean;
 	ongenerate?: () => void;
+	oncarve?: () => void;
 	onsave?: () => void;
 	onexport?: () => void;
 	ontoggle?: () => void;
@@ -48,6 +50,7 @@ let {
 	ondetectfaces,
 	detectingFaces = false,
 	ongenerate,
+	oncarve,
 	onsave,
 	onexport,
 	ontoggle,
@@ -93,6 +96,11 @@ let {
 		<LayoutGrid size={15} />
 		<span class="generate-label">Versions</span>
 	</button>
+	{#if oncarve}
+		<button class="tb-btn" onclick={oncarve} title="Carve a narrower or shorter version">
+			<ScissorsLineDashed size={15} />
+		</button>
+	{/if}
 
 	<div class="toolbar-divider"></div>
 
