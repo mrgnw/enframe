@@ -17,6 +17,9 @@
 	.layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; margin-top: 24px; align-items: start; }
 	.stage { position: relative; background: #1a1a1a; border-radius: 10px; min-height: 420px; display: flex; align-items: center; justify-content: center; padding: 56px 12px 56px; }
 	canvas { display: block; max-width: 100%; max-height: 66vh; cursor: crosshair; }
+	#fx { position: absolute; pointer-events: none; }
+	.field input[type=color] { width: 44px; height: 26px; padding: 0 2px; border: 1px solid #3f3f46; border-radius: 6px; background: #1e1e1e; cursor: pointer; }
+	.check { display: flex; gap: 8px; align-items: center; color: #e4e4e7; cursor: pointer; }
 	.island { position: absolute; display: flex; align-items: center; gap: 4px; height: 36px; padding: 0 4px; border: 1px solid var(--edge); border-radius: 999px; background: var(--surface); backdrop-filter: blur(14px); box-shadow: 0 2px 12px rgba(0, 0, 0, .35); }
 	.views { top: 10px; left: 50%; transform: translateX(-50%); }
 	.views button { border: 0; background: transparent; color: #d4d4d8; font-size: 13px; height: 28px; padding: 0 12px; border-radius: 999px; }
@@ -57,6 +60,7 @@
 		<section>
 			<div class="stage">
 				<canvas id="view"></canvas>
+				<canvas id="fx"></canvas>
 				<div class="island views" id="views">
 					<button type="button" data-view="result" class="active">Result</button>
 					<button type="button" data-view="seams">Seams</button>
@@ -68,7 +72,7 @@
 					<button type="button" id="replay">Replay</button>
 				</div>
 			</div>
-			<p class="hint">Click the photo to add a point, click a point to delete it. Seams shows the original with what the current size removes in red, or repeats in green. Crop instead shows a plain crop to the same size, centred on the protected points.</p>
+			<p class="hint">Click the photo to add a point, click a point to delete it. Seams shows the original with what the current size removes in the seam colour, or repeats in green. Crop instead shows a plain crop to the same size, centred on the protected points.</p>
 		</section>
 
 		<aside id="controls">
@@ -86,6 +90,12 @@
 					<input type="range" id="size" min="40" max="140" value="75">
 					<small>Instant once carved. Past 40% removed, anything unprotected starts to narrow.</small>
 				</label>
+			</fieldset>
+
+			<fieldset>
+				<legend>Seam style</legend>
+				<label class="field"><span>Colour</span><input type="color" id="seam-color" value="#22d3ee"></label>
+				<label class="check"><input type="checkbox" id="zap" checked> Zap: glow, flicker, sparks</label>
 			</fieldset>
 
 			<fieldset>
@@ -265,8 +275,8 @@
 	const BLOCKED = 2e4;
 	const REMOVE = -2e4;
 	const BACKGROUND = 0xff1a1a1a;
-	const RED = [239, 68, 68];
 	const GREEN = [74, 222, 128];
+	const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
 
 	const $ = (selector) => document.querySelector(selector);
 	const canvas = $('#view');
@@ -486,8 +496,8 @@
 		return frameCache;
 	}
 
-	function paintResult(out, layout, showSeam) {
-		const { map, length, marked } = layout;
+	function paintResult(out, layout) {
+		const { map, length } = layout;
 		const { w, h } = work;
 		const { w: dw, h: dh, pixels } = oriented;
 		const outW = Math.max(1, Math.round((dw * length) / w));
@@ -511,13 +521,6 @@
 				const x0 = sx | 0;
 				out.buffer[row + X] = lerpPixel(pixels[source + x0], pixels[source + Math.min(x0 + 1, dw - 1)], sx - x0);
 			}
-			if (showSeam) {
-				const i = marked[Math.round(yl)];
-				if (i < 0) continue;
-				const start = Math.floor((i * outW) / length);
-				const end = Math.max(start + 1, Math.ceil(((i + 1) * outW) / length));
-				for (let X = start; X < end && X < outW; X++) out.buffer[row + X] = 0xff4444ef;
-			}
 		}
 		return { outW, offset, length };
 	}
@@ -526,12 +529,13 @@
 		const { w, h } = work;
 		const { w: dw, h: dh, pixels } = oriented;
 		const offset = Math.round((out.width - dw) / 2);
+		const removedColour = rgb($('#seam-color').value);
 		for (let Y = 0; Y < dh; Y++) {
 			const wy = Math.min(((Y * h) / dh) | 0, h - 1) * w;
 			for (let X = 0; X < dw; X++) {
 				const r = rank[wy + Math.min(((X * w) / dw) | 0, w - 1)];
 				const p = pixels[Y * dw + X];
-				out.buffer[Y * out.width + offset + X] = r < n ? tint(p, RED) : r < e ? tint(p, GREEN) : p;
+				out.buffer[Y * out.width + offset + X] = r < n ? tint(p, removedColour) : r < e ? tint(p, GREEN) : p;
 			}
 		}
 		return { offset };
@@ -590,6 +594,178 @@
 		context.setLineDash([]);
 	}
 
+	// ---- the seam lives on its own canvas over the photo, so the zap keeps moving between
+	// photo redraws. Paths are flat [x0, y0, x1, y1, …] in canvas pixels.
+
+	const fx = $('#fx');
+	const fxContext = fx.getContext('2d');
+	const TRAIL_MS = 220;
+	const MAX_TRAIL = 12;
+	const MAX_SPARKS = 220;
+	const effects = { seam: null, key: null, photo: null, trail: [], sparks: [], running: false, last: 0 };
+
+	function seamPath(marked, geometry) {
+		const dh = oriented.h;
+		const h = work.h;
+		const path = [];
+		for (let y = 0; y < h; y++) {
+			if (marked[y] < 0) continue;
+			const x = geometry.offset + ((marked[y] + 0.5) * geometry.outW) / geometry.length;
+			const Y = y === 0 ? 0 : y === h - 1 ? dh : ((y + 0.5) * dh) / h;
+			if (rows()) path.push(Y, x);
+			else path.push(x, Y);
+		}
+		return path;
+	}
+
+	function syncFx() {
+		if (fx.width !== canvas.width || fx.height !== canvas.height) [fx.width, fx.height] = [canvas.width, canvas.height];
+		fx.style.left = `${canvas.offsetLeft}px`;
+		fx.style.top = `${canvas.offsetTop}px`;
+		fx.style.width = `${canvas.offsetWidth}px`;
+		fx.style.height = `${canvas.offsetHeight}px`;
+	}
+	new ResizeObserver(syncFx).observe(canvas);
+
+	// A seam that gives way to the next one fades out as part of the trail. `photo` is the
+	// result's rectangle; the trail stays inside it while the photo shrinks.
+	function setSeam(path, key, photo) {
+		if (photo) effects.photo = photo;
+		if (effects.seam && key !== effects.key) {
+			effects.trail.push({ path: effects.seam, age: 0 });
+			if (effects.trail.length > MAX_TRAIL) effects.trail.shift();
+		}
+		effects.seam = path;
+		effects.key = path ? key : null;
+		if (effects.running) return;
+		effects.running = true;
+		effects.last = performance.now();
+		requestAnimationFrame(animateFx);
+	}
+
+	// Jitter is a damped random walk across the seam, which reads as lightning rather than fuzz.
+	function trace(g, path, jitter) {
+		const across = rows() ? 1 : 0;
+		let shake = 0;
+		g.beginPath();
+		for (let k = 0; k < path.length; k += 2) {
+			if (jitter) shake = shake * 0.8 + (Math.random() - 0.5) * jitter;
+			const x = path[k] + (across === 0 ? shake : 0);
+			const y = path[k + 1] + (across === 1 ? shake : 0);
+			if (k === 0) g.moveTo(x, y);
+			else g.lineTo(x, y);
+		}
+		g.stroke();
+	}
+
+	function drawZap(g, path, colour, scale) {
+		g.save();
+		g.globalCompositeOperation = 'lighter';
+		g.lineJoin = 'round';
+		g.globalAlpha = 0.75 + Math.random() * 0.25;
+		g.strokeStyle = colour;
+		g.shadowColor = colour;
+		g.shadowBlur = 16 * scale;
+		g.lineWidth = 4 * scale;
+		trace(g, path, 5 * scale);
+		g.shadowBlur = 6 * scale;
+		g.lineWidth = 2 * scale;
+		trace(g, path, 3 * scale);
+		g.shadowBlur = 0;
+		g.strokeStyle = '#fff';
+		g.lineWidth = scale;
+		trace(g, path, 2 * scale);
+		g.restore();
+	}
+
+	function drawTrail(g, dt, colour, scale) {
+		for (const item of effects.trail) item.age += dt;
+		effects.trail = effects.trail.filter((item) => item.age < TRAIL_MS);
+		g.save();
+		if (effects.photo) {
+			g.beginPath();
+			g.rect(...effects.photo);
+			g.clip();
+		}
+		g.globalCompositeOperation = 'lighter';
+		g.strokeStyle = colour;
+		g.lineWidth = 1.5 * scale;
+		for (const item of effects.trail) {
+			g.globalAlpha = 0.45 * (1 - item.age / TRAIL_MS);
+			trace(g, item.path, 0);
+		}
+		g.restore();
+	}
+
+	function spawnSparks(path, scale) {
+		const across = rows() ? 1 : 0;
+		for (let s = 0; s < 5 && effects.sparks.length < MAX_SPARKS; s++) {
+			const k = 2 * Math.floor((Math.random() * path.length) / 2);
+			const out = (Math.random() < 0.5 ? -1 : 1) * (0.15 + Math.random() * 0.35) * scale;
+			const along = (Math.random() - 0.5) * 0.2 * scale;
+			effects.sparks.push({
+				x: path[k],
+				y: path[k + 1],
+				vx: across === 0 ? out : along,
+				vy: across === 0 ? along : out,
+				life: 0,
+				span: 180 + Math.random() * 260
+			});
+		}
+	}
+
+	// Sparks start white-hot, cool to the seam colour, and slow down as they fade.
+	function drawSparks(g, dt, colour, scale) {
+		g.save();
+		g.globalCompositeOperation = 'lighter';
+		g.lineCap = 'round';
+		g.lineWidth = 1.3 * scale;
+		for (const spark of effects.sparks) {
+			spark.life += dt;
+			spark.x += spark.vx * dt;
+			spark.y += spark.vy * dt;
+			spark.vx *= 0.96;
+			spark.vy *= 0.96;
+			const fade = 1 - spark.life / spark.span;
+			if (fade <= 0) continue;
+			g.globalAlpha = fade;
+			g.strokeStyle = spark.life < spark.span * 0.3 ? '#fff' : colour;
+			g.beginPath();
+			g.moveTo(spark.x, spark.y);
+			g.lineTo(spark.x - spark.vx * 18, spark.y - spark.vy * 18);
+			g.stroke();
+		}
+		effects.sparks = effects.sparks.filter((spark) => spark.life < spark.span);
+		g.restore();
+	}
+
+	function animateFx(now) {
+		const dt = Math.min(now - effects.last, 50);
+		effects.last = now;
+		const g = fxContext;
+		g.clearRect(0, 0, fx.width, fx.height);
+		const scale = fx.width / Math.max(fx.clientWidth, 1);
+		const colour = $('#seam-color').value;
+		if ($('#zap').checked) {
+			drawTrail(g, dt, colour, scale);
+			if (effects.seam) {
+				drawZap(g, effects.seam, colour, scale);
+				spawnSparks(effects.seam, scale);
+			}
+			drawSparks(g, dt, colour, scale);
+		} else {
+			effects.trail = [];
+			effects.sparks = [];
+			if (effects.seam) {
+				g.strokeStyle = colour;
+				g.lineWidth = 1.5 * scale;
+				trace(g, effects.seam, 0);
+			}
+		}
+		if (effects.seam || effects.trail.length || effects.sparks.length) requestAnimationFrame(animateFx);
+		else effects.running = false;
+	}
+
 	let geometry = null;
 
 	function draw() {
@@ -610,14 +786,16 @@
 			e = Math.min(e, steps);
 		}
 		const out = frame();
+		let seam = null;
 		if (state.view === 'seams') {
 			geometry = paintSeams(out, n, e);
 		} else if (state.view === 'crop' && e === 0) {
 			geometry = paintCrop(out, n);
 		} else {
 			const layout = columnMap(n, e);
-			geometry = paintResult(out, layout, showSeam);
+			geometry = paintResult(out, layout);
 			geometry.map = layout.map;
+			if (showSeam) seam = seamPath(layout.marked, geometry);
 		}
 		geometry.n = n;
 		geometry.e = e;
@@ -635,6 +813,9 @@
 		}
 		drawPoints(n, e, geometry);
 		drawStatus();
+		syncFx();
+		const rect = geometry.outW ? [geometry.offset, 0, geometry.outW, oriented.h] : null;
+		setSeam(seam, n, rect && rows() ? [rect[1], rect[0], rect[3], rect[2]] : rect);
 	}
 
 	function requestDraw() {
@@ -749,6 +930,7 @@
 		});
 	}
 	for (const id of ['energy', 'working']) $(`#${id}`).addEventListener('change', scheduleCarve);
+	$('#seam-color').addEventListener('input', requestDraw);
 	$('#clear').addEventListener('click', () => {
 		state.points = [];
 		scheduleCarve();
