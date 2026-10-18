@@ -12,6 +12,8 @@ export interface Photo {
 	description?: string;
 	lr_asset_id?: string;
 	history_pos?: number;
+	source_id?: number;
+	carve?: string;
 	created_at: string;
 }
 
@@ -81,8 +83,8 @@ export async function updatePhoto(id: number, updates: Partial<Omit<Photo, 'id' 
 export async function addPhoto(photo: Omit<Photo, 'id' | 'created_at'>): Promise<number> {
 	const db = await getDb();
 	const result = await db.execute(
-		'INSERT INTO photos (file_path, width, height, title, description, lr_asset_id) VALUES ($1, $2, $3, $4, $5, $6)',
-		[photo.file_path, photo.width, photo.height, photo.title, photo.description, photo.lr_asset_id]
+		'INSERT INTO photos (file_path, width, height, title, description, lr_asset_id, source_id, carve) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+		[photo.file_path, photo.width, photo.height, photo.title, photo.description, photo.lr_asset_id, photo.source_id, photo.carve]
 	);
 	return result.lastInsertId ?? 0;
 }

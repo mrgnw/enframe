@@ -38,4 +38,10 @@ pub const MIGRATIONS: &[Migration] = &[
 CREATE INDEX IF NOT EXISTS idx_history_photo ON history(photo_id);
 ALTER TABLE photos ADD COLUMN history_pos INTEGER NOT NULL DEFAULT 0;",
     },
+    Migration {
+        version: 6,
+        description: "carved versions",
+        sql: "ALTER TABLE photos ADD COLUMN source_id INTEGER REFERENCES photos(id) ON DELETE CASCADE;
+ALTER TABLE photos ADD COLUMN carve TEXT;",
+    },
 ];
