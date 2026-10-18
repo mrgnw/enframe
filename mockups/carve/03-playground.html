@@ -193,7 +193,6 @@
 				<legend>Seam style</legend>
 				<label class="field"><span>Colour</span><input type="color" id="seam-color" value="#22d3ee"></label>
 				<label class="check"><input type="checkbox" id="glow" checked> Glow: flicker and afterglow</label>
-				<label class="check"><input type="checkbox" id="sparks"> Sparks</label>
 			</fieldset>
 		</aside>
 	</div>
@@ -853,8 +852,7 @@
 	const fxContext = fx.getContext('2d');
 	const TRAIL_MS = 220;
 	const MAX_TRAIL = 12;
-	const MAX_SPARKS = 220;
-	const effects = { seam: null, key: null, photo: null, trail: [], sparks: [], running: false, last: 0 };
+	const effects = { seam: null, key: null, photo: null, trail: [], running: false, last: 0 };
 
 	function seamPath(marked) {
 		const dh = oriented.h;
@@ -940,48 +938,6 @@
 		g.restore();
 	}
 
-	function spawnSparks(path, scale) {
-		const across = rows() ? 1 : 0;
-		for (let s = 0; s < 5 && effects.sparks.length < MAX_SPARKS; s++) {
-			const k = 2 * Math.floor((Math.random() * path.length) / 2);
-			const out = (Math.random() < 0.5 ? -1 : 1) * (0.15 + Math.random() * 0.35) * scale;
-			const along = (Math.random() - 0.5) * 0.2 * scale;
-			effects.sparks.push({
-				x: path[k],
-				y: path[k + 1],
-				vx: across === 0 ? out : along,
-				vy: across === 0 ? along : out,
-				life: 0,
-				span: 180 + Math.random() * 260
-			});
-		}
-	}
-
-	// Sparks start white-hot, cool to the seam colour, and slow down as they fade.
-	function drawSparks(g, dt, colour, scale) {
-		g.save();
-		g.globalCompositeOperation = 'lighter';
-		g.lineCap = 'round';
-		g.lineWidth = 1.3 * scale;
-		for (const spark of effects.sparks) {
-			spark.life += dt;
-			spark.x += spark.vx * dt;
-			spark.y += spark.vy * dt;
-			spark.vx *= 0.96;
-			spark.vy *= 0.96;
-			const fade = 1 - spark.life / spark.span;
-			if (fade <= 0) continue;
-			g.globalAlpha = fade;
-			g.strokeStyle = spark.life < spark.span * 0.3 ? '#fff' : colour;
-			g.beginPath();
-			g.moveTo(spark.x, spark.y);
-			g.lineTo(spark.x - spark.vx * 18, spark.y - spark.vy * 18);
-			g.stroke();
-		}
-		effects.sparks = effects.sparks.filter((spark) => spark.life < spark.span);
-		g.restore();
-	}
-
 	function animateFx(now) {
 		const dt = Math.min(now - effects.last, 50);
 		effects.last = now;
@@ -1000,13 +956,7 @@
 				trace(g, effects.seam, 0);
 			}
 		}
-		if ($('#sparks').checked) {
-			if (effects.seam) spawnSparks(effects.seam, scale);
-			drawSparks(g, dt, colour, scale);
-		} else {
-			effects.sparks = [];
-		}
-		if (effects.seam || effects.trail.length || effects.sparks.length) requestAnimationFrame(animateFx);
+		if (effects.seam || effects.trail.length) requestAnimationFrame(animateFx);
 		else effects.running = false;
 	}
 
