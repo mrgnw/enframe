@@ -3,7 +3,7 @@ branch: explore-claire-duplicate-photo-crops
 ---
 # Carved versions: content-aware resizing before the crop
 
-Explored 2026-10-17. Not scheduled.
+Explored 2026-10-17. The Carve view shipped on 2026-10-18 (see "What was built"); grouping, chips and the morph are follow-ups.
 
 ## Why
 
@@ -64,27 +64,29 @@ Not measured: memory at full size. Rendering a 61 MP version holds the source an
 
 Considered and not used: the `seamcarving` crate (last release 2020, on `image` 0.23, no licence in its repository). The carver is short enough to own, and owning it gives the kept-column map the animation needs.
 
-## Proposed design
+## What was built (2026-10-18)
 
-A version is a photo row that points at its source, with its own file.
+`/carve/[id]` is the playground on a library photo, reached from the scissors button in the framer toolbar. Everything runs in the browser; Rust changed only for the migration.
 
-- **Schema.** `photos.source_id` (references `photos.id`, cascade delete) and `photos.carve` (JSON: target aspect, axis, the focal points used, working size). Store the kept-column mask too (`photos.carve_mask`, PNG bytes) so the animation needs no second carve.
-- **Pixels.** Carve once and write the version as a file next to the source, for example `IMG_4667.carved-1x1.avif`, with the export encoder (on macOS, ImageIO AVIF keeping the source's colour profile). The framer, export, face detection and library thumbnails all open photos by file path, so they work on versions unchanged.
-- **Rust.** A `carve` module in `src-tauri` and a `carve_version` command. First split `crop_and_export` into its decode half (JXL, RAW, HEIF, EXIF orientation, colour profile) and its encode half, so carving reuses both. Serve forwards the command like the others; the output needs a write root.
-- **Library.** Versions sit under their source photo (a "2 versions" badge), not as separate cards.
-- **Framer.** Version chips in an island, a "Carve" menu offering the destination ratios with anything over the cap disabled, and a progress note while it carves (1–2 s).
-- **Animation.** Draw the original at preview size into a canvas and morph with the two masks, as the mockup does; at the end, show the version's own image. Frames fade out during the morph and the target version's frames fade in. Focal points ride along through the mask.
+- **Engine** `src/lib/carve/`: `seams.ts` (the seam loop, forward or gradient energy), `carver-worker.ts` (a module worker posting one seam at a time), `carve.ts` (working size, cost map, column map, the bilinear full-size render, `mapPoint` for carrying focal points), `types.ts`, and `carve.test.ts`.
+- **View** `src/lib/carve/Carver.svelte`: direction, size 40–140%, protect and remove points with size and softness, Original | Crop | Result | Seams with a morph, the seam glow, and an Advanced section (region, lean, straightness, energy, blur, working size). The preview carves a 1600 px copy; the dock holds the views and the Save | Export buttons, or on a phone they sit under the pinned photo.
+- **Saving** `src/routes/(enframe)/carve/library-carver.svelte`: renders the version at the source's resolution on a canvas, encodes with the browser's AVIF worker (or JPG, PNG), writes it next to the source as `name.carved.<ratio>.avif` through `writeFile`, adds a `photos` row with `source_id` and `carve` (the settings and points as JSON, migration 6), and copies the source's focal points through the carve. Export writes the same file into a chosen folder and adds no row. The editor opens the new version afterwards.
+- **Web build**: the route redirects home and the toolbar shows no scissors; Standalone can mount `Carver` later with a download-only save.
 
-Alternative: no version file; render pixels from source plus mask every time they are needed (10–60 ms at full size). That avoids a second lossy encode and a file per version, but every place that opens a photo by path (Tauri asset protocol, serve's `/img` route, export, faces, thumbnails) would have to learn about versions. Start with the file and revisit if version files pile up or go stale after the source is edited.
+Measured in headless Chromium on the M4 Pro: the couple (7 MP) carves in 2.4 s at 1024 px and saves in 6 s; the 77 MP lake panorama carves in 2.6 s and saves in 54 s, almost all of it the single-threaded AVIF encode of the 46 MP result, and the full-size render held in memory. The canvas path drops the colour profile to sRGB.
 
-Out of scope: the static web build, which has no backend to carve with; enlarging by inserting seams (caire does it; crops never need a wider photo).
+Follow-ups, each small now that the data is there:
 
-## Phases
+1. Library grid: versions under their source with a badge (`source_id` is stored).
+2. Framer: version chips, and the morph between original and version (needs the rank map stored, or a second carve from `photos.carve`).
+3. A Rust `render_carve` taking the rank map, reusing the exporter's decode and encode: keeps Display P3, encodes faster, and frees the webview from holding the full-size pixels.
+4. Standalone (web build) with a download-only save.
 
-1. `carve` module with tests: exact output size, a protected disc is never crossed, a flat image loses columns evenly. Includes the decode/encode split of `crop_and_export`.
-2. Schema migration, `db.ts`, and library grouping.
-3. Framer: version chips, the Carve menu, progress.
-4. The morph.
+## Design notes kept from the exploration
+
+- Version files live next to the source, as exports do, so folder browsing shows them.
+- Alternative not taken: no version file, rendering source plus mask on demand (10–60 ms); every place that opens a photo by path would have to learn about versions.
+- Enlarging by inserting seams exists in the view (sizes over 100% repeat the first seams) but no crop needs it.
 
 ## Open questions
 

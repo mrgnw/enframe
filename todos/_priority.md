@@ -18,7 +18,7 @@ Done from the storytold exploration: #30 native .mp4, #31 face focal points, #32
    Adobe API enterprise-only); LR local-storage setting is the answer
 5. stabilize-canvas-editor — a "fit all" canvas rule first, then crop controls with prev/next ghosts on the marking screen
 6. start-screen-story — taglines and flip-book visuals: one thing across many images, many stories from one image
-7. carved-versions — NOT SCHEDULED: seam-carved copies of a photo (as in esimov/caire) that get their own
-   frames, so tall crops keep more of the scene; spike numbers and a mockup are in the todo
+7. carved-versions — the Carve view is on branch `explore-claire-duplicate-photo-crops` (no PR yet).
+   Follow-ups in the todo: grid grouping, framer chips and the morph, a Rust render, Standalone.
 
 Remaining idea from auto-dual-frame Phase 3: tab-cycle alternative auto placements — tracked in ROADMAP.md.
