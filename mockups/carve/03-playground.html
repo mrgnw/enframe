@@ -16,10 +16,8 @@
 	.intro { max-width: 760px; color: var(--subtle); line-height: 1.55; margin: 0; font-size: 14px; }
 	.layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; margin-top: 24px; align-items: start; }
 	.stage { position: relative; background: #1a1a1a; border-radius: 10px; min-height: 420px; display: flex; align-items: center; justify-content: center; padding: 56px 12px 56px; }
-	canvas { display: block; max-width: 100%; max-height: 66vh; cursor: crosshair; }
-	#fx { position: absolute; pointer-events: none; }
-	.field input[type=color] { width: 44px; height: 26px; padding: 0 2px; border: 1px solid #3f3f46; border-radius: 6px; background: #1e1e1e; cursor: pointer; }
-	.check { display: flex; gap: 8px; align-items: center; color: #e4e4e7; cursor: pointer; }
+	#view { display: block; max-width: 100%; max-height: 62vh; cursor: crosshair; touch-action: none; }
+	#marks, #fx { position: absolute; pointer-events: none; }
 	.island { position: absolute; display: flex; align-items: center; gap: 4px; height: 36px; padding: 0 4px; border: 1px solid var(--edge); border-radius: 999px; background: var(--surface); backdrop-filter: blur(14px); box-shadow: 0 2px 12px rgba(0, 0, 0, .35); }
 	.views { top: 10px; left: 50%; transform: translateX(-50%); }
 	.views button { border: 0; background: transparent; color: #d4d4d8; font-size: 13px; height: 28px; padding: 0 12px; border-radius: 999px; }
@@ -29,24 +27,36 @@
 	.track { flex: 0 0 160px; height: 4px; border-radius: 2px; background: #3f3f46; overflow: hidden; }
 	.bar { height: 100%; width: 0; background: var(--brand); }
 	.progress button { margin-left: auto; border: 1px solid #3f3f46; background: #222225; color: #e4e4e7; border-radius: 6px; padding: 3px 10px; font-size: 12px; }
-	.hint { color: var(--faint); font-size: 12px; margin: 8px 2px 0; line-height: 1.5; }
+	.strip { display: flex; gap: 8px; overflow-x: auto; padding: 12px 2px 4px; }
+	.strip button { flex: none; height: 64px; padding: 0; border: 2px solid transparent; border-radius: 7px; overflow: hidden; background: #222225; opacity: .55; transition: opacity 120ms, border-color 120ms; }
+	.strip button:hover { opacity: 1; }
+	.strip button.active { border-color: var(--brand); opacity: 1; }
+	.strip img { height: 100%; display: block; }
+	.caption { color: var(--subtle); font-size: 13px; margin: 6px 2px 0; }
+	.keys { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--faint); font-size: 12px; margin: 10px 2px 0; }
+	kbd { font: 11px ui-monospace, SFMono-Regular, monospace; border: 1px solid #3f3f46; border-radius: 4px; padding: 1px 5px; color: #d4d4d8; }
 	aside { display: flex; flex-direction: column; gap: 14px; font-size: 13px; }
 	fieldset { border: 1px solid #27272a; border-radius: 10px; padding: 10px 12px 12px; margin: 0; display: flex; flex-direction: column; gap: 9px; }
+	fieldset.selected { border-color: rgba(96, 165, 250, .55); }
 	legend { color: var(--subtle); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; padding: 0 4px; }
+	fieldset.selected legend { color: var(--brand); }
 	.field { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; }
 	.field > span { color: #e4e4e7; }
 	.field output { color: var(--subtle); font-variant-numeric: tabular-nums; font-size: 12px; }
 	.field output.warn { color: #fbbf24; }
 	.field input[type=range], .field select, .field .segmented { grid-column: 1 / -1; width: 100%; }
-	.field small { grid-column: 1 / -1; color: var(--faint); font-size: 11.5px; line-height: 1.4; }
+	.field input[type=color] { width: 44px; height: 26px; padding: 0 2px; border: 1px solid #3f3f46; border-radius: 6px; background: #1e1e1e; cursor: pointer; }
+	.field small, fieldset > small { grid-column: 1 / -1; color: var(--faint); font-size: 11.5px; line-height: 1.45; }
 	select { background: #1e1e1e; color: #f4f4f5; border: 1px solid #3f3f46; border-radius: 6px; padding: 5px 6px; }
 	input[type=range] { accent-color: var(--brand); margin: 2px 0; }
 	.segmented { display: flex; border: 1px solid #3f3f46; border-radius: 7px; overflow: hidden; }
 	.segmented label { flex: 1; text-align: center; padding: 5px 0; cursor: pointer; color: #d4d4d8; }
 	.segmented input { display: none; }
 	.segmented label:has(input:checked) { background: rgba(96, 165, 250, .2); color: #fff; }
+	.check { display: flex; gap: 8px; align-items: center; color: #e4e4e7; cursor: pointer; }
 	.row { display: flex; gap: 8px; }
 	.row button { flex: 1; border: 1px solid #3f3f46; background: #222225; color: #e4e4e7; border-radius: 6px; padding: 5px 0; font-size: 12px; }
+	.row button[hidden] { display: none; }
 	@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -60,8 +70,10 @@
 		<section>
 			<div class="stage">
 				<canvas id="view"></canvas>
+				<canvas id="marks"></canvas>
 				<canvas id="fx"></canvas>
 				<div class="island views" id="views">
+					<button type="button" data-view="original">Original</button>
 					<button type="button" data-view="result" class="active">Result</button>
 					<button type="button" data-view="seams">Seams</button>
 					<button type="button" data-view="crop">Crop instead</button>
@@ -72,13 +84,24 @@
 					<button type="button" id="replay">Replay</button>
 				</div>
 			</div>
-			<p class="hint">Click the photo to add a point, click a point to delete it. Seams shows the original with what the current size removes in the seam colour, or repeats in green. Crop instead shows a plain crop to the same size, centred on the protected points.</p>
+			<div class="strip" id="strip" aria-label="Sample photos"></div>
+			<p class="caption" id="caption"></p>
+			<div class="keys">
+				<span>Click: add a point</span>
+				<span><kbd>⌥</kbd> click: add a remove point</span>
+				<span>Drag: move a point</span>
+				<span>Scroll or <kbd>[</kbd> <kbd>]</kbd>: size</span>
+				<span><kbd>⇧</kbd> <kbd>[</kbd> <kbd>]</kbd>: softer, harder</span>
+				<span><kbd>⌫</kbd>: delete point</span>
+				<span><kbd>Esc</kbd>: deselect</span>
+				<span><kbd>H</kbd>: show or hide points</span>
+				<span><kbd>\</kbd>: original or result</span>
+			</div>
 		</section>
 
 		<aside id="controls">
 			<fieldset>
-				<legend>Photo</legend>
-				<label class="field"><select id="photo"></select></label>
+				<legend>Shape</legend>
 				<div class="field">
 					<span>Direction</span>
 					<div class="segmented">
@@ -92,41 +115,45 @@
 				</label>
 			</fieldset>
 
-			<fieldset>
-				<legend>Seam style</legend>
-				<label class="field"><span>Colour</span><input type="color" id="seam-color" value="#22d3ee"></label>
-				<label class="check"><input type="checkbox" id="zap" checked> Zap: glow, flicker, sparks</label>
-			</fieldset>
-
-			<fieldset>
-				<legend>Points</legend>
+			<fieldset id="points-panel">
+				<legend id="points-legend">New points</legend>
 				<div class="field">
-					<span>A click adds</span>
+					<span>Kind</span>
 					<div class="segmented">
-						<label><input type="radio" name="tool" value="protect" checked>Protect</label>
-						<label><input type="radio" name="tool" value="remove">Remove</label>
+						<label><input type="radio" name="kind" value="protect" checked>Protect</label>
+						<label><input type="radio" name="kind" value="remove">Remove</label>
 					</div>
-					<small>Protect keeps seams out of a disc. Remove sends the first seams through it, deleting what is there.</small>
+					<small>Protect keeps seams out of the disc. Remove sends the first seams through it, deleting what is there.</small>
 				</div>
-				<label class="field"><span>Point size</span><output id="point-size-out"></output>
-					<input type="range" id="point-size" min="2" max="30" value="12">
+				<label class="field"><span>Size</span><output id="point-size-out"></output>
+					<input type="range" id="point-size" min="1" max="40" value="12">
 				</label>
 				<label class="field"><span>Protection</span><output id="strength-out"></output>
 					<input type="range" id="strength" min="0" max="10" value="10">
-					<small>Soft lets a seam through a point when everything else costs more.</small>
+					<small>Soft lets a seam through when everything else costs more.</small>
 				</label>
-				<div class="row"><button type="button" id="clear">Clear points</button><button type="button" id="preset">Photo's preset</button></div>
+				<label class="check"><input type="checkbox" id="show-points" checked> Show points</label>
+				<div class="row">
+					<button type="button" id="delete-point" hidden>Delete point</button>
+					<button type="button" id="clear">Clear all</button>
+					<button type="button" id="preset">Photo's preset</button>
+				</div>
+				<small id="points-note">These settings apply to the next point you add. Select a point to change it.</small>
+			</fieldset>
+
+			<fieldset>
+				<legend>Region</legend>
+				<label class="field"><span id="from-label">Left edge</span><output id="from-out"></output>
+					<input type="range" id="from" min="0" max="100" value="0">
+				</label>
+				<label class="field"><span id="to-label">Right edge</span><output id="to-out"></output>
+					<input type="range" id="to" min="0" max="100" value="100">
+				</label>
+				<small id="region-note">Seams may only run between these two lines, measured on the original from its left side. Outside is dimmed on the photo.</small>
 			</fieldset>
 
 			<fieldset>
 				<legend>Steering</legend>
-				<label class="field"><span>Region from</span><output id="from-out"></output>
-					<input type="range" id="from" min="0" max="100" value="0">
-				</label>
-				<label class="field"><span>Region to</span><output id="to-out"></output>
-					<input type="range" id="to" min="0" max="100" value="100">
-					<small>Seams may only run inside this band, measured across the cut.</small>
-				</label>
 				<label class="field"><span>Lean</span><output id="lean-out"></output>
 					<input type="range" id="lean" min="-10" max="10" value="0">
 					<small>Makes one side cheaper to cut, without forbidding the other.</small>
@@ -141,9 +168,10 @@
 				<legend>Detail measure</legend>
 				<label class="field"><span>Energy</span>
 					<select id="energy">
-						<option value="forward">Forward: cost of the edges a cut creates</option>
-						<option value="gradient">Gradient: edges the cut removes (caire)</option>
+						<option value="forward">Forward: avoid creating edges</option>
+						<option value="gradient">Gradient: avoid removing detail (caire)</option>
 					</select>
+					<small>Both pick the cut that shows least, judged differently. Gradient, as caire does, adds up the detail the cut runs through. Forward adds up the new edges that appear once the cut is gone: where the pixels either side close up, and where neighbouring rows shift by different amounts as the seam steps sideways. On Arches at 65%, gradient leaves zigzags along the arch edges; forward keeps them clean but squeezes the middle arch instead.</small>
 				</label>
 				<label class="field"><span>Blur</span><output id="blur-out"></output>
 					<input type="range" id="blur" min="0" max="6" value="0">
@@ -155,7 +183,14 @@
 						<option value="768" selected>768 px</option>
 						<option value="1024">1024 px, as in the spike</option>
 					</select>
+					<small>The size the seams are computed at, not just the preview. The photo shown here is 1280 px and gets the seams stretched over it, the same way an export would get them stretched over the full-size photo. Bigger is slower, with finer seams.</small>
 				</label>
+			</fieldset>
+
+			<fieldset>
+				<legend>Seam style</legend>
+				<label class="field"><span>Colour</span><input type="color" id="seam-color" value="#22d3ee"></label>
+				<label class="check"><input type="checkbox" id="zap" checked> Zap: glow, flicker, sparks</label>
 			</fieldset>
 		</aside>
 	</div>
@@ -260,30 +295,48 @@
 
 <script>
 	const PHOTOS = [
-		{ file: 'train.jpg', name: 'Train clouds (IMG_4667)', pointSize: 14, points: [[0.72, 0.4]] },
-		{ file: 'couple.jpg', name: 'Couple in Lisbon', pointSize: 10, points: [[0.49, 0.4], [0.49, 0.55], [0.49, 0.7]] },
-		{ file: 'bigben.jpg', name: 'Big Ben at night', pointSize: 8, points: [[0.34, 0.2], [0.34, 0.4], [0.34, 0.6]] },
+		{ file: 'train.jpg', name: 'Train clouds (IMG_4667)', points: [[0.72, 0.4, 0.14]] },
+		{ file: 'couple.jpg', name: 'Couple in Lisbon', points: [[0.49, 0.4, 0.1], [0.49, 0.55, 0.1], [0.49, 0.7, 0.1]] },
+		{ file: 'bigben.jpg', name: 'Big Ben at night', points: [[0.34, 0.2, 0.08], [0.34, 0.4, 0.08], [0.34, 0.6, 0.08]] },
 		{ file: 'drone-pano.jpg', name: 'Drone panorama, 3.7:1' },
-		{ file: 'moon.jpg', name: 'Moon (carve shorter)', rows: true },
+		{ file: 'moon.jpg', name: 'Moon, carved shorter', rows: true },
 		{ file: 'elchalten.jpg', name: 'El Chaltén panorama' },
 		{ file: 'mountains.jpg', name: 'Autumn mountains' },
 		{ file: 'tower.jpg', name: 'Tower, plane, storm cloud' },
-		{ file: 'arches.jpg', name: 'Arches (hard case)' },
-		{ file: 'drops.jpg', name: 'Water drops (hard case)' }
+		{ file: 'arches.jpg', name: 'Arches, a hard case' },
+		{ file: 'drops.jpg', name: 'Water drops, a hard case' }
 	];
 	const MAX_REMOVED = 0.6;
 	const BLOCKED = 2e4;
 	const REMOVE = -2e4;
 	const BACKGROUND = 0xff1a1a1a;
 	const GREEN = [74, 222, 128];
+	const SIZE_STEP = 1.15;
+	const MIN_SIZE = 0.01;
+	const MAX_SIZE = 0.4;
 	const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+	const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
 
 	const $ = (selector) => document.querySelector(selector);
 	const canvas = $('#view');
 	const context = canvas.getContext('2d');
+	const marks = $('#marks');
+	const marksContext = marks.getContext('2d');
 	const workerUrl = URL.createObjectURL(new Blob([$('#carver').textContent], { type: 'text/javascript' }));
 
-	const state = { view: 'result', points: [], photo: null };
+	// Points live in original-photo coordinates, 0–1 on each axis. `size` is the disc's radius
+	// as a fraction of the photo's short side; `strength` 0–10 is how hard seams avoid it.
+	const state = {
+		view: 'result',
+		lastView: 'result',
+		photo: null,
+		points: [],
+		selected: null,
+		showPoints: true,
+		brush: { kind: 'protect', size: 0.12, strength: 10 },
+		hover: null,
+		drag: null
+	};
 	let photo = null;
 	let oriented = null;
 	let work = null;
@@ -296,6 +349,7 @@
 	let replayStep = null;
 	let drawQueued = false;
 	let carveTimer = null;
+	let geometry = null;
 
 	// ---- controls
 
@@ -305,8 +359,6 @@
 
 	function params() {
 		return {
-			pointSize: value('point-size') / 100,
-			strength: value('strength'),
 			from: value('from') / 100,
 			to: value('to') / 100,
 			lean: value('lean'),
@@ -317,16 +369,19 @@
 		};
 	}
 
+	const strengthText = (s) => (s === 0 ? 'off' : s === 10 ? 'never cross' : `soft ${s}`);
+
 	function showValues() {
 		const size = value('size');
 		const sizeOut = $('#size-out');
 		sizeOut.textContent = size < 100 ? `${size}% · ${100 - size}% removed` : size > 100 ? `${size}% · widened` : '100%';
 		sizeOut.classList.toggle('warn', size < 60);
-		$('#point-size-out').textContent = `${value('point-size')}% of short side`;
-		const strength = value('strength');
-		$('#strength-out').textContent = strength === 0 ? 'off' : strength === 10 ? 'never cross' : `soft ${strength}`;
-		$('#from-out').textContent = `${value('from')}%`;
-		$('#to-out').textContent = `${value('to')}%`;
+		const [first, second, side, measure] = rows() ? ['Top edge', 'Bottom edge', 'top', 'height'] : ['Left edge', 'Right edge', 'left', 'width'];
+		$('#from-label').textContent = first;
+		$('#to-label').textContent = second;
+		$('#from-out').textContent = `${value('from')}% of the ${measure}`;
+		$('#to-out').textContent = `${value('to')}% of the ${measure}`;
+		$('#region-note').textContent = `Seams may only run between these two lines, measured on the original from its ${side} side, as a share of its ${measure}. Outside is dimmed on the photo.`;
 		const lean = value('lean');
 		const [before, after] = rows() ? ['top', 'bottom'] : ['left', 'right'];
 		$('#lean-out').textContent = lean === 0 ? 'none' : lean < 0 ? `cut ${before} ${-lean}` : `cut ${after} ${lean}`;
@@ -334,8 +389,49 @@
 		$('#blur-out').textContent = value('blur') === 0 ? 'off' : `${value('blur')} px`;
 	}
 
+	// The points panel edits the selected point, or the brush for the next point when none is.
+	function showPointControls() {
+		const target = state.selected ?? state.brush;
+		const selected = state.selected !== null;
+		$('#points-panel').classList.toggle('selected', selected);
+		$('#points-legend').textContent = selected ? 'Selected point' : 'New points';
+		$('#points-note').textContent = selected
+			? 'Changes apply to this point. Esc to go back to the settings for new points.'
+			: 'These settings apply to the next point you add. Select a point to change it.';
+		$('#delete-point').hidden = !selected;
+		document.querySelector(`input[name=kind][value=${target.kind}]`).checked = true;
+		$('#point-size').value = Math.round(target.size * 100);
+		$('#point-size-out').textContent = `${Math.round(target.size * 100)}% of short side`;
+		$('#strength').value = target.strength;
+		$('#strength-out').textContent = strengthText(target.strength);
+		$('#show-points').checked = state.showPoints;
+	}
+
+	function changePoint(change) {
+		const target = state.selected ?? state.brush;
+		change(target);
+		target.size = clamp(target.size, MIN_SIZE, MAX_SIZE);
+		target.strength = clamp(Math.round(target.strength), 0, 10);
+		showPointControls();
+		drawMarks();
+		if (target !== state.brush) scheduleCarve();
+	}
+
+	function select(point) {
+		state.selected = point;
+		showPointControls();
+		drawMarks();
+	}
+
+	function deleteSelected() {
+		if (!state.selected) return;
+		state.points.splice(state.points.indexOf(state.selected), 1);
+		select(null);
+		scheduleCarve();
+	}
+
 	// ---- pixels and orientation. Shorter carves the transposed photo by columns, so every
-	// step below works on columns; only drawing and clicks swap the axes back.
+	// step below works on columns; only drawing and pointer input swap the axes back.
 
 	function transpose(source, w, h, Type) {
 		const out = new Type(w * h);
@@ -372,9 +468,8 @@
 	}
 
 	function costMap(w, h) {
-		const { pointSize, strength, from, to, lean } = params();
+		const { from, to, lean } = params();
 		const cost = new Float32Array(w * h);
-		const protect = strength === 0 ? 0 : 2 ** strength;
 		for (let y = 0; y < h; y++) {
 			for (let x = 0; x < w; x++) {
 				const across = x / (w - 1);
@@ -383,12 +478,12 @@
 				cost[y * w + x] = c;
 			}
 		}
-		const radius = pointSize * Math.min(w, h);
 		for (const point of state.points) {
 			const o = orientPoint(point);
 			const cx = o.x * w;
 			const cy = o.y * h;
-			const add = point.kind === 'remove' ? REMOVE : protect;
+			const radius = point.size * Math.min(w, h);
+			const add = point.kind === 'remove' ? REMOVE : point.strength === 0 ? 0 : 2 ** point.strength;
 			for (let y = Math.max(0, Math.floor(cy - radius)); y < Math.min(h, Math.ceil(cy + radius)); y++) {
 				for (let x = Math.max(0, Math.floor(cx - radius)); x < Math.min(w, Math.ceil(cx + radius)); x++) {
 					if ((x - cx) ** 2 + (y - cy) ** 2 <= radius * radius) cost[y * w + x] += add;
@@ -466,7 +561,7 @@
 		return { map, length, marked };
 	}
 
-	// ---- drawing
+	// ---- painting the photo
 
 	function lerpPixel(a, b, f) {
 		if (f === 0 || a === b) return a;
@@ -480,6 +575,14 @@
 	function tint(pixel, [r, g, b]) {
 		const mix = (c, t) => (c * 0.4 + t * 0.6) | 0;
 		return 0xff000000 | (mix((pixel >> 16) & 255, b) << 16) | (mix((pixel >> 8) & 255, g) << 8) | mix(pixel & 255, r);
+	}
+
+	const shade = (pixel) => 0xff000000 | ((pixel & 0xfefefe) >> 1);
+
+	// The region band as fractions across the cut, or null when seams may go anywhere.
+	function regionBand() {
+		const { from, to } = params();
+		return from > 0 || to < 1 ? { from, to } : null;
 	}
 
 	let frameCache = null;
@@ -500,10 +603,11 @@
 		const { map, length } = layout;
 		const { w, h } = work;
 		const { w: dw, h: dh, pixels } = oriented;
+		const band = regionBand();
 		const outW = Math.max(1, Math.round((dw * length) / w));
 		const offset = Math.round((out.width - outW) / 2);
 		for (let Y = 0; Y < dh; Y++) {
-			const yl = Math.min(Math.max(((Y + 0.5) * h) / dh - 0.5, 0), h - 1);
+			const yl = clamp(((Y + 0.5) * h) / dh - 0.5, 0, h - 1);
 			const y0 = yl | 0;
 			const y1 = Math.min(y0 + 1, h - 1);
 			const fy = yl - y0;
@@ -512,39 +616,52 @@
 			const source = Y * dw;
 			const row = Y * out.width + offset;
 			for (let X = 0; X < outW; X++) {
-				const il = Math.min(Math.max(((X + 0.5) * length) / outW - 0.5, 0), length - 1);
+				const il = clamp(((X + 0.5) * length) / outW - 0.5, 0, length - 1);
 				const i0 = il | 0;
 				const i1 = Math.min(i0 + 1, length - 1);
 				const fi = il - i0;
 				const m = (map[r0 + i0] * (1 - fi) + map[r0 + i1] * fi) * (1 - fy) + (map[r1 + i0] * (1 - fi) + map[r1 + i1] * fi) * fy;
-				const sx = Math.min(Math.max(((m + 0.5) * dw) / w - 0.5, 0), dw - 1);
+				const sx = clamp(((m + 0.5) * dw) / w - 0.5, 0, dw - 1);
 				const x0 = sx | 0;
-				out.buffer[row + X] = lerpPixel(pixels[source + x0], pixels[source + Math.min(x0 + 1, dw - 1)], sx - x0);
+				let p = lerpPixel(pixels[source + x0], pixels[source + Math.min(x0 + 1, dw - 1)], sx - x0);
+				if (band) {
+					const across = (m + 0.5) / w;
+					if (across < band.from || across > band.to) p = shade(p);
+				}
+				out.buffer[row + X] = p;
 			}
 		}
-		return { outW, offset, length };
+		return { kind: 'result', offset, left: offset, right: offset + outW, outW, length, map };
 	}
 
-	function paintSeams(out, n, e) {
+	// The original, optionally tinted where the current size removes (or doubles) columns.
+	function paintOriginal(out, n, e, tinted) {
 		const { w, h } = work;
 		const { w: dw, h: dh, pixels } = oriented;
 		const offset = Math.round((out.width - dw) / 2);
 		const removedColour = rgb($('#seam-color').value);
+		const band = regionBand();
 		for (let Y = 0; Y < dh; Y++) {
 			const wy = Math.min(((Y * h) / dh) | 0, h - 1) * w;
+			const row = Y * out.width + offset;
 			for (let X = 0; X < dw; X++) {
-				const r = rank[wy + Math.min(((X * w) / dw) | 0, w - 1)];
-				const p = pixels[Y * dw + X];
-				out.buffer[Y * out.width + offset + X] = r < n ? tint(p, removedColour) : r < e ? tint(p, GREEN) : p;
+				let p = pixels[Y * dw + X];
+				if (tinted) {
+					const r = rank[wy + Math.min(((X * w) / dw) | 0, w - 1)];
+					if (r < n) p = tint(p, removedColour);
+					else if (r < e) p = tint(p, GREEN);
+				}
+				if (band && (X < band.from * dw || X > band.to * dw)) p = shade(p);
+				out.buffer[row + X] = p;
 			}
 		}
-		return { offset };
+		return { kind: 'original', offset, left: offset, right: offset + dw };
 	}
 
 	function cropStart(outW) {
 		const protect = state.points.filter((p) => p.kind === 'protect').map(orientPoint);
 		const centre = protect.length ? protect.reduce((s, p) => s + p.x, 0) / protect.length : 0.5;
-		return Math.min(Math.max(Math.round(centre * oriented.w - outW / 2), 0), oriented.w - outW);
+		return clamp(Math.round(centre * oriented.w - outW / 2), 0, oriented.w - outW);
 	}
 
 	function paintCrop(out, n) {
@@ -552,17 +669,25 @@
 		const outW = Math.round((dw * (work.w - n)) / work.w);
 		const start = cropStart(outW);
 		const offset = Math.round((out.width - outW) / 2);
+		const band = regionBand();
 		for (let Y = 0; Y < dh; Y++) {
-			out.buffer.set(pixels.subarray(Y * dw + start, Y * dw + start + outW), Y * out.width + offset);
+			for (let X = 0; X < outW; X++) {
+				let p = pixels[Y * dw + start + X];
+				if (band && (start + X < band.from * dw || start + X > band.to * dw)) p = shade(p);
+				out.buffer[Y * out.width + offset + X] = p;
+			}
 		}
-		return { offset: offset - start };
+		return { kind: 'original', offset: offset - start, left: offset, right: offset + outW };
 	}
+
+	// ---- mapping between the original photo and canvas pixels in the current view
 
 	// Where an original point lands in the current result: count the columns still standing
 	// to its left in its working row.
-	function resultX(o, n, e, geometry) {
+	function resultX(o) {
 		const { w, h } = work;
-		const row = Math.min(Math.max(Math.round(o.y * h - 0.5), 0), h - 1) * w;
+		const { n, e } = geometry;
+		const row = clamp(Math.round(o.y * h - 0.5), 0, h - 1) * w;
 		const px = o.x * w;
 		let count = 0;
 		for (let x = 0; x < Math.min(px, w); x++) {
@@ -572,27 +697,119 @@
 		return geometry.offset + (count * geometry.outW) / geometry.length;
 	}
 
-	function drawPoints(n, e, geometry) {
-		const { w: dw, h: dh } = oriented;
-		const radius = params().pointSize * Math.min(dw, dh);
-		for (const point of state.points) {
-			const o = orientPoint(point);
-			const x = state.view === 'result' ? resultX(o, n, e, geometry) : geometry.offset + o.x * dw;
-			const y = o.y * dh;
-			const [vx, vy] = rows() ? [y, x] : [x, y];
-			context.beginPath();
-			context.arc(vx, vy, radius, 0, Math.PI * 2);
-			context.lineWidth = 2;
-			context.setLineDash(point.kind === 'remove' ? [6, 5] : []);
-			context.strokeStyle = point.kind === 'remove' ? '#f87171' : 'rgba(255, 255, 255, .9)';
-			context.stroke();
-			context.beginPath();
-			context.arc(vx, vy, 4, 0, Math.PI * 2);
-			context.fillStyle = point.kind === 'remove' ? '#f87171' : '#fff';
-			context.fill();
-		}
-		context.setLineDash([]);
+	function toCanvas(point) {
+		const o = orientPoint(point);
+		const x = geometry.kind === 'result' ? resultX(o) : geometry.offset + o.x * oriented.w;
+		const y = o.y * oriented.h;
+		return rows() ? [y, x] : [x, y];
 	}
+
+	function fromCanvas([cx, cy]) {
+		const [X, Y] = rows() ? [cy, cx] : [cx, cy];
+		const { w: dw, h: dh } = oriented;
+		if (X < geometry.left || X > geometry.right || Y < 0 || Y > dh) return null;
+		let ox;
+		if (geometry.kind === 'result') {
+			const { w, h } = work;
+			const i = clamp(Math.round(((X - geometry.offset + 0.5) * geometry.length) / geometry.outW - 0.5), 0, geometry.length - 1);
+			const row = clamp(Math.round(((Y + 0.5) * h) / dh - 0.5), 0, h - 1);
+			ox = (geometry.map[row * geometry.length + i] + 0.5) / w;
+		} else {
+			ox = (X - geometry.offset) / dw;
+		}
+		const oy = Y / dh;
+		return rows() ? { x: oy, y: ox } : { x: ox, y: oy };
+	}
+
+	function eventToCanvas(event) {
+		const box = canvas.getBoundingClientRect();
+		return [((event.clientX - box.left) * canvas.width) / box.width, ((event.clientY - box.top) * canvas.height) / box.height];
+	}
+
+	const shortSide = () => Math.min(oriented.w, oriented.h);
+
+	// The topmost visible point under a canvas position.
+	function pointAt(position) {
+		if (!position || !state.showPoints || !geometry) return null;
+		for (let i = state.points.length - 1; i >= 0; i--) {
+			const point = state.points[i];
+			const [x, y] = toCanvas(point);
+			if (Math.hypot(x - position[0], y - position[1]) <= point.size * shortSide()) return point;
+		}
+		return null;
+	}
+
+	// ---- marks: points and the brush outline, on their own canvas so the cursor moves
+	// without repainting the photo
+
+	function circle(g, x, y, radius) {
+		g.beginPath();
+		g.arc(x, y, radius, 0, Math.PI * 2);
+		g.stroke();
+	}
+
+	function drawPoint(g, point, scale) {
+		const [x, y] = toCanvas(point);
+		const radius = point.size * shortSide();
+		const remove = point.kind === 'remove';
+		const selected = point === state.selected;
+		g.setLineDash(remove ? [6 * scale, 5 * scale] : point.strength < 10 ? [2 * scale, 4 * scale] : []);
+		g.globalAlpha = remove ? 1 : 0.45 + 0.055 * point.strength;
+		g.lineWidth = (selected ? 3 : 2) * scale;
+		g.strokeStyle = 'rgba(0, 0, 0, .5)';
+		circle(g, x, y, radius + g.lineWidth);
+		g.strokeStyle = selected ? '#60a5fa' : remove ? '#f87171' : '#fff';
+		circle(g, x, y, radius);
+		g.globalAlpha = 1;
+		g.setLineDash([]);
+		g.fillStyle = g.strokeStyle;
+		g.beginPath();
+		g.arc(x, y, 3.5 * scale, 0, Math.PI * 2);
+		g.fill();
+		if (!selected) return;
+		const label = `${Math.round(point.size * 100)}% · ${remove ? 'remove' : strengthText(point.strength)}`;
+		g.font = `${12 * scale}px ui-sans-serif, system-ui, sans-serif`;
+		const width = g.measureText(label).width + 12 * scale;
+		g.fillStyle = 'rgba(0, 0, 0, .75)';
+		g.fillRect(x - width / 2, y - radius - 26 * scale, width, 20 * scale);
+		g.fillStyle = '#fff';
+		g.textAlign = 'center';
+		g.textBaseline = 'middle';
+		g.fillText(label, x, y - radius - 16 * scale);
+	}
+
+	function drawBrush(g, scale) {
+		const [x, y] = state.hover;
+		const { kind, size } = state.brush;
+		g.setLineDash([4 * scale, 4 * scale]);
+		g.lineWidth = 1.5 * scale;
+		g.strokeStyle = kind === 'remove' || state.alt ? '#f87171' : 'rgba(255, 255, 255, .8)';
+		circle(g, x, y, size * shortSide());
+		g.setLineDash([]);
+	}
+
+	function drawMarks() {
+		syncLayers();
+		const g = marksContext;
+		g.clearRect(0, 0, marks.width, marks.height);
+		if (!geometry) return;
+		const scale = marks.width / Math.max(marks.clientWidth, 1);
+		if (state.showPoints) for (const point of state.points) drawPoint(g, point, scale);
+		const overPoint = pointAt(state.hover);
+		canvas.style.cursor = overPoint || state.drag ? 'move' : 'crosshair';
+		if (state.hover && !overPoint && !state.drag) drawBrush(g, scale);
+	}
+
+	function syncLayers() {
+		for (const layer of [marks, fx]) {
+			if (layer.width !== canvas.width || layer.height !== canvas.height) [layer.width, layer.height] = [canvas.width, canvas.height];
+			layer.style.left = `${canvas.offsetLeft}px`;
+			layer.style.top = `${canvas.offsetTop}px`;
+			layer.style.width = `${canvas.offsetWidth}px`;
+			layer.style.height = `${canvas.offsetHeight}px`;
+		}
+	}
+	new ResizeObserver(() => drawMarks()).observe(canvas);
 
 	// ---- the seam lives on its own canvas over the photo, so the zap keeps moving between
 	// photo redraws. Paths are flat [x0, y0, x1, y1, …] in canvas pixels.
@@ -604,7 +821,7 @@
 	const MAX_SPARKS = 220;
 	const effects = { seam: null, key: null, photo: null, trail: [], sparks: [], running: false, last: 0 };
 
-	function seamPath(marked, geometry) {
+	function seamPath(marked) {
 		const dh = oriented.h;
 		const h = work.h;
 		const path = [];
@@ -617,15 +834,6 @@
 		}
 		return path;
 	}
-
-	function syncFx() {
-		if (fx.width !== canvas.width || fx.height !== canvas.height) [fx.width, fx.height] = [canvas.width, canvas.height];
-		fx.style.left = `${canvas.offsetLeft}px`;
-		fx.style.top = `${canvas.offsetTop}px`;
-		fx.style.width = `${canvas.offsetWidth}px`;
-		fx.style.height = `${canvas.offsetHeight}px`;
-	}
-	new ResizeObserver(syncFx).observe(canvas);
 
 	// A seam that gives way to the next one fades out as part of the trail. `photo` is the
 	// result's rectangle; the trail stays inside it while the photo shrinks.
@@ -766,7 +974,7 @@
 		else effects.running = false;
 	}
 
-	let geometry = null;
+	// ---- one frame of the photo
 
 	function draw() {
 		drawQueued = false;
@@ -786,16 +994,13 @@
 			e = Math.min(e, steps);
 		}
 		const out = frame();
-		let seam = null;
-		if (state.view === 'seams') {
-			geometry = paintSeams(out, n, e);
-		} else if (state.view === 'crop' && e === 0) {
-			geometry = paintCrop(out, n);
-		} else {
-			const layout = columnMap(n, e);
+		let layout = null;
+		if (state.view === 'original') geometry = paintOriginal(out, 0, 0, false);
+		else if (state.view === 'seams') geometry = paintOriginal(out, n, e, true);
+		else if (state.view === 'crop' && e === 0) geometry = paintCrop(out, n);
+		else {
+			layout = columnMap(n, e);
 			geometry = paintResult(out, layout);
-			geometry.map = layout.map;
-			if (showSeam) seam = seamPath(layout.marked, geometry);
 		}
 		geometry.n = n;
 		geometry.e = e;
@@ -811,10 +1016,10 @@
 		} else {
 			context.putImageData(image, 0, 0);
 		}
-		drawPoints(n, e, geometry);
+		drawMarks();
 		drawStatus();
-		syncFx();
-		const rect = geometry.outW ? [geometry.offset, 0, geometry.outW, oriented.h] : null;
+		const seam = layout && showSeam ? seamPath(layout.marked) : null;
+		const rect = geometry.kind === 'result' ? [geometry.offset, 0, geometry.outW, oriented.h] : null;
 		setSeam(seam, n, rect && rows() ? [rect[1], rect[0], rect[3], rect[2]] : rect);
 	}
 
@@ -833,39 +1038,105 @@
 			: `${maxSeams} seams in ${seconds} s · ${size} · every size from 40% to 140% is ready`;
 	}
 
-	// ---- clicks: map a canvas pixel back to the original photo
-
-	function clickToPoint(event) {
-		const box = canvas.getBoundingClientRect();
-		const cx = ((event.clientX - box.left) * canvas.width) / box.width;
-		const cy = ((event.clientY - box.top) * canvas.height) / box.height;
-		const [X, Y] = rows() ? [cy, cx] : [cx, cy];
-		const { w: dw, h: dh } = oriented;
-		let ox;
-		if (state.view === 'result' && geometry.map) {
-			const { w, h } = work;
-			const i = Math.round(((X - geometry.offset + 0.5) * geometry.length) / geometry.outW - 0.5);
-			if (i < 0 || i >= geometry.length) return null;
-			const row = Math.min(Math.max(Math.round(((Y + 0.5) * h) / dh - 0.5), 0), h - 1);
-			ox = (geometry.map[row * geometry.length + i] + 0.5) / w;
-		} else {
-			ox = (X - geometry.offset) / dw;
-		}
-		const oy = Y / dh;
-		if (ox < 0 || ox > 1 || oy < 0 || oy > 1) return null;
-		return rows() ? { x: oy, y: ox } : { x: ox, y: oy };
+	function setView(view) {
+		if (view !== 'original') state.lastView = view;
+		state.view = view;
+		for (const b of document.querySelectorAll('#views button')) b.classList.toggle('active', b.dataset.view === view);
+		requestDraw();
 	}
 
-	canvas.addEventListener('click', (event) => {
-		if (!work) return;
-		const point = clickToPoint(event);
-		if (!point) return;
-		const { width, height } = photo.image;
-		const radius = params().pointSize * Math.min(width, height);
-		const hit = state.points.findIndex((p) => Math.hypot((p.x - point.x) * width, (p.y - point.y) * height) <= radius);
-		if (hit >= 0) state.points.splice(hit, 1);
-		else state.points.push({ ...point, kind: radio('tool') });
+	// ---- pointer: click adds, drag moves, the wheel sizes the point under it or the brush
+
+	canvas.addEventListener('pointerdown', (event) => {
+		if (!work || !geometry || event.button !== 0) return;
+		const position = eventToCanvas(event);
+		const hit = pointAt(position);
+		if (hit) {
+			select(hit);
+			state.drag = { point: hit, moved: false };
+			canvas.setPointerCapture(event.pointerId);
+			return;
+		}
+		const at = fromCanvas(position);
+		if (!at) return select(null);
+		const { size, strength } = state.brush;
+		const point = { ...at, kind: event.altKey ? 'remove' : state.brush.kind, size, strength };
+		state.points.push(point);
+		state.showPoints = true;
+		select(point);
 		scheduleCarve();
+	});
+
+	canvas.addEventListener('pointermove', (event) => {
+		state.hover = eventToCanvas(event);
+		state.alt = event.altKey;
+		if (state.drag) {
+			const at = fromCanvas(state.hover);
+			if (at) {
+				Object.assign(state.drag.point, at);
+				state.drag.moved = true;
+			}
+		}
+		drawMarks();
+	});
+
+	canvas.addEventListener('pointerup', () => {
+		if (state.drag?.moved) scheduleCarve();
+		state.drag = null;
+		drawMarks();
+	});
+
+	canvas.addEventListener('pointerleave', () => {
+		state.hover = null;
+		drawMarks();
+	});
+
+	canvas.addEventListener(
+		'wheel',
+		(event) => {
+			if (!geometry) return;
+			event.preventDefault();
+			const factor = event.deltaY < 0 ? SIZE_STEP : 1 / SIZE_STEP;
+			const hit = pointAt(eventToCanvas(event));
+			if (hit && hit !== state.selected) select(hit);
+			if (!hit && state.selected) select(null);
+			changePoint((p) => (p.size *= factor));
+		},
+		{ passive: false }
+	);
+
+	// ---- keyboard, after Photoshop and Lightroom: [ ] size, shift [ ] hardness, H pins, \ before
+
+	document.addEventListener('keydown', (event) => {
+		if (event.metaKey || event.ctrlKey || event.target.closest('select, input[type=color]')) return;
+		switch (event.code) {
+			case 'BracketLeft':
+				changePoint((p) => (event.shiftKey ? (p.strength -= 1) : (p.size /= SIZE_STEP)));
+				break;
+			case 'BracketRight':
+				changePoint((p) => (event.shiftKey ? (p.strength += 1) : (p.size *= SIZE_STEP)));
+				break;
+			case 'Backspace':
+			case 'Delete':
+				if (!state.selected) return;
+				deleteSelected();
+				break;
+			case 'Escape':
+				select(null);
+				break;
+			case 'KeyH':
+				state.showPoints = !state.showPoints;
+				if (!state.showPoints) state.selected = null;
+				showPointControls();
+				drawMarks();
+				break;
+			case 'Backslash':
+				setView(state.view === 'original' ? state.lastView : 'original');
+				break;
+			default:
+				return;
+		}
+		event.preventDefault();
 	});
 
 	// ---- replay: the same seams again, one per frame, without carving
@@ -874,6 +1145,7 @@
 		if (carving || !work) return;
 		const { n } = target();
 		if (n === 0) return;
+		setView(state.view === 'original' ? 'result' : state.view);
 		const perFrame = Math.max(1, Math.round(n / 120));
 		replayStep = 0;
 		const tick = () => {
@@ -885,12 +1157,12 @@
 		requestAnimationFrame(tick);
 	});
 
-	// ---- wiring
+	// ---- photos
 
 	function applyPreset() {
-		const preset = state.photo;
-		state.points = (preset.points ?? []).map(([x, y]) => ({ x, y, kind: 'protect' }));
-		if (preset.pointSize) $('#point-size').value = preset.pointSize;
+		state.points = (state.photo.points ?? []).map(([x, y, size]) => ({ x, y, size, kind: 'protect', strength: 10 }));
+		state.selected = null;
+		showPointControls();
 	}
 
 	let loading = 0;
@@ -904,6 +1176,8 @@
 		if (ticket !== loading) return;
 		state.photo = preset;
 		photo = { image, pixels: pixelsAt(image, image.naturalWidth, image.naturalHeight) };
+		for (const [i, button] of [...$('#strip').children].entries()) button.classList.toggle('active', i === index);
+		$('#caption').textContent = `${preset.name} · shown at ${image.naturalWidth}×${image.naturalHeight}`;
 		document.querySelector(`input[name=direction][value=${preset.rows ? 'rows' : 'columns'}]`).checked = true;
 		applyPreset();
 		reorient();
@@ -912,42 +1186,69 @@
 	function reorient() {
 		const { naturalWidth: w, naturalHeight: h } = photo.image;
 		oriented = orient(photo.pixels, w, h);
+		geometry = null;
 		showValues();
 		carve();
 	}
 
-	PHOTOS.forEach((p, i) => $('#photo').append(new Option(p.name, i)));
-	$('#photo').addEventListener('change', (event) => loadPhoto(Number(event.target.value)));
+	PHOTOS.forEach((p, i) => {
+		const button = document.createElement('button');
+		button.type = 'button';
+		button.title = p.name;
+		button.setAttribute('aria-label', p.name);
+		button.innerHTML = `<img src="assets/play/thumbs/${p.file}" alt="">`;
+		button.addEventListener('click', () => loadPhoto(i));
+		$('#strip').append(button);
+	});
+
+	// ---- wiring
+
 	for (const input of document.querySelectorAll('input[name=direction]')) input.addEventListener('change', reorient);
 	$('#size').addEventListener('input', () => {
 		showValues();
 		requestDraw();
 	});
-	for (const id of ['point-size', 'strength', 'from', 'to', 'lean', 'straight', 'blur']) {
+	for (const input of document.querySelectorAll('input[name=kind]')) {
+		input.addEventListener('change', () => changePoint((p) => (p.kind = input.value)));
+	}
+	$('#point-size').addEventListener('input', (event) => changePoint((p) => (p.size = Number(event.target.value) / 100)));
+	$('#strength').addEventListener('input', (event) => changePoint((p) => (p.strength = Number(event.target.value))));
+	$('#show-points').addEventListener('change', (event) => {
+		state.showPoints = event.target.checked;
+		if (!state.showPoints) select(null);
+		drawMarks();
+	});
+	$('#delete-point').addEventListener('click', deleteSelected);
+	$('#clear').addEventListener('click', () => {
+		state.points = [];
+		select(null);
+		scheduleCarve();
+	});
+	$('#preset').addEventListener('click', () => {
+		applyPreset();
+		scheduleCarve();
+	});
+	// The two edges never cross: moving one past the other pushes it along.
+	$('#from').addEventListener('input', () => {
+		if (value('from') > value('to')) $('#to').value = value('from');
+	});
+	$('#to').addEventListener('input', () => {
+		if (value('to') < value('from')) $('#from').value = value('to');
+	});
+	for (const id of ['from', 'to', 'lean', 'straight', 'blur']) {
 		$(`#${id}`).addEventListener('input', () => {
 			showValues();
+			requestDraw();
 			scheduleCarve();
 		});
 	}
 	for (const id of ['energy', 'working']) $(`#${id}`).addEventListener('change', scheduleCarve);
 	$('#seam-color').addEventListener('input', requestDraw);
-	$('#clear').addEventListener('click', () => {
-		state.points = [];
-		scheduleCarve();
-	});
-	$('#preset').addEventListener('click', () => {
-		applyPreset();
-		showValues();
-		scheduleCarve();
-	});
 	for (const button of document.querySelectorAll('#views button')) {
-		button.addEventListener('click', () => {
-			state.view = button.dataset.view;
-			for (const b of document.querySelectorAll('#views button')) b.classList.toggle('active', b === button);
-			requestDraw();
-		});
+		button.addEventListener('click', () => setView(button.dataset.view));
 	}
 
+	showPointControls();
 	loadPhoto(0);
 </script>
 </body>
