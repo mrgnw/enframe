@@ -16,7 +16,7 @@
 	.intro { max-width: 760px; color: var(--subtle); line-height: 1.55; margin: 0; font-size: 14px; }
 	.layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; margin-top: 24px; align-items: start; }
 	.stage { position: relative; background: #1a1a1a; border-radius: 10px; min-height: 420px; display: flex; align-items: center; justify-content: center; padding: 56px 12px 56px; }
-	#view { display: block; max-width: 100%; max-height: 62vh; cursor: crosshair; touch-action: none; }
+	#view { display: block; min-width: 0; max-width: 100%; max-height: 62vh; cursor: crosshair; touch-action: none; }
 	#marks, #fx { position: absolute; pointer-events: none; }
 	.island { position: absolute; display: flex; align-items: center; gap: 4px; height: 36px; padding: 0 4px; border: 1px solid var(--edge); border-radius: 999px; background: var(--surface); backdrop-filter: blur(14px); box-shadow: 0 2px 12px rgba(0, 0, 0, .35); }
 	.views { top: 10px; left: 50%; transform: translateX(-50%); }
@@ -59,7 +59,33 @@
 	.row { display: flex; gap: 8px; }
 	.row button { flex: 1; border: 1px solid #3f3f46; background: #222225; color: #e4e4e7; border-radius: 6px; padding: 5px 0; font-size: 12px; }
 	.row button[hidden] { display: none; }
-	@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+	.touch-hint { display: none; color: var(--faint); font-size: 12.5px; line-height: 1.5; margin: 10px 2px 0; }
+	@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+	@media (hover: none) { .keys { display: none; } .touch-hint { display: block; } }
+	/* Phones: the photo stays pinned at the top while the controls scroll under it, and the
+	   islands become rows above and below the photo instead of covering it. */
+	@media (max-width: 760px) {
+		main { padding: 16px 12px 40px; }
+		h1 { font-size: 24px; }
+		.intro { font-size: 13px; }
+		.layout { margin-top: 14px; gap: 0; }
+		.layout > section { display: contents; }
+		aside { margin-top: 18px; }
+		.stage { position: sticky; top: 0; z-index: 5; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: 'views views' 'photo photo' 'energy progress'; gap: 8px; min-height: 0; margin: 0 -12px; padding: 8px; border-radius: 0 0 12px 12px; box-shadow: 0 8px 20px rgba(0, 0, 0, .6); }
+		.island { position: static; transform: none; }
+		.views { grid-area: views; justify-content: space-between; }
+		.views button { flex: 1; padding: 0 4px; height: 30px; }
+		#view { grid-area: photo; justify-self: center; max-height: 42svh; }
+		.energy { grid-area: energy; }
+		.energy button { padding: 0 9px; }
+		.progress { grid-area: progress; height: 36px; padding: 0 4px 0 10px; gap: 8px; min-width: 0; }
+		.progress .more { display: none; }
+		.track { flex: 0 0 36px; }
+		#status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+		.segmented label { padding: 9px 0; }
+		.row button { padding: 9px 0; }
+		.strip button { height: 56px; }
+	}
 </style>
 </head>
 <body>
@@ -92,6 +118,7 @@
 			</div>
 			<div class="strip" id="strip" aria-label="Sample photos"></div>
 			<p class="caption" id="caption"></p>
+			<p class="touch-hint">Tap the photo to add a point and drag to move it. Tap a point to select it, then change its size and softness in Points below.</p>
 			<div class="keys">
 				<span>Click: add a point</span>
 				<span><kbd>⌥</kbd> click: add a remove point</span>
@@ -174,7 +201,7 @@
 
 			<fieldset>
 				<legend>Detail measure</legend>
-				<small>Energy is the Forward | Gradient switch over the photo, or <kbd>E</kbd>. Both pick the cut that shows least, judged differently. Gradient, as caire does, adds up the detail the cut runs through. Forward adds up the new edges that appear once the cut is gone: where the pixels either side close up, and where neighbouring rows shift by different amounts as the seam steps sideways. On Arches at 65%, gradient leaves zigzags along the arch edges; forward keeps them clean but squeezes the middle arch instead. Each finished carve is kept, so switching back is instant.</small>
+				<small>Energy is the Forward | Gradient switch by the photo, or <kbd>E</kbd>. Both pick the cut that shows least, judged differently. Gradient, as caire does, adds up the detail the cut runs through. Forward adds up the new edges that appear once the cut is gone: where the pixels either side close up, and where neighbouring rows shift by different amounts as the seam steps sideways. On Arches at 65%, gradient leaves zigzags along the arch edges; forward keeps them clean but squeezes the middle arch instead. Each finished carve is kept, so switching back is instant.</small>
 				<label class="field"><span>Blur</span><output id="blur-out"></output>
 					<input type="range" id="blur" min="0" max="6" value="0">
 					<small>Smooths fine texture before measuring, as caire's blur flag does.</small>
@@ -1024,9 +1051,9 @@
 		const seconds = (elapsed / 1000).toFixed(2);
 		$('#bar').style.width = `${(100 * steps) / Math.max(maxSeams, 1)}%`;
 		const size = `${work.w}×${work.h} working copy`;
-		$('#status').textContent = carving
-			? `Carving · ${steps} of ${maxSeams} seams · ${seconds} s · ${size}`
-			: `${maxSeams} seams in ${seconds} s${fromCache ? ', kept from before' : ''} · ${size} · every size from 40% to 140% is ready`;
+		$('#status').innerHTML = carving
+			? `<span class="more">Carving </span>${steps}/${maxSeams}<span class="more"> seams · ${seconds} s · ${size}</span>`
+			: `${seconds} s<span class="more"> for ${maxSeams} seams${fromCache ? ', kept from before' : ''} · ${size} · every size from 40% to 140% is ready</span>`;
 	}
 
 	function setEnergy(energy) {
