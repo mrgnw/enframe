@@ -119,11 +119,17 @@ async function exportFile(result: CarveResult) {
 </script>
 
 <div class="screen">
-	<a href="/edit/{photoId}" class="back" aria-label="Back to the framer" title="Back to the framer">‹</a>
 	{#if loading}
 		<div class="loading">Loading...</div>
 	{:else if photo}
-		<Carver imageSrc={getImageSrc(photo.file_path)} title={photo.title ?? ''} {initialPoints} onsave={save} onexport={exportFile} />
+		<Carver
+			imageSrc={getImageSrc(photo.file_path)}
+			title={photo.title ?? ''}
+			backHref="/edit/{photoId}"
+			{initialPoints}
+			onsave={save}
+			onexport={exportFile}
+		/>
 		<div class="format seg">
 			{#each FORMATS as f (f)}
 				<button class:on={format === f} onclick={() => (format = f)}>{f.toUpperCase()}</button>
@@ -139,21 +145,6 @@ async function exportFile(result: CarveResult) {
 		position: relative;
 		min-height: 100vh;
 		background: var(--bg);
-	}
-	.back {
-		position: fixed;
-		top: 18px;
-		left: 90px;
-		z-index: 61;
-		width: 30px;
-		height: 30px;
-		display: grid;
-		place-items: center;
-		border-radius: 999px;
-		background: var(--surface);
-		color: var(--fg);
-		text-decoration: none;
-		font-size: 18px;
 	}
 	.format {
 		position: fixed;

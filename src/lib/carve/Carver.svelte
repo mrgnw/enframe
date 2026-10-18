@@ -53,12 +53,13 @@ export interface CarveResult {
 interface Props {
 	imageSrc: string;
 	title: string;
+	backHref?: string;
 	initialPoints?: CarvePoint[];
 	onsave?: (result: CarveResult) => Promise<void>;
 	onexport?: (result: CarveResult) => Promise<void>;
 }
 
-let { imageSrc, title, initialPoints = [], onsave, onexport }: Props = $props();
+let { imageSrc, title, backHref, initialPoints = [], onsave, onexport }: Props = $props();
 
 type View = 'original' | 'crop' | 'result' | 'seams';
 const VIEWS: View[] = ['original', 'crop', 'result', 'seams'];
@@ -1038,25 +1039,35 @@ onMount(() => {
 
 {#snippet dockTitle()}
 	<span class="sep"></span>
-	<span class="muted">Carve · {title}</span>
+	{#if backHref}
+		<a class="btn icon" href={backHref} aria-label="Back to the framer" title="Back to the framer">‹</a>
+	{/if}
+	<span class="muted">Carve{#if !phone} · {title}{/if}</span>
 {/snippet}
 
+{#snippet views()}
+	<div class="seg views">
+		{#each VIEWS as v, i (v)}
+			<button class:on={view === v} title="{v} ({i + 1})" onclick={() => setView(v)}>{v[0].toUpperCase() + v.slice(1)}</button>
+		{/each}
+	</div>
+{/snippet}
+
+{#snippet actions()}
+	<button class="btn" disabled={!loaded || carving || busy !== null} onclick={() => run('export')}>
+		{busy === 'export' ? 'Exporting…' : 'Export'}
+	</button>
+	<button class="btn primary" disabled={!loaded || carving || busy !== null} onclick={() => run('save')}>
+		{busy === 'save' ? 'Saving…' : phone ? 'Save' : 'Save to library'}
+	</button>
+{/snippet}
+
+<!-- The dock has no room for the views and actions on a phone; they sit under the photo instead. -->
 {#snippet dockIslands()}
-	<div class="island mid views">
-		<div class="seg">
-			{#each VIEWS as v, i (v)}
-				<button class:on={view === v} title="{v} ({i + 1})" onclick={() => setView(v)}>{v[0].toUpperCase() + v.slice(1)}</button>
-			{/each}
-		</div>
-	</div>
-	<div class="island end actions">
-		<button class="btn" disabled={!loaded || carving || busy !== null} onclick={() => run('export')}>
-			{busy === 'export' ? 'Exporting…' : 'Export'}
-		</button>
-		<button class="btn primary" disabled={!loaded || carving || busy !== null} onclick={() => run('save')}>
-			{busy === 'save' ? 'Saving…' : 'Save to library'}
-		</button>
-	</div>
+	{#if !phone}
+		<div class="island mid">{@render views()}</div>
+		<div class="island end actions">{@render actions()}</div>
+	{/if}
 {/snippet}
 
 <div class="carver">
@@ -1075,11 +1086,17 @@ onMount(() => {
 		{#if failed}
 			<p class="muted">The photo could not be decoded</p>
 		{/if}
+		{#if phone}
+			<div class="bar-row">{@render views()}</div>
+		{/if}
 		<div class="island progress">
 			<div class="track"><div class="bar" style:width="{(100 * steps) / Math.max(maxSeams, 1)}%"></div></div>
 			<span class="status">{status}</span>
 			<button class="btn" disabled={carving || !loaded} onclick={replay}>Replay</button>
 		</div>
+		{#if phone}
+			<div class="bar-row actions">{@render actions()}</div>
+		{/if}
 	</section>
 
 	<aside class="panel">
@@ -1259,7 +1276,7 @@ onMount(() => {
 	.status {
 		white-space: nowrap;
 	}
-	.views {
+	.island.mid {
 		padding: 0 4px;
 	}
 	.actions {
@@ -1391,16 +1408,40 @@ onMount(() => {
 			position: sticky;
 			top: 0;
 			z-index: 5;
-			padding: 66px 8px 56px;
+			display: grid;
+			justify-items: center;
+			gap: 8px;
+			padding: 66px 8px 8px;
 			background: var(--bg);
 			box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
 		}
 		.view {
-			max-height: 42svh;
+			max-height: 40svh;
+		}
+		.bar-row {
+			display: flex;
+			width: 100%;
+			gap: 8px;
+		}
+		.bar-row .views,
+		.bar-row .views button,
+		.bar-row .btn {
+			flex: 1;
+		}
+		.bar-row .views button {
+			padding: 0;
 		}
 		.progress {
-			left: 8px;
-			right: 8px;
+			position: static;
+			width: 100%;
+			min-width: 0;
+		}
+		.status {
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+		.progress .btn {
+			margin-left: auto;
 		}
 		.track {
 			flex: 0 0 48px;
