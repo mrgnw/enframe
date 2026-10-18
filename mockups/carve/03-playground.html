@@ -190,7 +190,8 @@
 			<fieldset>
 				<legend>Seam style</legend>
 				<label class="field"><span>Colour</span><input type="color" id="seam-color" value="#22d3ee"></label>
-				<label class="check"><input type="checkbox" id="zap" checked> Zap: glow, flicker, sparks</label>
+				<label class="check"><input type="checkbox" id="glow" checked> Glow: flicker and afterglow</label>
+				<label class="check"><input type="checkbox" id="sparks"> Sparks</label>
 			</fieldset>
 		</aside>
 	</div>
@@ -954,21 +955,22 @@
 		g.clearRect(0, 0, fx.width, fx.height);
 		const scale = fx.width / Math.max(fx.clientWidth, 1);
 		const colour = $('#seam-color').value;
-		if ($('#zap').checked) {
+		if ($('#glow').checked) {
 			drawTrail(g, dt, colour, scale);
-			if (effects.seam) {
-				drawZap(g, effects.seam, colour, scale);
-				spawnSparks(effects.seam, scale);
-			}
-			drawSparks(g, dt, colour, scale);
+			if (effects.seam) drawZap(g, effects.seam, colour, scale);
 		} else {
 			effects.trail = [];
-			effects.sparks = [];
 			if (effects.seam) {
 				g.strokeStyle = colour;
 				g.lineWidth = 1.5 * scale;
 				trace(g, effects.seam, 0);
 			}
+		}
+		if ($('#sparks').checked) {
+			if (effects.seam) spawnSparks(effects.seam, scale);
+			drawSparks(g, dt, colour, scale);
+		} else {
+			effects.sparks = [];
 		}
 		if (effects.seam || effects.trail.length || effects.sparks.length) requestAnimationFrame(animateFx);
 		else effects.running = false;
