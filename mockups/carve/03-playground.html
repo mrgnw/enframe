@@ -75,10 +75,10 @@
 				<canvas id="marks"></canvas>
 				<canvas id="fx"></canvas>
 				<div class="island views" id="views">
-					<button type="button" data-view="original">Original</button>
-					<button type="button" data-view="crop" title="A plain crop to the same size, centred on the protected points">Crop</button>
-					<button type="button" data-view="result" class="active">Result</button>
-					<button type="button" data-view="seams">Seams</button>
+					<button type="button" data-view="original" title="The photo as it is (1)">Original</button>
+					<button type="button" data-view="crop" title="A plain crop to the same size, centred on the protected points (2)">Crop</button>
+					<button type="button" data-view="result" class="active" title="The carved photo (3)">Result</button>
+					<button type="button" data-view="seams" title="The original with what the current size removes in the seam colour (4)">Seams</button>
 				</div>
 				<div class="island energy" id="energy" role="group" aria-label="Energy">
 					<button type="button" data-energy="forward" class="active" title="Forward energy: avoid creating new edges (E)">Forward</button>
@@ -101,7 +101,8 @@
 				<span><kbd>⌫</kbd>: delete point</span>
 				<span><kbd>Esc</kbd>: deselect</span>
 				<span><kbd>H</kbd>: show or hide points</span>
-				<span><kbd>\</kbd>: original or result</span>
+				<span><kbd>1</kbd>–<kbd>4</kbd> or <kbd>←</kbd> <kbd>→</kbd>: views</span>
+				<span><kbd>\</kbd>: original or the last view</span>
 				<span><kbd>E</kbd>: forward or gradient energy</span>
 			</div>
 		</section>
@@ -1084,6 +1085,8 @@
 		carve();
 	}
 
+	const VIEWS = [...document.querySelectorAll('#views button')].map((button) => button.dataset.view);
+
 	function setView(view) {
 		const previous = state.view;
 		if (view !== 'original') state.lastView = view;
@@ -1297,6 +1300,20 @@
 			case 'KeyE':
 				setEnergy(state.energy === 'forward' ? 'gradient' : 'forward');
 				break;
+			case 'Digit1':
+			case 'Digit2':
+			case 'Digit3':
+			case 'Digit4':
+				setView(VIEWS[Number(event.code.slice(-1)) - 1]);
+				break;
+			// A focused slider or radio uses the arrows itself.
+			case 'ArrowLeft':
+			case 'ArrowRight': {
+				if (event.target.closest('input')) return;
+				const step = event.code === 'ArrowRight' ? 1 : -1;
+				setView(VIEWS[(VIEWS.indexOf(state.view) + step + VIEWS.length) % VIEWS.length]);
+				break;
+			}
 			default:
 				return;
 		}
