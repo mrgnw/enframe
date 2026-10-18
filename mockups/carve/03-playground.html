@@ -220,6 +220,9 @@
 				<legend>Seam style</legend>
 				<label class="field"><span>Colour</span><input type="color" id="seam-color" value="#22d3ee"></label>
 				<label class="check"><input type="checkbox" id="glow" checked> Glow: flicker and afterglow</label>
+				<label class="field"><span>Size</span><output id="fx-size-out"></output>
+					<input type="range" id="fx-size" min="25" max="300" step="25" value="100">
+				</label>
 			</fieldset>
 		</aside>
 	</div>
@@ -417,6 +420,7 @@
 		$('#lean-out').textContent = lean === 0 ? 'none' : lean < 0 ? `cut ${before} ${-lean}` : `cut ${after} ${lean}`;
 		$('#straight-out').textContent = value('straight') === 0 ? 'off' : value('straight');
 		$('#blur-out').textContent = value('blur') === 0 ? 'off' : `${value('blur')} px`;
+		$('#fx-size-out').textContent = `${value('fx-size')}%`;
 	}
 
 	// The points panel edits the selected point, or the brush for the next point when none is.
@@ -970,7 +974,7 @@
 		effects.last = now;
 		const g = fxContext;
 		g.clearRect(0, 0, fx.width, fx.height);
-		const scale = fx.width / Math.max(fx.clientWidth, 1);
+		const scale = (fx.width / Math.max(fx.clientWidth, 1)) * (value('fx-size') / 100);
 		const colour = $('#seam-color').value;
 		if ($('#glow').checked) {
 			drawTrail(g, dt, colour, scale);
@@ -1422,6 +1426,7 @@
 		button.addEventListener('click', () => setEnergy(button.dataset.energy));
 	}
 	$('#seam-color').addEventListener('input', requestDraw);
+	$('#fx-size').addEventListener('input', showValues);
 	for (const button of document.querySelectorAll('#views button')) {
 		button.addEventListener('click', () => setView(button.dataset.view));
 	}
