@@ -20,9 +20,11 @@
 	#marks, #fx { position: absolute; pointer-events: none; }
 	.island { position: absolute; display: flex; align-items: center; gap: 4px; height: 36px; padding: 0 4px; border: 1px solid var(--edge); border-radius: 999px; background: var(--surface); backdrop-filter: blur(14px); box-shadow: 0 2px 12px rgba(0, 0, 0, .35); }
 	.views { top: 10px; left: 50%; transform: translateX(-50%); }
-	.views button { border: 0; background: transparent; color: #d4d4d8; font-size: 13px; height: 28px; padding: 0 12px; border-radius: 999px; }
-	.views button:hover { background: rgba(255, 255, 255, .08); }
-	.views button.active { background: rgba(255, 255, 255, .14); color: #fff; }
+	.energy { top: 10px; right: 12px; }
+	.views button, .energy button { border: 0; background: transparent; color: #d4d4d8; font-size: 13px; height: 28px; padding: 0 12px; border-radius: 999px; }
+	.views button:hover, .energy button:hover { background: rgba(255, 255, 255, .08); }
+	.views button.active, .energy button.active { background: rgba(255, 255, 255, .14); color: #fff; }
+	@media (max-width: 1180px) { .views { left: 12px; transform: none; } }
 	.progress { bottom: 10px; left: 12px; right: 12px; height: 34px; padding: 0 14px; gap: 12px; border-radius: 10px; font-size: 12px; color: var(--subtle); font-variant-numeric: tabular-nums; }
 	.track { flex: 0 0 160px; height: 4px; border-radius: 2px; background: #3f3f46; overflow: hidden; }
 	.bar { height: 100%; width: 0; background: var(--brand); }
@@ -78,6 +80,10 @@
 					<button type="button" data-view="seams">Seams</button>
 					<button type="button" data-view="crop">Crop instead</button>
 				</div>
+				<div class="island energy" id="energy" role="group" aria-label="Energy">
+					<button type="button" data-energy="forward" class="active" title="Forward energy: avoid creating new edges (E)">Forward</button>
+					<button type="button" data-energy="gradient" title="Gradient energy: avoid removing detail, as caire does (E)">Gradient</button>
+				</div>
 				<div class="island progress">
 					<div class="track"><div class="bar" id="bar"></div></div>
 					<span id="status">Loading…</span>
@@ -96,6 +102,7 @@
 				<span><kbd>Esc</kbd>: deselect</span>
 				<span><kbd>H</kbd>: show or hide points</span>
 				<span><kbd>\</kbd>: original or result</span>
+				<span><kbd>E</kbd>: forward or gradient energy</span>
 			</div>
 		</section>
 
@@ -166,13 +173,7 @@
 
 			<fieldset>
 				<legend>Detail measure</legend>
-				<label class="field"><span>Energy</span>
-					<select id="energy">
-						<option value="forward">Forward: avoid creating edges</option>
-						<option value="gradient">Gradient: avoid removing detail (caire)</option>
-					</select>
-					<small>Both pick the cut that shows least, judged differently. Gradient, as caire does, adds up the detail the cut runs through. Forward adds up the new edges that appear once the cut is gone: where the pixels either side close up, and where neighbouring rows shift by different amounts as the seam steps sideways. On Arches at 65%, gradient leaves zigzags along the arch edges; forward keeps them clean but squeezes the middle arch instead.</small>
-				</label>
+				<small>Energy is the Forward | Gradient switch over the photo, or <kbd>E</kbd>. Both pick the cut that shows least, judged differently. Gradient, as caire does, adds up the detail the cut runs through. Forward adds up the new edges that appear once the cut is gone: where the pixels either side close up, and where neighbouring rows shift by different amounts as the seam steps sideways. On Arches at 65%, gradient leaves zigzags along the arch edges; forward keeps them clean but squeezes the middle arch instead. Each finished carve is kept, so switching back is instant.</small>
 				<label class="field"><span>Blur</span><output id="blur-out"></output>
 					<input type="range" id="blur" min="0" max="6" value="0">
 					<small>Smooths fine texture before measuring, as caire's blur flag does.</small>
@@ -330,6 +331,7 @@
 	const state = {
 		view: 'result',
 		lastView: 'result',
+		energy: 'forward',
 		photo: null,
 		points: [],
 		selected: null,
@@ -364,7 +366,7 @@
 			to: value('to') / 100,
 			lean: value('lean'),
 			straight: value('straight'),
-			energy: $('#energy').value,
+			energy: state.energy,
 			blur: value('blur'),
 			working: value('working')
 		};
@@ -496,9 +498,34 @@
 
 	// ---- carving
 
+	// Finished carves are kept by everything that shapes them, so flipping the energy, or going
+	// back to a photo or setting already tried, shows the result at once.
+	// ponytail: a dozen entries of about 1 MB each; evict oldest first.
+	const carveCache = new Map();
+	const CACHE_LIMIT = 12;
+	let fromCache = false;
+
+	function carveKey() {
+		const points = state.points.map((p) => [p.x, p.y, p.kind, p.size, p.strength]);
+		return JSON.stringify([state.photo.file, rows(), params(), points]);
+	}
+
 	function carve() {
 		worker?.terminate();
+		worker = null;
 		replayStep = null;
+		savePoints();
+		const key = carveKey();
+		const cached = carveCache.get(key);
+		if (cached) {
+			({ work, rank, maxSeams, elapsed } = cached);
+			steps = maxSeams;
+			carving = false;
+			fromCache = true;
+			requestDraw();
+			return;
+		}
+		fromCache = false;
 		work = prepareWork();
 		const { w, h } = work;
 		const cost = costMap(w, h);
@@ -513,6 +540,8 @@
 			elapsed = data.elapsed;
 			if (data.done) {
 				carving = false;
+				carveCache.set(key, { work: { w, h }, rank, maxSeams, elapsed });
+				if (carveCache.size > CACHE_LIMIT) carveCache.delete(carveCache.keys().next().value);
 			} else {
 				const seam = data.seam;
 				for (let y = 0; y < h; y++) rank[y * w + seam[y]] = data.step;
@@ -525,7 +554,10 @@
 		requestDraw();
 	}
 
+	// Every point change comes through here, so points are saved before the debounce, not after
+	// it: a quick switch to another photo cannot lose them.
 	function scheduleCarve() {
+		savePoints();
 		clearTimeout(carveTimer);
 		carveTimer = setTimeout(carve, 180);
 	}
@@ -1037,7 +1069,13 @@
 		const size = `${work.w}×${work.h} working copy`;
 		$('#status').textContent = carving
 			? `Carving · ${steps} of ${maxSeams} seams · ${seconds} s · ${size}`
-			: `${maxSeams} seams in ${seconds} s · ${size} · every size from 40% to 140% is ready`;
+			: `${maxSeams} seams in ${seconds} s${fromCache ? ', kept from before' : ''} · ${size} · every size from 40% to 140% is ready`;
+	}
+
+	function setEnergy(energy) {
+		state.energy = energy;
+		for (const b of document.querySelectorAll('#energy button')) b.classList.toggle('active', b.dataset.energy === energy);
+		carve();
 	}
 
 	function setView(view) {
@@ -1135,6 +1173,9 @@
 			case 'Backslash':
 				setView(state.view === 'original' ? state.lastView : 'original');
 				break;
+			case 'KeyE':
+				setEnergy(state.energy === 'forward' ? 'gradient' : 'forward');
+				break;
 			default:
 				return;
 		}
@@ -1161,10 +1202,27 @@
 
 	// ---- photos
 
-	function applyPreset() {
-		state.points = (state.photo.points ?? []).map(([x, y, size]) => ({ x, y, size, kind: 'protect', strength: 10 }));
+	// Points belong to a photo for the whole tab session: switching photos keeps them, and so
+	// does a reload. A photo seen for the first time starts with its preset.
+	const POINTS_KEY = 'enframe-carve-points';
+	const pointsByPhoto = new Map(Object.entries(JSON.parse(sessionStorage.getItem(POINTS_KEY) ?? '{}')));
+
+	function savePoints() {
+		if (!state.photo) return;
+		pointsByPhoto.set(state.photo.file, state.points);
+		sessionStorage.setItem(POINTS_KEY, JSON.stringify(Object.fromEntries(pointsByPhoto)));
+	}
+
+	const presetPoints = (preset) => (preset.points ?? []).map(([x, y, size]) => ({ x, y, size, kind: 'protect', strength: 10 }));
+
+	function setPoints(points) {
+		state.points = points;
 		state.selected = null;
 		showPointControls();
+	}
+
+	function applyPreset() {
+		setPoints(presetPoints(state.photo));
 	}
 
 	let loading = 0;
@@ -1181,7 +1239,7 @@
 		for (const [i, button] of [...$('#strip').children].entries()) button.classList.toggle('active', i === index);
 		$('#caption').textContent = `${preset.name} · shown at ${image.naturalWidth}×${image.naturalHeight}`;
 		document.querySelector(`input[name=direction][value=${preset.rows ? 'rows' : 'columns'}]`).checked = true;
-		applyPreset();
+		setPoints(pointsByPhoto.get(preset.file) ?? presetPoints(preset));
 		reorient();
 	}
 
@@ -1222,8 +1280,8 @@
 	});
 	$('#delete-point').addEventListener('click', deleteSelected);
 	$('#clear').addEventListener('click', () => {
-		state.points = [];
-		select(null);
+		setPoints([]);
+		drawMarks();
 		scheduleCarve();
 	});
 	$('#preset').addEventListener('click', () => {
@@ -1244,7 +1302,10 @@
 			scheduleCarve();
 		});
 	}
-	for (const id of ['energy', 'working']) $(`#${id}`).addEventListener('change', scheduleCarve);
+	$('#working').addEventListener('change', scheduleCarve);
+	for (const button of document.querySelectorAll('#energy button')) {
+		button.addEventListener('click', () => setEnergy(button.dataset.energy));
+	}
 	$('#seam-color').addEventListener('input', requestDraw);
 	for (const button of document.querySelectorAll('#views button')) {
 		button.addEventListener('click', () => setView(button.dataset.view));
