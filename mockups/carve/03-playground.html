@@ -605,8 +605,9 @@
 		return 0xff000000 | (bl << 16) | (gr << 8) | r;
 	}
 
-	function tint(pixel, [r, g, b]) {
-		const mix = (c, t) => (c * 0.4 + t * 0.6) | 0;
+	function tint(pixel, [r, g, b], amount = 1) {
+		const k = 0.6 * amount;
+		const mix = (c, t) => (c * (1 - k) + t * k) | 0;
 		return 0xff000000 | (mix((pixel >> 16) & 255, b) << 16) | (mix((pixel >> 8) & 255, g) << 8) | mix(pixel & 255, r);
 	}
 
@@ -825,7 +826,7 @@
 		syncLayers();
 		const g = marksContext;
 		g.clearRect(0, 0, marks.width, marks.height);
-		if (!geometry) return;
+		if (!geometry || transition) return;
 		const scale = marks.width / Math.max(marks.clientWidth, 1);
 		if (state.showPoints) for (const point of state.points) drawPoint(g, point, scale);
 		const overPoint = pointAt(state.hover);
@@ -1010,9 +1011,25 @@
 
 	// ---- one frame of the photo
 
+	function blit(out) {
+		const size = rows() ? [out.height, out.width] : [out.width, out.height];
+		if (canvas.width !== size[0] || canvas.height !== size[1]) [canvas.width, canvas.height] = size;
+		const image = new ImageData(new Uint8ClampedArray(out.buffer.buffer), out.width, out.height);
+		if (rows()) {
+			const turned = new OffscreenCanvas(out.width, out.height);
+			turned.getContext('2d').putImageData(image, 0, 0);
+			context.setTransform(0, 1, 1, 0, 0, 0);
+			context.drawImage(turned, 0, 0);
+			context.setTransform(1, 0, 0, 1, 0, 0);
+		} else {
+			context.putImageData(image, 0, 0);
+		}
+	}
+
+	// A transition paints its own frames; the exact view is drawn once it ends.
 	function draw() {
 		drawQueued = false;
-		if (!work) return;
+		if (!work || transition) return;
 		const wanted = target();
 		let n = wanted.n;
 		let e = wanted.e;
@@ -1038,18 +1055,7 @@
 		}
 		geometry.n = n;
 		geometry.e = e;
-		const size = rows() ? [out.height, out.width] : [out.width, out.height];
-		if (canvas.width !== size[0] || canvas.height !== size[1]) [canvas.width, canvas.height] = size;
-		const image = new ImageData(new Uint8ClampedArray(out.buffer.buffer), out.width, out.height);
-		if (rows()) {
-			const turned = new OffscreenCanvas(out.width, out.height);
-			turned.getContext('2d').putImageData(image, 0, 0);
-			context.setTransform(0, 1, 1, 0, 0, 0);
-			context.drawImage(turned, 0, 0);
-			context.setTransform(1, 0, 0, 1, 0, 0);
-		} else {
-			context.putImageData(image, 0, 0);
-		}
+		blit(out);
 		drawMarks();
 		drawStatus();
 		const seam = layout && showSeam ? seamPath(layout.marked) : null;
@@ -1079,10 +1085,125 @@
 	}
 
 	function setView(view) {
+		const previous = state.view;
 		if (view !== 'original') state.lastView = view;
 		state.view = view;
 		for (const b of document.querySelectorAll('#views button')) b.classList.toggle('active', b.dataset.view === view);
-		requestDraw();
+		if (previous === view || !geometry || carving || replayStep !== null) return requestDraw();
+		morphViews(previous, view);
+	}
+
+	// ---- view transitions. Every view places each working column of the original somewhere
+	// in each working row: Original and Seams side by side at full width, Result with carved
+	// columns at zero width, Crop as a sliding window. A transition moves every column from
+	// one place to the other, so carved columns close up or open out, the crop window slides,
+	// and the Seams colour fades.
+
+	const TRANSITION_MS = 450;
+	let transition = null;
+
+	const lerp = (a, b, t) => a + (b - a) * t;
+	const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+
+	// prefix[y * (w + 1) + x] is the left edge of column x, in oriented canvas pixels.
+	function placement(view, n, e, canvasWidth) {
+		const { w, h } = work;
+		const dw = oriented.w;
+		const prefix = new Float32Array(h * (w + 1));
+		if (view === 'result' || (view === 'crop' && e > 0)) {
+			const length = w - n + e;
+			const outW = Math.max(1, Math.round((dw * length) / w));
+			const offset = Math.round((canvasWidth - outW) / 2);
+			const unit = outW / length;
+			for (let y = 0; y < h; y++) {
+				const row = y * (w + 1);
+				let at = offset;
+				for (let x = 0; x < w; x++) {
+					prefix[row + x] = at;
+					const r = rank[y * w + x];
+					if (r >= n) at += (r < e ? 2 : 1) * unit;
+				}
+				prefix[row + w] = at;
+			}
+			return { prefix, left: offset, right: offset + outW, tint: 0 };
+		}
+		let offset = Math.round((canvasWidth - dw) / 2);
+		let left = offset;
+		let right = offset + dw;
+		if (view === 'crop') {
+			const outW = Math.round((dw * (w - n)) / w);
+			left = Math.round((canvasWidth - outW) / 2);
+			right = left + outW;
+			offset = left - cropStart(outW);
+		}
+		const unit = dw / w;
+		for (let y = 0; y < h; y++) for (let x = 0; x <= w; x++) prefix[y * (w + 1) + x] = offset + x * unit;
+		return { prefix, left, right, tint: view === 'seams' ? 1 : 0 };
+	}
+
+	function paintMorph(out, from, to, t, n, e) {
+		const { w, h } = work;
+		const { w: dw, h: dh, pixels } = oriented;
+		const stride = w + 1;
+		const start = Math.max(0, Math.ceil(lerp(from.left, to.left, t)));
+		const end = Math.min(out.width, Math.floor(lerp(from.right, to.right, t)));
+		const tinted = lerp(from.tint, to.tint, t);
+		const removedColour = rgb($('#seam-color').value);
+		const band = regionBand();
+		const edge = (row, x) => lerp(from.prefix[row + x], to.prefix[row + x], t);
+		for (let Y = 0; Y < dh; Y++) {
+			const y = Math.min((((Y + 0.5) * h) / dh) | 0, h - 1);
+			const row = y * stride;
+			const source = Y * dw;
+			const target = Y * out.width;
+			let x = 0;
+			let left = edge(row, 0);
+			let right = edge(row, 1);
+			for (let X = start; X < end; X++) {
+				const centre = X + 0.5;
+				while (x < w - 1 && right <= centre) {
+					x++;
+					left = right;
+					right = edge(row, x + 1);
+				}
+				if (centre < left || centre >= right) continue;
+				const u = (centre - left) / (right - left);
+				let p = pixels[source + Math.min(((x + u) * dw) / w, dw - 1) | 0];
+				if (tinted > 0) {
+					const r = rank[y * w + x];
+					if (r < n) p = tint(p, removedColour, tinted);
+					else if (r < e) p = tint(p, GREEN, tinted);
+				}
+				if (band) {
+					const across = (x + 0.5) / w;
+					if (across < band.from || across > band.to) p = shade(p);
+				}
+				out.buffer[target + X] = p;
+			}
+		}
+	}
+
+	function morphViews(fromView, toView) {
+		const { n, e } = target();
+		const width = frame().width;
+		const from = placement(fromView, n, e, width);
+		const to = placement(toView, n, e, width);
+		const started = performance.now();
+		const token = {};
+		transition = token;
+		setSeam(null, null);
+		drawMarks();
+		const step = (now) => {
+			if (transition !== token) return;
+			const t = Math.min((now - started) / TRANSITION_MS, 1);
+			const out = frame();
+			paintMorph(out, from, to, ease(t), n, e);
+			blit(out);
+			if (t < 1) return requestAnimationFrame(step);
+			transition = null;
+			draw();
+		};
+		requestAnimationFrame(step);
 	}
 
 	// ---- pointer: click adds, drag moves, the wheel sizes the point under it or the brush
