@@ -93,6 +93,16 @@ Tauri v2 + SvelteKit 5, with Lightroom catalog integration.
 - Per-format quality and speed controls in the export UI
 - Arbitrary-angle frame rotation (stored but never set; export ignores it)
 
+### RapidRAW integration (#54)
+RapidRAW runs as a separate app; enframe only reads and writes the files it exposes
+and never links or modifies its code (AGPL-3.0). Details: [docs/rapidraw.md](docs/rapidraw.md).
+- Frames → virtual copies: write one `IMG.<ext>.<6 hex>.rrdata` per frame (the original's
+  edits with `crop` and `aspectRatio` replaced), and create `IMG.<ext>.rrdata` if missing.
+  Render each frame with `RapidRAW export --adjustments` (about 1.3 s each; headless spike
+  passed 2026-10-31)
+- Check the copies in RapidRAW's window, and on portrait, rotated and DNG photos
+- "Open in RapidRAW" button in the framer
+
 ### Lightroom integration
 - Write crops/metadata back to Lightroom (currently read-only)
 - Smarter proxy vs. original selection for large RAW files
