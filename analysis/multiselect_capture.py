@@ -5,7 +5,7 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 
 URL = 'http://127.0.0.1:5911/edit/1'
-OUT = Path('/Users/user/dev/enframe/captures')
+OUT = Path('captures')
 
 
 async def main():

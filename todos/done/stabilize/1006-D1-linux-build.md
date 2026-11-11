@@ -20,7 +20,7 @@ The Rust CLI is built and tested on macOS only. On Linux it does not compile yet
 Use a Linux container through OrbStack, which is installed and runs linux/arm64:
 
 ```sh
-docker run --rm -it -v /Users/user/dev/pinframe:/src -w /src rust:latest bash
+docker run --rm -it -v $PINFRAME_DIR:/src -w /src rust:latest bash
 ```
 
 Inside, install cmake, meson, ninja and libclang, then build with `cd rust && cargo build --release`.

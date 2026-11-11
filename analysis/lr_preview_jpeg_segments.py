@@ -8,7 +8,7 @@
 import os
 import sys
 
-CAT = os.path.expanduser('~/Pictures/Lightroom Library.lrlibrary/00000000000000000000000000000000')
+CAT = os.path.expanduser(os.environ.get('ENFRAME_LR_CATALOG') or exit('set ENFRAME_LR_CATALOG to the Lightroom catalog directory'))
 NAMES = {0xE0 + i: f'APP{i}' for i in range(16)} | {
 	0xDB: 'DQT',
 	0xC0: 'SOF0',

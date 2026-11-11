@@ -1,12 +1,13 @@
 #!/usr/bin/env -S uv run --with playwright --script
 import asyncio
+import os
 from pathlib import Path
 
 from playwright.async_api import async_playwright
 
 URL = 'http://127.0.0.1:5911/library'
-FOLDER = str(Path.home() / 'Pictures/samples')
-OUT = Path('/Users/user/dev/enframe/captures/folder_browser.png')
+FOLDER = os.environ.get('ENFRAME_SAMPLE_DIR') or exit('set ENFRAME_SAMPLE_DIR to a folder of photos')
+OUT = Path('captures/folder_browser.png')
 
 
 async def main():

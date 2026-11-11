@@ -24,7 +24,7 @@ Notes:
 - `raw_as_jpeg` returns the embedded preview when it is close to full size; that is the
   cheap path (no full demosaic) and is exactly right for thumbnails.
 - Revoke blob URLs on destroy or the grid leaks the decoded JPEGs.
-- The pano that panics rawler (`IMG_0001-Pano.dng`, >50000px guard) will hit the same
+- The pano that panics rawler (a panorama DNG, >50000px guard) will hit the same
   panic here — treat a failed invoke as "no preview", never crash the tile loop.
 
 branch: ux-improvements

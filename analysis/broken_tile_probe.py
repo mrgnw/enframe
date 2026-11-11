@@ -8,9 +8,9 @@ import sqlite3
 
 import msgpack
 
-CAT = os.path.expanduser('~/Pictures/Lightroom Library.lrlibrary/00000000000000000000000000000000')
-BROKEN = ['IMG_0001.ARW', 'IMG_0001.ARW', 'IMG_0001.ARW', 'IMG_0001.ARW', 'IMG_0001.ARW']
-WORKING = ['IMG_0001.ARW', 'IMG_0001.ARW', 'IMG_0001.ARW', 'IMG_0001.ARW']
+CAT = os.path.expanduser(os.environ.get('ENFRAME_LR_CATALOG') or exit('set ENFRAME_LR_CATALOG to the Lightroom catalog directory'))
+BROKEN = ['sample_00100.ARW', 'sample_00097.ARW', 'sample_00096.ARW', 'sample_00094.ARW', 'sample_00088.ARW']
+WORKING = ['sample_00101.ARW', 'sample_00102.ARW', 'sample_00105.ARW', 'sample_00093.ARW']
 
 wf = sqlite3.connect(f'file:{CAT}/Managed Catalog.wfindex?mode=ro', uri=True)
 c = sqlite3.connect(f'file:{CAT}/Managed Catalog.mcat?mode=ro', uri=True)

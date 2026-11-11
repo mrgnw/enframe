@@ -15,7 +15,7 @@ import os
 import sqlite3
 import struct
 
-CAT = os.path.expanduser('~/Pictures/Lightroom Library.lrlibrary/00000000000000000000000000000000')
+CAT = os.path.expanduser(os.environ.get('ENFRAME_LR_CATALOG') or exit('set ENFRAME_LR_CATALOG to the Lightroom catalog directory'))
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lr_preview_pairs.json')
 MARKER = b'com.adobe.carousel.reference_size\x00'
 ALPHABET = 'abcdefghjkmnpqrstuvwxyz123456789'

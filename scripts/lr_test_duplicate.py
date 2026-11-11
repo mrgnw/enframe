@@ -33,14 +33,14 @@ except ImportError:
 
 
 LR_LIBRARY = Path.home() / "Pictures" / "Lightroom Library.lrlibrary"
-CATALOG_GUID = "00000000000000000000000000000000"
+CATALOG_GUID = os.environ.get("ENFRAME_LR_CATALOG") or sys.exit("set ENFRAME_LR_CATALOG to the Lightroom catalog directory name")
 CATALOG_DIR = LR_LIBRARY / CATALOG_GUID
 MCAT_PATH = CATALOG_DIR / "Managed Catalog.mcat"
 SETTINGS_DIR = CATALOG_DIR / "settings"
 BACKUP_DIR = Path(__file__).parent / "lr_backup"
 
-# Source photo: IMG_0001.ARW (6000x4000, currently cropped to 3224x3999)
-SOURCE_ASSET_ID = "00a0493cc09f42b48043b22c97647d15"
+# Source photo: the source ARW (6000x4000, currently cropped to 3224x3999)
+SOURCE_ASSET_ID = os.environ.get("ENFRAME_LR_ASSET_ID") or sys.exit("set ENFRAME_LR_ASSET_ID to the source asset id")
 
 # Test crop: portrait crop from center-right area
 # Original is 6000x4000 (landscape), this gives a 2400x3200 portrait region
@@ -347,7 +347,7 @@ def main():
     print(f"New XMP:   settings/{new_xmp_sha}\n")
     print("Next:")
     print("  1. Open Lightroom CC")
-    print("  2. Look for a duplicate of IMG_0001.ARW with a different crop")
+    print("  2. Look for a duplicate of the source ARW with a different crop")
     print(
         "  3. Check ~/Library/Application Support/Adobe/Lightroom CC/lrcc_console.log for errors\n"
     )

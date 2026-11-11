@@ -45,14 +45,14 @@ Each carved 25% and 40% narrower (the moon, a tall photo, shorter) at a 1024 px 
 | Photo | Size | Carve | Against a crop |
 |-|-|-|-|
 | 0-6, autumn mountains | 4928×2772 | 1.0 s | better |
-| IMG_0001, lake panorama | 10820×7133, 77 MP | 0.9 s | better: both shores stay in |
+| sample 1, lake panorama | 10820×7133, 77 MP | 0.9 s | better: both shores stay in |
 | DJI_0145, drone panorama | 8405×2292, 3.7:1 | 0.4 s | better: islands keep their shape |
 | DJI_0386, aerial house and river | 4000×2250 | 0.8 s | better |
 | elchalten, mountain panorama | 6917×3541 | 1.4 s | better |
 | moon, carved by rows | 2250×4000 | 0.7 s | better: the moon stays round, empty sky goes |
 | untitled, tower, plane, storm cloud | 4898×2861 | 0.8 s | better |
 | 0, Big Ben at night | 4928×3264 | 1.0 s | fine at 25%; at 40% only with the tower protected |
-| IMG_0001, couple in Lisbon | 3342×2089 | 0.9 s | worse until the couple is protected, then better |
+| sample 2, couple on a street | 3342×2089 | 0.9 s | worse until the couple is protected, then better |
 | 0-7, water drops (macro) | 4435×2495 | 1.5 s | worse, protected or not |
 | IMG_6500, arches | 3977×2983 | 1.1 s | worse |
 

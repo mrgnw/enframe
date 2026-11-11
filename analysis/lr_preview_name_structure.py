@@ -9,7 +9,7 @@ import json
 import os
 from collections import Counter
 
-CAT = os.path.expanduser('~/Pictures/Lightroom Library.lrlibrary/00000000000000000000000000000000')
+CAT = os.path.expanduser(os.environ.get('ENFRAME_LR_CATALOG') or exit('set ENFRAME_LR_CATALOG to the Lightroom catalog directory'))
 PAIRS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lr_preview_pairs.json')
 
 

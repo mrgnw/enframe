@@ -6,7 +6,7 @@ branch: e2-serve-endpoint (enframe)
 
 Depends on: enframe's `phase-2-remote-targets` (merged 2026-10-08) · Blocks: E3 · Model: Opus · Size: M
 Issue: https://github.com/mrgnw/enframe/issues/6
-Touches: the enframe repo (`/Users/user/dev/enframe`, its server), not pinframe
+Touches: the enframe repo (the enframe repo, its server), not pinframe
 
 ## Goal
 

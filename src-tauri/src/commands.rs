@@ -533,8 +533,8 @@ mod raw_thumbnail_tests {
     // Needs a real camera file; skipped wherever none exists.
     #[test]
     fn an_arw_yields_a_jpeg_data_payload() {
-        let candidates = [std::path::PathBuf::from(std::env::var("HOME").unwrap())
-            .join("Pictures/samples/IMG_0001.ARW")];
+        let candidates = [std::path::PathBuf::from(std::env::var("ENFRAME_SAMPLE_DIR").unwrap_or_default())
+            .join("sample_00019.ARW")];
         let Some(arw) = candidates.iter().find(|p| p.exists()) else {
             eprintln!("no ARW fixture on this machine, skipping");
             return;
@@ -743,7 +743,7 @@ mod tests {
 
     #[test]
     fn raw_extensions_and_bare_names_are_probed() {
-        assert!(may_be_raw("/photos/IMG_0001.ARW"));
+        assert!(may_be_raw("/photos/sample_00019.ARW"));
         assert!(may_be_raw("/photos/shot.cr3"));
         assert!(may_be_raw("/photos/shot.dng"));
         assert!(may_be_raw("/lightroom/proxy-no-extension"));

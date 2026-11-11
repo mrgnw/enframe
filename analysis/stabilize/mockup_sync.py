@@ -1,11 +1,12 @@
 """Copy mockups/stabilize/ into the main checkout so dmox (which serves **/mockups under ~/dev) can reach a worktree's files."""
 
+import os
 import shutil
 import sys
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parent.parent.parent / 'mockups' / 'stabilize'
-DST = Path('/Users/user/dev/enframe/mockups/stabilize')
+DST = Path(os.environ.get('ENFRAME_MAIN_CHECKOUT') or sys.exit('set ENFRAME_MAIN_CHECKOUT')) / 'mockups' / 'stabilize'
 
 
 def main() -> None:

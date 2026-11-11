@@ -32,7 +32,7 @@ import struct
 import sqlite3
 import sys
 
-CAT = os.path.expanduser('~/Pictures/Lightroom Library.lrlibrary/00000000000000000000000000000000')
+CAT = os.path.expanduser(os.environ.get('ENFRAME_LR_CATALOG') or exit('set ENFRAME_LR_CATALOG to the Lightroom catalog directory'))
 MARKER = b'com.adobe.carousel.reference_size\x00'
 ALPHABET = 'abcdefghjkmnpqrstuvwxyz123456789'
 DEFAULT_IDS = (

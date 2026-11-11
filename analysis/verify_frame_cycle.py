@@ -3,7 +3,7 @@ import asyncio
 from playwright.async_api import async_playwright
 
 URL = 'http://127.0.0.1:5911/edit/1'
-CAPTURES = '/Users/user/dev/enframe/captures'
+CAPTURES = 'captures'
 
 
 async def selected_label(page):

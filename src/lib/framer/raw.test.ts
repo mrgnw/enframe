@@ -30,7 +30,7 @@ describe('isRawName', () => {
 	});
 
 	test('ignores case', () => {
-		expect(isRawName('IMG_0001.ARW')).toBe(true);
+		expect(isRawName('sample_00019.ARW')).toBe(true);
 		expect(isRawName('shot.Cr3')).toBe(true);
 	});
 

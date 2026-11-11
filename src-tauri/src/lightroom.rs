@@ -3,8 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-const CATALOG_GUID: &str = "00000000000000000000000000000000";
-
 fn library_path() -> Result<PathBuf, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
     let path = PathBuf::from(home)
@@ -18,7 +16,16 @@ fn library_path() -> Result<PathBuf, String> {
 }
 
 fn catalog_path() -> Result<PathBuf, String> {
-    Ok(library_path()?.join(CATALOG_GUID))
+    let library = library_path()?;
+	let entries = std::fs::read_dir(&library).map_err(|e| e.to_string())?;
+	for entry in entries.flatten() {
+		let dir = entry.path()
+		;
+		if dir.join("Managed Catalog.mcat").exists() {
+			return Ok(dir);
+		}
+	}
+	Err("Lightroom catalog not found".to_string())
 }
 
 fn open_wfindex() -> Result<Connection, String> {

@@ -9,7 +9,7 @@ import sqlite3
 
 import msgpack
 
-CAT = os.path.expanduser('~/Pictures/Lightroom Library.lrlibrary/00000000000000000000000000000000')
+CAT = os.path.expanduser(os.environ.get('ENFRAME_LR_CATALOG') or exit('set ENFRAME_LR_CATALOG to the Lightroom catalog directory'))
 CLOUD_ONLY = '1b3e1705cc114c40b4beae8e0690bcff'
 
 

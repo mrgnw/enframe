@@ -10,7 +10,7 @@ import os
 import sqlite3
 import zlib
 
-CAT = os.path.expanduser('~/Pictures/Lightroom Library.lrlibrary/00000000000000000000000000000000')
+CAT = os.path.expanduser(os.environ.get('ENFRAME_LR_CATALOG') or exit('set ENFRAME_LR_CATALOG to the Lightroom catalog directory'))
 ALPHABET = 'abcdefghjkmnpqrstuvwxyz123456789'
 
 
