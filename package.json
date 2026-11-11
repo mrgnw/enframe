@@ -90,12 +90,12 @@
 	],
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/yourusername/enframe.git"
+		"url": "https://github.com/mrgnw/enframe.git"
 	},
 	"bugs": {
-		"url": "https://github.com/yourusername/enframe/issues"
+		"url": "https://github.com/mrgnw/enframe/issues"
 	},
-	"homepage": "https://github.com/yourusername/enframe#readme",
+	"homepage": "https://github.com/mrgnw/enframe#readme",
 	"license": "MIT",
 	"files": [
 		"build",
