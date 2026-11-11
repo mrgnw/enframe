@@ -144,6 +144,12 @@ and never links or modifies its code (AGPL-3.0). Details: [docs/rapidraw.md](doc
     catalog headless, read `catalog.snap` + `catalog.log` from a script, and check
     a `crop.set` round trip.
 
+### Frameset sharing and Lightroom resilience
+- Treat the metadata JSON as a first-class "frameset" that can be shared or version-controlled beside the photos
+- Include rotation in the exported metadata frames (the schema has it, the export omits it)
+- Watch the inbox for `.metadata.json` files as well as images
+- Detect an unexpected Lightroom catalog schema instead of failing silently
+
 ### Throughput
 - Batch apply a set of frames/ratios across many selected photos
 - Folder → auto-export pipeline: pick a bookmarked folder, frame and export the
