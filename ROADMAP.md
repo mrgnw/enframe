@@ -57,10 +57,10 @@ Tauri v2 + SvelteKit 5, with Lightroom catalog integration.
   CSS `object-position` for render-time fitting without new image files
 - Cmd+E with radial progress; default output dir matches the source photo
 - AVIF encodes on every core at speed 9, default quality 0.87: about 11x faster and
-  30% smaller than before (#34)
+  30% smaller than before
 - EXIF orientation applied at export, so rotated phone photos crop the region the
-  editor shows (#32)
-- AVIF through ImageIO on macOS, keeping the Display P3 profile (#35)
+  editor shows
+- AVIF through ImageIO on macOS, keeping the Display P3 profile
 
 ### Stabilize
 - Hold one feature still across a photo series: mark it, Track, fix lost photos,
@@ -71,13 +71,13 @@ Tauri v2 + SvelteKit 5, with Lightroom catalog integration.
   holds named features, one run each; serve calls the crate in-process, one run per
   folder. The full list and its history is in [docs/stabilize/PLAN.md](docs/stabilize/PLAN.md)
 - `.mp4` clips without ffmpeg: filmcraft's pure-Rust H.264 encoder and MP4 muxer,
-  vendored (#30)
+  vendored
 - No C build on macOS: AVIF photos decode through ImageIO; Linux keeps libavif; no
-  animated `.avif` clip (#33)
+  animated `.avif` clip
 
 ### Framing
 - Suggest focal points from detected faces: lightcraft's pure-Rust YuNet, vendored,
-  model bundled (#31)
+  model bundled
 
 ---
 
@@ -88,12 +88,12 @@ Tauri v2 + SvelteKit 5, with Lightroom catalog integration.
 - Tunable engine weights (composition vs crop vs zoom)
 
 ### Export
-- JXL **encode** export: lossless exists (`zune-jpegxl`, no colour profile; #44); no
+- JXL **encode** export: lossless exists (`zune-jpegxl`, no colour profile; #2); no
   permissive lossy encoder yet
 - Per-format quality and speed controls in the export UI
 - Arbitrary-angle frame rotation (stored but never set; export ignores it)
 
-### RapidRAW integration (#54)
+### RapidRAW integration
 RapidRAW runs as a separate app; enframe only reads and writes the files it exposes
 and never links or modifies its code (AGPL-3.0). Details: [docs/rapidraw.md](docs/rapidraw.md).
 - Frames → virtual copies: write one `IMG.<ext>.<6 hex>.rrdata` per frame (the original's
@@ -121,7 +121,7 @@ and never links or modifies its code (AGPL-3.0). Details: [docs/rapidraw.md](doc
 ## 💡 Suggestions
 
 ### Smarter framing
-- Saliency detection to seed focal points where there are no faces (faces: #31)
+- Saliency detection to seed focal points where there are no faces (faces: done)
 
 ### Photo library sources
 - **Lightcraft library as a source** (not scheduled; looked at 2026-10-11).
