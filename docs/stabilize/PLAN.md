@@ -25,7 +25,7 @@ One coordinating thread runs the plan; agents do the card work. The coordinator 
 
 1. Paseo worktree workspace from `refs/heads/main`, branch named after the card.
 2. Agent: Sonnet 5 for well-specified cards, the Opus 5.5 (medium) profile for investigation or judgment.
-3. Briefing, self-contained (the agent starts with no context): task and card path; context with current numbers; relevant files; acceptance criteria; setup (`ln -s /Users/user/dev/pinframe/samples samples`; the parallel agent's files to avoid); constraints (files it may touch, no `PLAN.md`/`todos/`, tabs/fmt/clippy, no new crates, no remote so never push, commit each unit with a Co-Authored-By trailer naming its model, do not merge, never read `~/Library/Mobile Documents`, use `git grep` or Read on `.paseo` paths). End with: "Follow the `concise-output` skill. Final report under 2000 characters, outcomes not process."
+3. Briefing, self-contained (the agent starts with no context): task and card path; context with current numbers; relevant files; acceptance criteria; setup (`ln -s $PINFRAME_DIR/samples samples`; the parallel agent's files to avoid); constraints (files it may touch, no `PLAN.md`/`todos/`, tabs/fmt/clippy, no new crates, no remote so never push, commit each unit with a Co-Authored-By trailer naming its model, do not merge, never read `~/Library/Mobile Documents`, use `git grep` or Read on `.paseo` paths). End with: "Follow the `concise-output` skill. Final report under 2000 characters, outcomes not process."
 4. Cards that change tracking: stop and report instead of regenerating the baseline if accuracy or the LOST set gets worse.
 
 **Close a card**
