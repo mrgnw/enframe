@@ -1,27 +1,35 @@
 # Enframe
 
-Image framing tool for setting focal points and crops with Lightroom integration.
+Image framing tool: set focal points and crops once, export one photo to many aspect ratios.
 
 Changes are recorded in [CHANGELOG.md](CHANGELOG.md).
 
+## Who it's for
+
+Photographers and designers who need one image exported to many aspect ratios (9:16, 16:9,
+4:5, 1.91:1, square) without losing the subject. You mark focal points once, enframe
+fits a crop to every ratio around them, and you export the lot. It is built for solo,
+local use: your photos stay on your machine, and there are no accounts.
+
 ## Features
 
-### Implemented ✅
+- Focal points and crop frames per photo, with named destinations and a fit engine that
+  keeps required points in view
+- Per-frame export to AVIF, JPG or PNG, plus a sidecar JSON with per-destination crops
+- Persistent undo/redo, command palette, keyboard-driven editor
+- Library with Lightroom Classic catalog reading (read-only), bookmarked folders, drag-drop
+  and a watched inbox; RAW, JXL and AVIF sources
+- Face detection to suggest focal points, run locally (see below)
+- Stabilize: hold one feature still across a photo series and export a clip
+- Desktop app, headless serve mode, and a static web build (see below)
 
-- Tauri v2 + SvelteKit 5 foundation (using native WebView, not Servo)
-- SQLite database with schema (photos, frames, focal_points)
-- Tauri plugins: sql, fs, dialog
-- Database abstraction layer
-- Photo browser UI
-- Editor route structure
-- Lightroom integration stubs
+What is next lives in [ROADMAP.md](ROADMAP.md).
 
-### Planned
+### Face detection
 
-1. **File import** — drag-drop to add local JXL/JPEG files
-2. **Lightroom browser** — read local library and import photos
-3. **Editor canvas** — place focal points (draggable), draw crop frames (resizable)
-4. **Export** — crop photos using Canvas API, save to disk, export metadata JSON
+The `faces` crate in `src-tauri/faces/` is a vendored, pure-Rust YuNet face detector. The
+model ships inside the app and runs on your CPU; photos are never sent anywhere, and the
+crate has no network dependency.
 
 ## Architecture
 
@@ -94,7 +102,9 @@ bun run build
 
 ### Headless serve mode
 
-The same UI runs in a plain browser, backed by an HTTP server instead of Tauri.
+The same UI runs in a plain browser, backed by an HTTP server instead of Tauri. It serves
+your own local images to you, with no authentication, and is meant for localhost or your
+own tailnet, not the public internet.
 
 ```sh
 bun run sveltekit:build
