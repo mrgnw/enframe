@@ -2,7 +2,7 @@
 
 Enframe is an image framing tool: set focal points and crop frames once, then export
 the same shot to many aspect ratios while keeping what matters in view. Built on
-Tauri v2 + SvelteKit 5, with Lightroom catalog integration.
+Tauri v2 + SvelteKit with Svelte 5, with Lightroom catalog integration.
 
 **Legend:** ✅ shipped · 📋 planned · 💡 suggestion
 
@@ -11,7 +11,7 @@ Tauri v2 + SvelteKit 5, with Lightroom catalog integration.
 ## ✅ Shipped
 
 ### Foundation
-- Tauri v2 + SvelteKit 5 (runes) app on the native WebView
+- Tauri v2 + SvelteKit with Svelte 5 (runes) app on the native WebView
 - SQLite via `tauri-plugin-sql` with migrations (`photos`, `frames`, `focal_points`, `history`)
 - DB abstraction layer (`src/lib/db.ts`) with normalized 0–1 coordinates
 - Buildable from a fresh clone; `bun test` suite for composition and history math
