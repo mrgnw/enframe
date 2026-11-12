@@ -33,7 +33,7 @@ crate has no network dependency.
 
 ## Architecture
 
-- **Frontend**: SvelteKit 5 + Svelte 5 (runes)
+- **Frontend**: SvelteKit with Svelte 5 (runes)
 - **Backend**: Tauri v2 (Rust)
 - **Database**: SQLite via `tauri-plugin-sql`
 - **Image format**: JXL (natively supported in macOS WebKit)
