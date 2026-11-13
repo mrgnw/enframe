@@ -1,331 +1,133 @@
 # Enframe
 
-Image framing tool: set focal points and crops once, export one photo to many aspect ratios.
+Set focal points once. Export one photo to every aspect ratio you need.
 
-Changes are recorded in [CHANGELOG.md](CHANGELOG.md).
+[![License: MIT](https://img.shields.io/github/license/mrgnw/enframe?style=flat)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/mrgnw/enframe/main?style=flat)](https://github.com/mrgnw/enframe/commits/main/)
+[![Open issues](https://img.shields.io/github/issues/mrgnw/enframe?style=flat)](https://github.com/mrgnw/enframe/issues)
+[![Tauri 2](https://img.shields.io/badge/Tauri-2-24c8d8?style=flat&logo=tauri)](https://v2.tauri.app/)
+[![Svelte 5](https://img.shields.io/badge/Svelte-5-ff3e00?style=flat&logo=svelte)](https://svelte.dev/)
+[![Platform: macOS](https://img.shields.io/badge/platform-macOS-555?style=flat)](#quick-start-macos)
 
-## Who it's for
+![Enframe with a mountain landscape, a focal point, overlapping crop frames, and a mobile preview](docs/media/hero.png)
 
-Photographers and designers who need one image exported to many aspect ratios (9:16, 16:9,
-4:5, 1.91:1, square) without losing the subject. You mark focal points once, enframe
-fits a crop to every ratio around them, and you export the lot. It is built for solo,
-local use: your photos stay on your machine, and there are no accounts.
+For photographers and designers preparing the same photo for a website, a phone wallpaper,
+or social posts. Mark what matters, generate destination crops, adjust the framing, and
+export the set. The desktop app works with local files and needs no account.
 
-## Features
+[Quick start](#quick-start-macos) · [Roadmap](ROADMAP.md) · [Changelog](CHANGELOG.md) · [Contribute](CONTRIBUTING.md)
 
-- Focal points and crop frames per photo, with named destinations and a fit engine that
-  keeps required points in view
-- Per-frame export to AVIF, JPG or PNG, plus a sidecar JSON with per-destination crops
-- Persistent undo/redo, command palette, keyboard-driven editor
-- Library with Lightroom Classic catalog reading (read-only), bookmarked folders, drag-drop
-  and a watched inbox; RAW, JXL and AVIF sources
-- Face detection to suggest focal points, run locally (see below)
-- Stabilize: hold one feature still across a photo series and export a clip
-- Desktop app, headless serve mode, and a static web build (see below)
+> [!NOTE]
+> Enframe was developed with substantial AI assistance. It is an experimental project;
+> review the code and check exported results before relying on it. Bug reports and
+> corrections to attribution are welcome.
 
-What is next lives in [ROADMAP.md](ROADMAP.md).
+## What it does
 
-### Face detection
+- **Frame around your subject.** Add shared or per-frame focal points, then move and resize crops by hand.
+- **Generate five destinations.** Mobile 9:16, desktop 16:9, Instagram 4:5, Open Graph 1.91:1,
+  and square. The fit engine warns when a destination cannot include every required point.
+- **Preview before exporting.** Compare crops in a sidebar or the main window. Export all frames
+  or only your selection as AVIF, JPG, or PNG, with a JSON sidecar for reopening the work.
+- **Keep editing local.** Browse folders, watch an inbox, or read a local Lightroom library
+  without writing to that library. Desktop decoding includes camera RAW and JPEG XL.
+- **Work from the keyboard.** Undo and redo, generate versions with A, toggle previews with V,
+  and open the command palette with ⌘K on macOS.
+- **Go further.** Suggest focal points with local face detection, create carved versions in
+  the library, or [stabilize a photo series](docs/stabilize/README.md) around a shared feature.
 
-The `faces` crate in `src-tauri/faces/` is a vendored, pure-Rust YuNet face detector. The
-model ships inside the app and runs on your CPU; photos are never sent anywhere, and the
-crate has no network dependency.
+<details>
+<summary>Watch the marking → generation → export flow (12 seconds)</summary>
 
-## Architecture
+![Real browser framer: mark a mountain, generate five destination crops, preview them, and export JPG files](docs/media/mark-and-export.gif)
 
-- **Frontend**: SvelteKit with Svelte 5 (runes)
-- **Backend**: Tauri v2 (Rust)
-- **Database**: SQLite via `tauri-plugin-sql`
-- **Image format**: JXL (natively supported in macOS WebKit)
+</details>
 
-All coordinates stored as normalized 0-1 values for resolution independence.
+The screenshots and recording show the real browser framer with a metadata-stripped landscape
+from the repository. The desktop app uses the same framer with a native file picker and Rust exporter.
 
-## 📋 Prerequisites
+## Quick start (macOS)
 
-Make sure you have the following installed:
-
-- **[Bun](https://bun.sh/)** (latest version) - Package manager and runtime
-- **[Rust](https://rustup.rs/)** (latest stable) - Required for Tauri
-- **[Node.js](https://nodejs.org/)** (v22.12+) - Fallback runtime support
-
-### Platform-Specific Requirements
-
-#### Windows
-- Microsoft C++ Build Tools or Visual Studio with C++ support
-
-#### macOS
-- Xcode Command Line Tools: `xcode-select --install`
-
-#### Linux (Ubuntu/Debian)
-```bash
-sudo apt update
-sudo apt install libwebkit2gtk-4.1-dev \
-  build-essential \
-  curl \
-  wget \
-  file \
-  libxdo-dev \
-  libssl-dev \
-  libayatana-appindicator3-dev \
-  librsvg2-dev
-```
-
-## Setup
+There are no packaged releases yet. Build from source with [Git](https://git-scm.com/),
+[Bun 1.2+](https://bun.sh/), [Node.js 22.12+](https://nodejs.org/), stable
+[Rust](https://rustup.rs/), and the [Tauri macOS prerequisites](https://v2.tauri.app/start/prerequisites/#macos).
+Rust must support edition 2024 (1.85 or newer). Install Xcode Command Line Tools if needed:
 
 ```sh
-bun install
+xcode-select --install
 ```
 
-## Three ways to run enframe
-
-| | What you get | Backend |
-| --- | --- | --- |
-| Desktop app | Library, Lightroom import, watch folder, framer | SQLite via Tauri |
-| Headless serve | The same UI in a browser, behind a tunnel | SQLite over HTTP |
-| Static web build | The standalone framer only, one image at a time | none |
-
-All three come out of this one repo. `/` is the framer itself everywhere, with the images
-you opened recently under it. The library is just one way to pick an image: it lives at
-`/library`, linked from the home page, and the static build has no backend to link to.
-
-### Desktop app
-
 ```sh
+git clone https://github.com/mrgnw/enframe.git
+cd enframe
+bun install --frozen-lockfile
+bun run sveltekit:build
 bun run dev
 ```
 
-Release build:
+The initial frontend build bootstraps the assets required by the Rust sidecar build.
+Development uses port **5910**, with the local backend on **5911**. The first Rust build can take a while.
+Drop an image on the start screen, click the subject, then choose **Versions**.
+
+### Build and install
+
+After the setup above:
 
 ```sh
 bun run build
 ```
 
-### Headless serve mode
+On macOS, the application and disk image are written under `src-tauri/target/release/bundle/`.
+Open the disk image and drag Enframe to Applications. Builds are unsigned; no notarized installer
+is published. Windows and Linux desktop builds are not verified here; see the
+[Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/) before attempting them.
 
-The same UI runs in a plain browser, backed by an HTTP server instead of Tauri. It serves
-your own local images to you, with no authentication, and is meant for localhost or your
-own tailnet, not the public internet.
+### Try just the framer in a browser
 
-```sh
-bun run sveltekit:build
-```
-
-```sh
-bun run serve
-```
-
-That runs in the foreground and stops when the terminal closes. To keep it running after
-the terminal closes, `pitchfork.toml` registers it with
-[pitchfork](https://pitchfork.jdx.dev):
+After cloning and installing JavaScript dependencies, this path needs no Rust build:
 
 ```sh
-pitchfork start serve
+ENFRAME_TARGET=web bun run sveltekit:dev --host 0.0.0.0 --port 5918 --strictPort
 ```
 
-```sh
-pitchfork status serve
-```
+Open http://localhost:5918. It edits one image at a time and exports through the browser.
+The library, Lightroom integration, and Stabilize require the desktop or serve backend.
+See [running modes](docs/running.md) for the headless server, static web build, and deployment notes.
 
-It does not start at login; add `boot_start = true` to `pitchfork.toml` if you want that.
+## How it works
 
-It runs the release binary directly, so build it once before the first start:
+1. Open a photo directly, from a folder, or from a local Lightroom library.
+2. Place focal points on what needs to stay visible.
+3. Generate destination crops and review any fit warnings.
+4. Adjust frames and compare the previews.
+5. Export all or selected crops plus their sidecar; reopen the image with that sidecar to resume.
 
-```sh
-cargo build --release --manifest-path src-tauri/Cargo.toml -p enframe-serve
-```
+![Five destination crops of the same mountain landscape in the main preview](docs/media/previews.png)
 
-A supervised process inherits none of your terminal's privacy grants, so photos in
-iCloud Drive, Photos, Desktop or Documents are unreadable until you grant the binary
-**Full Disk Access** (System Settings → Privacy & Security → Full Disk Access → add
-`src-tauri/target/release/enframe-serve`). Without it those reads hang rather than fail,
-so `/img` gives up after 60s with a 504. Photos under `~/Pictures` are unaffected, and
-running `bun run serve` from a terminal sidesteps it entirely.
+The interface uses Svelte 5 and SvelteKit; Tauri 2 and Rust provide the desktop shell,
+image processing, and a SQLite-backed library. Crop coordinates are normalized to the source image.
 
-`pitchfork.toml` passes `--host 0.0.0.0`, so the port answers on every interface — a
-tailnet address reaches it directly with nothing to proxy, and so does anything else on
-the same network. To keep it off the local network, bind the tailnet address instead
-(`--host <tailscale-ip>`); the cost is that `localhost` stops working and the service
-fails to start if it comes up before Tailscale does. Default `127.0.0.1` when run by hand.
+## Contributing
 
-The server owns the same database the desktop app connects to
-(`~/Library/Application Support/com.enframe.app/enframe.db`) and creates it with all
-migrations applied if it does not exist yet. It takes an exclusive lock on that database
-at startup, so a second server against the same file refuses to start and names the port
-of the one already serving it. It has **no authentication**: who can reach the port is
-yours to decide, with a tunnel, a firewall, or `--host`.
-
-Overrides, as flags or environment variables:
-
-| Flag | Env | Default |
-| --- | --- | --- |
-| `--host` | `ENFRAME_HOST` | `127.0.0.1` |
-| `--port` | `ENFRAME_PORT` | `5911` |
-| `--db` | `ENFRAME_DB` | app-support `enframe.db` |
-| `--web` | `ENFRAME_WEB` | `build` |
-| `--inbox` | `ENFRAME_INBOX` | app-support `inbox` |
-| `--read-root` | `ENFRAME_READ_ROOTS` | see below |
-| `--write-root` | `ENFRAME_WRITE_ROOTS` | see below |
-
-Browsers give no filesystem paths, so serve mode substitutes a server-side file picker
-for the native dialogs, and drag-dropped files are uploaded into the inbox directory and
-imported from there.
-
-#### What serve mode can touch
-
-Unlike the desktop app, the server confines every path it accepts to a set of roots.
-Paths are canonicalised first, so `..` and symlinks cannot escape. By default the roots
-are `~/Pictures`, the directories of photos already in the library (so an iCloud Drive or
-external-volume library keeps working), the database directory, and the inbox.
-
-Both flags are repeatable; the env vars take a colon-separated list. Add a root when a
-photo lives somewhere the library has not seen yet — for example a volume that was not
-mounted at startup:
-
-```sh
-PHOTOS=/Volumes/disk/photos
-```
-
-```sh
-bun run serve --read-root "$PHOTOS" --write-root "$PHOTOS"
-```
-
-The effective roots are logged at boot.
-
-The roots are the whole boundary. Every caller gets the same API surface no matter which
-address it connects from, and what bounds a request is where the path lands, not who sent
-it: reads must resolve inside a read root, writes inside a write root. An earlier version
-also refused a handful of routes off loopback, which was dropped when the app gained the
-ability to connect to an instance on another machine — that app is an off-loopback caller
-too, so the address test would have let it browse a library and then refused it every
-export. Widen the roots and you widen what any caller can reach.
-
-#### Stabilize
-
-Stabilize holds one feature still across a photo series: mark it on the first photo,
-Track, fix the photos it lost, then export a clip. It is the `stabilize` crate in
-`src-tauri/stabilize/`, a library serve calls in-process and a CLI for scripts; see
-[docs/stabilize/README.md](docs/stabilize/README.md). It was developed as
-[pinframe](https://github.com/mrgnw/pinframe), now archived. Open it from the command bar
-("Stabilize a Series…") or at `/stabilize?folder=PATH`.
-
-Its gate builds, lints and tests the crate, runs every command its README documents and
-compares the train clouds job with the tracking baseline. It needs the samples linked at
-`samples/`:
-
-```sh
-just check-stabilize
-```
-
-- `POST /api/stabilize/track` `{folder, features, feature, pad?}` saves the document,
-  `features` (`[{name, marks}]`, one tracker run each), beside the folder as
-  `<folder>.stabilize.json` (a `<folder>.pin.json` is still read when that is absent),
-  tracks the feature named `feature` without rendering, using the feature cache, and
-  answers with the sidecar: each photo's crop, plus its size and the tracker's note. One run per folder: a newer request stops the one in flight.
-- `POST /api/stabilize/export` `{folder, features, feature, out?, pad?, fps?, frames?, vf?}`
-  renders the feature's clip, `<folder>-<feature>.mp4` by default, and answers with server-sent events: `progress`
-  `{line}` for each line the tracker reports, then `done` `{out, sidecar}` or `error`
-  `{error, superseded?}`. A bad request still answers 400 or 403 before anything runs.
-  Closing the connection stops the run.
-- `POST /api/stabilize/reveal` `{path}` shows a file inside a read root in Finder
-  (`open -R`). Off macOS it answers 501.
-
-The finished clip and its `.json` sidecar are read through `/img/{path}`, like photos.
-
-`marks` is `{points, at?, near?, skip?, order?}`, the CLI's `--points`, `--at`, `--near`,
-`--skip` and `--order`. The folder must be inside a read root, and the document, the clip
-and `frames` inside a write root. One run per folder: a newer request cancels the one in
-flight, which answers 409 (an export already streaming ends with `error`
-`{superseded: true}` instead), so the newest mark is the only one that gets a result.
-
-#### On a Linux host
-
-`pitchfork.toml` and the Full Disk Access note above are macOS concerns. On a headless
-Linux server, `deploy/enframe-serve.service` runs the same binary under systemd:
-
-```sh
-sudo cp deploy/enframe-serve.service /etc/systemd/system/
-```
-
-```sh
-sudo systemctl enable --now enframe-serve
-```
-
-Build the binary with `scripts/sidecar.sh` rather than cargo directly. The app crate's
-build script refuses to run until both the staged sidecar binary and a `build/` directory
-exist, and the error it gives for the second one names `frontendDist`, which is a long way
-from the cause.
-
-That unit leaves the server on `127.0.0.1` and puts TLS and the address gate in front of
-it instead — `deploy/Caddyfile.example` is that half, terminating HTTPS on a DNS-01
-certificate and answering 403 to anything outside the tailnet range, the host's own public
-interface included. Serve still has no authentication of its own; this only decides who
-reaches the port.
-
-### Static web build
-
-No server, no database, nothing to tunnel. `/` opens one image, you frame it in memory,
-and it exports through the canvas and writes a sidecar JSON beside the output. `/library`
-and `/edit/:id` do not exist here and redirect home.
-
-Once it has loaded, it keeps working without the network. A service worker precaches the
-shell and the wasm codecs, so a reload offline still opens the app and a RAW opened for
-the first time offline still develops. Only the AVIF encoder variant that can actually run
-on the origin is stored, which is the difference between 8.8 and 5.4 MiB. A manifest makes
-it installable, and a pill in the corner reports the install while it happens.
-
-None of that reaches the desktop build, which serves from `tauri://` where a worker cannot
-register and whose assets are already on disk.
-
-```sh
-bun run build:web
-```
-
-The site lands in `build-web/`, separate from `build/` so it never shadows what
-`bun run serve` hands out. Check the config without publishing:
-
-```sh
-wrangler deploy --dry-run
-```
-
-Deploying needs a Cloudflare account you have already logged into (`wrangler login`):
-
-```sh
-bun run deploy:web
-```
-
-Wrangler publishes it to `enframe.<your-subdomain>.workers.dev`. To put it on your own
-hostname, add a custom domain to the `enframe` Worker in the Cloudflare dashboard under
-Workers & Pages → enframe → Settings → Domains & Routes:
-
-```sh
-HOSTNAME=enframe.example.com
-```
-
-Cloudflare creates the DNS record for `$HOSTNAME` itself, as long as the zone is already
-on your account.
-
-## Database Schema
-
-- `photos`: imported images (local or from Lightroom)
-- `frames`: crop rectangles on photos (x, y, width, height in 0-1)
-- `focal_points`: important points that must stay visible (x, y in 0-1, with `required` flag)
-
-Each frame can have its own focal points. Focal points with `frame_id = NULL` apply to the default (full-image) frame.
+Bug reports, small fixes, tests, and documentation improvements are welcome.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks, and the branch and pull request flow.
+Start with [good first issues](https://github.com/mrgnw/enframe/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22),
+or discuss a larger change in an issue first. Planned work is in [ROADMAP.md](ROADMAP.md).
 
 ## License
 
-Enframe itself is MIT — see [LICENSE](LICENSE).
+Enframe's own code is licensed under [MIT](LICENSE). Dependencies retain their own licenses, including:
 
-The **web build** is the one exception worth knowing about. Browsers cannot decode camera
-RAW, so `bun run build:web` bundles [`libraw-wasm`](https://github.com/ybouane/LibRaw-Wasm)
-(ISC) which embeds [LibRaw](https://www.libraw.org/) compiled to WebAssembly. LibRaw is
-offered under either LGPL-2.1 or CDDL-1.0, and **enframe elects LGPL-2.1**. That election
-carries a relinking obligation: anyone who receives the web build must be able to swap in
-their own LibRaw. The build keeps that possible by emitting the decoder as standalone,
-replaceable artifacts rather than inlining it — `_app/immutable/workers/worker-*.js` and
-`_app/immutable/workers/assets/libraw-*.wasm` — which can be rebuilt from LibRaw source
-and dropped in place. LibRaw's source, and the script that compiles it, live in the
-upstream `libraw-wasm` repository.
+- [Tauri](https://github.com/tauri-apps/tauri): MIT or Apache-2.0, desktop shell.
+- [Svelte](https://github.com/sveltejs/svelte): MIT, interface.
+- [rawler](https://github.com/dnglab/dnglab/tree/main/rawler): LGPL-2.1, desktop and serve RAW decoding.
+- [YuNet face detection](src-tauri/faces/NOTICE): MIT model and vendored detector;
+  see the notice for upstream attribution and training-dataset terms.
+- [libraw-wasm](https://github.com/ybouane/LibRaw-Wasm): ISC wrapper for the web build's RAW decoder.
+  Its embedded [LibRaw](https://www.libraw.org/) is offered under LGPL-2.1 or CDDL-1.0;
+  Enframe elects LGPL-2.1.
 
-The desktop and `serve` builds are unaffected: they decode RAW through the Rust `rawler`
-crate and never link LibRaw.
+The web build emits replaceable decoder artifacts at `_app/immutable/workers/worker-*.js`
+and `_app/immutable/workers/assets/libraw-*.wasm`. LibRaw source and its build script are
+available upstream in libraw-wasm. Keep the decoder replaceable when distributing that build.
+The desktop and serve builds use rawler instead of LibRaw; its LGPL-2.1 terms still apply.
