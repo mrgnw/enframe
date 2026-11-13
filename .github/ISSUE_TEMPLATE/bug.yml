@@ -1,0 +1,51 @@
+name: Bug report
+description: Report a reproducible problem with framing, opening images, or exporting.
+title: 'Bug: '
+labels: [bug]
+body:
+  - type: dropdown
+    id: mode
+    attributes:
+      label: App mode
+      options:
+        - Desktop app
+        - Headless serve
+        - Browser framer
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and browser
+      description: Include the OS version and browser version when applicable.
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Source revision
+      description: Paste the commit hash you built, if known.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the image format, dimensions, and relevant crop or export settings.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots or logs
+      description: Optional. Remove personal paths, GPS, serial numbers, and names before sharing.

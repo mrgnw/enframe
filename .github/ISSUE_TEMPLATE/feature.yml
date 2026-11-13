@@ -1,0 +1,24 @@
+name: Feature request
+description: Suggest an improvement to Enframe's existing photo framing workflow.
+title: 'Feature: '
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What task is difficult today?
+      description: Describe your photo workflow and what gets in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: What result would help?
+      description: Describe the behavior you would like to see.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds
+      description: Optional. Explain what you have tried.
