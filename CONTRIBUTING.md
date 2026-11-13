@@ -25,8 +25,10 @@ For Rust library changes, build the frontend and stage the sidecar first:
 ```sh
 bun run sveltekit:build
 bun run sidecar
-cargo test --manifest-path src-tauri/Cargo.toml --lib
+cargo test --release --manifest-path src-tauri/Cargo.toml --lib
 ```
+
+Use release mode for the library suite: it includes a face-detection timing check.
 
 The Stabilize walkthroughs also require the external photo series linked at `samples/`.
 Those photos are not included in this public repository. See the
