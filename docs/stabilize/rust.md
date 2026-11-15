@@ -8,7 +8,7 @@ Machine: Mac mini, Apple M4 Pro (8 performance + 4 efficiency cores), 24 GB, mac
 
 **Port to Rust when pinframe moves into enframe; until then keep `anchor.py` as the CLI and the reference. Skip the PyO3 hybrid.**
 
-Superseded 2026-10-06 ([F1](../todos/done/1006-F1-python-reference.md)): the Rust CLI is now the only implementation, checked against the committed tracking baseline (`analysis/tracking_baseline.json`) instead of `anchor.py`, which has been deleted. The measurements below are historical.
+Superseded 2026-10-06 (F1): the Rust CLI is now the only implementation, checked against the committed tracking baseline (`analysis/tracking_baseline.json`) instead of `anchor.py`, which has been deleted. The measurements below are historical.
 
 ## Persistent feature cache and sidecar-only tracking
 
@@ -228,7 +228,7 @@ The Main 10 row was 0.0407 / 0.0416 s CPU before `unpack_l10r`; interleaved runs
 
 ImageIO makes AVIF roughly twice as fast here and consumes about one quarter of the CPU, plausibly using the media engine. This trial kept libavif for its bit-exactness with the Python reference; #33 later moved macOS to ImageIO anyway, to drop the C build (see "AVIF decode").
 
-A full-pipeline trial confirmed it. With AVIF routed through ImageIO, decoded pixels differ from libavif's by at most 2–3 levels (PSNR about 50 dB), yet the Girona rects moved by up to 1.60e-1 and the scale by 1.7e-1 at IMG_4689/4690, with 7 of 57 photos past 2e-2; the LOST set stayed the same. The whole run used about 3 CPU-seconds less but took longer: 2.37 / 2.45 s against 2.12 / 2.22 s (fastest / median, 9 interleaved rounds), so ImageIO does not scale across pinframe's decode threads the way its per-photo time suggests. The trial kept libavif/dav1d then; the #33 measurements are in "AVIF decode". That such small pixel differences move a fit so far also shows the tracker is sensitive at some photos; see `todos/`.
+A full-pipeline trial confirmed it. With AVIF routed through ImageIO, decoded pixels differ from libavif's by at most 2–3 levels (PSNR about 50 dB), yet the Girona rects moved by up to 1.60e-1 and the scale by 1.7e-1 at IMG_4689/4690, with 7 of 57 photos past 2e-2; the LOST set stayed the same. The whole run used about 3 CPU-seconds less but took longer: 2.37 / 2.45 s against 2.12 / 2.22 s (fastest / median, 9 interleaved rounds), so ImageIO does not scale across pinframe's decode threads the way its per-photo time suggests. The trial kept libavif/dav1d then; the #33 measurements are in "AVIF decode". That such small pixel differences move a fit so far also shows the tracker is sensitive at some photos.
 
 `jxl-oxide` is a portable pure-Rust alternative for JXL, but it would add a separate decoder and cannot use ImageIO's integration on this target. `djxl` is useful as an external reference, not an embeddable CLI dependency. `libheif` plus `libde265` would add LGPL components and a static-build/distribution obligation; it also gives up the system HEVC path. Linux and Windows builds need a feature-gated decoder (for example jxl-oxide for JXL and dynamically linked libheif, or platform-native APIs) instead of this macOS module. Off macOS, AVIF stays on libavif/dav1d.
 
@@ -252,7 +252,7 @@ In Playwright's Chromium, a Girona photo cropped to its clip frame and the clip 
 | JPEG, PNG | zune-jpeg, png | zune-jpeg, png |
 | feature cache | `~/Library/Caches/pinframe` | `$XDG_CACHE_HOME/pinframe`, default `~/.cache/pinframe` |
 
-What differs by platform, all behind `cfg(target_os = "macos")` so the macOS build is unchanged ([D1](../todos/done/1006-D1-linux-build.md)):
+What differs by platform, all behind `cfg(target_os = "macos")` so the macOS build is unchanged (D1):
 
 - `src-tauri/stabilize/src/imageio.rs` and the ImageIO, CoreGraphics and CoreFoundation frameworks are macOS-only; `avif.rs`, `avif_sys.rs` and `build.rs`'s libavif build exist only off macOS. Elsewhere `rust/src/imageio_unavailable.rs` stands in with the same signatures, and `decode::format` refuses HEIC and JPEG XL before any entry point reaches them, so `oriented_size`, `profile`, `exif`, `decoder_id`, `memory_cost` and `decode` all fail with the same message. Later, `jxl-oxide` could decode JPEG XL and libheif + libde265 HEIC on Linux.
 - Free memory comes from `MemAvailable` in `/proc/meminfo` instead of Mach's `host_statistics64`; the profiler's resident set from `/proc/self/statm`; run IDs from `getrandom(2)` instead of `arc4random_buf`.
