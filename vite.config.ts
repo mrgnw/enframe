@@ -9,10 +9,6 @@ export default defineConfig({
 		port: 5910,
 		allowedHosts: true
 	},
-	experimental: {
-		enableNativePlugin: true
-	},
-	esbuild: false,
 	// Vitest runs test files through this same pipeline, so the svelte plugin compiles
 	// `.svelte.ts` modules and runes work in tests against the real code.
 	test: {
