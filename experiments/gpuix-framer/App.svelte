@@ -5,7 +5,6 @@ import { crop, fit, toFocal, type Rect } from './geometry.ts';
 
 let { photo, photoWidth, photoHeight }: { photo: string; photoWidth: number; photoHeight: number } = $props();
 
-const MARKER = 20;
 const PREVIEW = 180;
 const CROP_SIDE = $derived(photoHeight / 2);
 
@@ -53,21 +52,12 @@ function release() {
 
 <div class="app">
 	<div class="stage" testId="stage" {onlayout} onmousedown={grab} onmousemove={move} onmouseup={release}>
-		<img
-			class="photo"
-			testId="photo"
-			src={photo}
-			style="left: {shown.x - stage.x}px; top: {shown.y - stage.y}px; width: {shown.width}px; height: {shown.height}px;"
-		/>
-		<div
-			class="marker"
-			class:dragging
-			testId="marker"
-			style="left: {shown.x - stage.x + focal.x * shown.width - MARKER / 2}px; top: {shown.y -
-				stage.y +
-				focal.y * shown.height -
-				MARKER / 2}px;"
-		></div>
+		<div class="photo-frame" style="aspect-ratio: {photoWidth / photoHeight};">
+			<img class="photo stage-photo" testId="photo" src={photo} />
+			<div class="marker-anchor" style="width: {focal.x * 100}%; height: {focal.y * 100}%;">
+				<div class="marker" class:dragging testId="marker"></div>
+			</div>
+		</div>
 	</div>
 	<div class="side">
 		<text class="label">Crop preview 1:1</text>
@@ -95,6 +85,9 @@ function release() {
 		background-color: #111111;
 	}
 	.stage {
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		position: relative;
 		flex-grow: 1;
 		height: 100%;
@@ -105,8 +98,26 @@ function release() {
 		position: absolute;
 		pointer-events: none;
 	}
+	.photo-frame {
+		position: relative;
+		width: 100%;
+		max-height: 100%;
+		pointer-events: none;
+	}
+	.stage-photo {
+		left: 0;
+		top: 0;
+		width: 100%;
+		height: 100%;
+	}
+	.marker-anchor {
+		position: relative;
+		pointer-events: none;
+	}
 	.marker {
 		position: absolute;
+		right: -10px;
+		bottom: -10px;
 		width: 20px;
 		height: 20px;
 		border-radius: 10px;
