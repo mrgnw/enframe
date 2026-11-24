@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
 import { launch } from 'gpuix-svelte/automation';
+import { crop } from './geometry.ts';
+import { readPng, region } from './png.ts';
 
 const HERE = new URL('.', import.meta.url).pathname;
 const OUT = `${HERE}evidence/`;
@@ -9,10 +11,17 @@ mkdirSync(OUT, { recursive: true });
 const app = await launch({ entry: 'app.ts', cwd: HERE });
 const text = (id: string) => app.getByTestId(id).textContent();
 const focal = async () => (await text('readout')).replace('focal ', '').split(', ').map(Number);
+const cropAt = async () => (await text('crop')).replace('crop ', '').split(', ').map(Number);
+const stageSize = async () => (await text('size')).replace('stage ', '').split('×').map(Number);
 const near = (actual: number[], expected: number[], label: string) =>
 	assert.ok(
 		actual.every((v, i) => Math.abs(v - expected[i]) <= 0.005),
 		`${label}: ${actual}`
+	);
+const within = (actual: number[], expected: number[], tolerance: number, label: string) =>
+	assert.ok(
+		actual.every((v, i) => Math.abs(v - expected[i]) <= tolerance),
+		`${label}: ${actual} vs ${expected}`
 	);
 const settle = () => new Promise((resolve) => setTimeout(resolve, 300));
 const PACE_MS = Number(process.env.PACE_MS ?? 0);
@@ -25,46 +34,101 @@ try {
 	console.log('photo bounds', photo, await text('size'));
 	await app.screenshot({ path: `${OUT}01-initial.png` });
 
+	const SIDE_PANEL = 220;
+	const [stageWidth] = await stageSize();
+	const first = readPng(`${OUT}01-initial.png`);
+	const scale = first.width / (stageWidth + SIDE_PANEL);
+	assert.ok(scale >= 1, `screenshot scale ${scale}`);
+	let previewBox = await app.getByTestId('preview').bounds();
+	const previewPixels = async (name: string) => {
+		await app.screenshot({ path: `${OUT}${name}.png` });
+		return region(readPng(`${OUT}${name}.png`), previewBox, scale);
+	};
+	const initialPreview = region(first, previewBox, scale);
+
 	const at = (fx: number, fy: number) => ({ x: photo.x + fx * photo.width, y: photo.y + fy * photo.height });
+	const expectCrop = async (expected: number[], label: string) => {
+		const { x, y } = crop({ x: expected[0], y: expected[1] }, 1200, 800, 400);
+		within(await cropAt(), [x, y], 1, `${label} crop`);
+	};
 	await app.mouse.down(at(0.5, 0.5));
 	const timings: number[] = [];
 	const crops = new Set<string>();
+	let previous = initialPreview;
 	for (let i = 1; i <= 40; i++) {
 		const started = performance.now();
 		await app.mouse.move(at(0.5 + i * 0.01, 0.5 - i * 0.01), { pressedButton: 0 });
 		timings.push(performance.now() - started);
 		crops.add(await text('crop'));
+		if (i % 10 === 0) {
+			const expected = [0.5 + i * 0.01, 0.5 - i * 0.01];
+			near(await focal(), expected, `tracks pointer at step ${i}`);
+			await expectCrop(expected, `step ${i}`);
+			const pixels = await previewPixels(`02-dragging-step-${i}`);
+			assert.ok(!pixels.equals(previous), `preview pixels change at step ${i}`);
+			previous = pixels;
+		}
 		await pace();
 	}
-	near(await focal(), [0.9, 0.1], 'tracks while dragging');
 	assert.match(await text('state'), /dragging/);
-	await app.screenshot({ path: `${OUT}02-dragging-top-right.png` });
 
-	await app.mouse.move({ x: photo.x + photo.width + 300, y: photo.y - 300 }, { pressedButton: 0 });
+	const rightEdge = photo.x + photo.width;
+	await app.mouse.move({ x: rightEdge + 300, y: photo.y + photo.height / 2 }, { pressedButton: 0 });
+	near(await focal(), [1, 0.5], 'clamps x beyond right edge, y follows');
+	await expectCrop([1, 0.5], 'right edge');
+	const pastRight = await previewPixels('03-clamped-right');
+	assert.ok(!pastRight.equals(previous), 'preview changes when pointer returns from top-right to right edge');
+	await app.mouse.move({ x: rightEdge + 600, y: photo.y + photo.height / 2 }, { pressedButton: 0 });
+	near(await focal(), [1, 0.5], 'stays clamped further beyond right edge');
+	assert.ok((await previewPixels('03-clamped-right-further')).equals(pastRight), 'clamped preview is stable');
+
+	await app.mouse.move({ x: rightEdge + 300, y: photo.y - 300 }, { pressedButton: 0 });
 	near(await focal(), [1, 0], 'clamps beyond top-right');
 	await app.mouse.move({ x: photo.x - 300, y: photo.y + photo.height + 300 }, { pressedButton: 0 });
 	near(await focal(), [0, 1], 'clamps beyond bottom-left');
+	await expectCrop([0, 1], 'bottom-left');
 	await app.screenshot({ path: `${OUT}03-clamped-bottom-left.png` });
 
 	await app.mouse.move(at(0.25, 0.75), { pressedButton: 0 });
-	await app.mouse.up(at(0.25, 0.75));
-	assert.match(await text('state'), /idle/);
+	near(await focal(), [0.25, 0.75], 'returns inside the photo');
+	await app.mouse.up({ x: photo.x + photo.width / 2, y: photo.y - 20 });
+	const released = await text('state');
+	assert.match(released, /idle/);
+	const releasedPreview = await previewPixels('04-released');
 	await app.mouse.move(at(0.8, 0.2));
-	near(await focal(), [0.25, 0.75], 'release stops tracking');
+	near(await focal(), [0.25, 0.75], 'release outside the photo stops tracking');
+	assert.equal(await text('state'), released, 'no moves counted after release');
+	assert.ok((await previewPixels('04-after-move-no-button')).equals(releasedPreview), 'preview unchanged after release');
 
+	const sizeBefore = await stageSize();
 	await app.call('keystrokes', { keys: 'z' });
 	await settle();
 	await settle();
+	const sizeAfter = await stageSize();
+	assert.ok(
+		sizeAfter[0] !== sizeBefore[0] || sizeAfter[1] !== sizeBefore[1],
+		`stage size changed: ${sizeBefore} -> ${sizeAfter}`
+	);
 	const resized = await app.getByTestId('photo').bounds();
+	assert.ok(
+		resized.width !== photo.width || resized.height !== photo.height,
+		`photo size changed: ${photo.width}×${photo.height} -> ${resized.width}×${resized.height}`
+	);
 	const marker = await app.getByTestId('marker').bounds();
 	const centre = [
 		(marker.x + marker.width / 2 - resized.x) / resized.width,
 		(marker.y + marker.height / 2 - resized.y) / resized.height
 	];
 	console.log('after zoom', resized, await text('size'), 'marker at', centre);
-	assert.notDeepEqual(resized, photo, 'window resized');
 	near(centre, [0.25, 0.75], 'marker anchored after resize');
-	await app.screenshot({ path: `${OUT}04-after-resize.png` });
+	previewBox = await app.getByTestId('preview').bounds();
+	await app.screenshot({ path: `${OUT}05-after-resize.png` });
+	const afterResize = readPng(`${OUT}05-after-resize.png`);
+	assert.notEqual(afterResize.width, first.width, 'screenshot width follows the window');
+	assert.ok(
+		region(afterResize, previewBox, afterResize.width / (sizeAfter[0] + SIDE_PANEL)).equals(releasedPreview),
+		'preview pixels survive resize'
+	);
 
 	timings.sort((a, b) => a - b);
 	console.log(
