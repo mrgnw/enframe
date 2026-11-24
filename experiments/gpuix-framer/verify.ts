@@ -47,9 +47,9 @@ try {
 
 	const at = (fx: number, fy: number) => ({ x: photo.x + fx * photo.width, y: photo.y + fy * photo.height });
 	const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
-	const expectAt = async (pointer: { x: number; y: number }, label: string) => {
-		const fx = clamp01((pointer.x - photo.x) / photo.width);
-		const fy = clamp01((pointer.y - photo.y) / photo.height);
+	const expectAt = async (pointer: { x: number; y: number }, label: string, bounds = photo) => {
+		const fx = clamp01((pointer.x - bounds.x) / bounds.width);
+		const fy = clamp01((pointer.y - bounds.y) / bounds.height);
 		near(await focal(), [fx, fy], `${label} focal`);
 		const cropX = Math.min(800, Math.max(0, fx * 1200 - 200));
 		const cropY = Math.min(400, Math.max(0, fy * 800 - 200));
@@ -151,6 +151,14 @@ try {
 		region(afterResize, previewBox, afterResize.width / (sizeAfter[0] + SIDE_PANEL)).equals(releasedPreview),
 		'preview pixels survive resize'
 	);
+
+	const resizedCentre = { x: resized.x + resized.width / 2, y: resized.y + resized.height / 2 };
+	await app.mouse.down(resizedCentre);
+	await expectAt(resizedCentre, 'grab after resize', resized);
+	const resizedDrag = { x: resized.x + resized.width * 0.6, y: resized.y + resized.height * 0.4 };
+	await app.mouse.move(resizedDrag, { pressedButton: 0 });
+	await expectAt(resizedDrag, 'drag after resize', resized);
+	await app.mouse.up(resizedDrag);
 
 	timings.sort((a, b) => a - b);
 	console.log(

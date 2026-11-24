@@ -34,9 +34,9 @@ The native check simulates pointer input in a visible window. Keep the host poin
 npm run check:native
 ```
 
-The checks write local screenshots to `evidence/`. The native check uses window zoom to exercise resize and reads crop coordinates from the app. It asserts that the stage and photo size change after the resize, samples the focal point and crop every 10 drag steps against the pointer, covers clamping past the right, top-right and bottom-left edges, releases outside the photo, and compares the preview pixels in screenshots (they change while dragging and stay identical when clamped, after release and after resize).
+The checks write local screenshots to `evidence/`. The native check uses window zoom to verify that the stage and photo resize, the marker stays anchored, and dragging still maps to the resized photo. It samples the focal point and crop every 10 drag steps against the pointer, covers clamping past the right, top-right and bottom-left edges, and releases outside the photo. Screenshot comparisons verify that the preview changes while dragging and stays identical when clamped, after release, and after resize.
 
-Not automated: physical mouse or trackpad drag feel, resizing with the window edge, and releasing with a real device outside the photo or window. Synthetic input bypasses the host pointer, so those need a hand run.
+Native layout keeps the photo and marker aligned while the window edge is dragged. JavaScript readouts catch up on mouseup. The automated checks cover zoom. Live edge dragging, physical pointer feel, and release outside the photo or window with a real device are manual checks.
 
 ## Synthetic image
 

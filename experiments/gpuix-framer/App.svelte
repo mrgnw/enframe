@@ -1,7 +1,7 @@
 <script lang="ts">
 import { onMount } from 'svelte';
-import { on_window_key, zoom_window, type GpuixEvent } from 'gpuix-svelte';
-import { crop, fit, toFocal, type Rect } from './geometry.ts';
+import { on_window_key, read_native, zoom_window, type GpuixEvent } from 'gpuix-svelte';
+import { crop, toFocal, type Rect } from './geometry.ts';
 
 let { photo, photoWidth, photoHeight }: { photo: string; photoWidth: number; photoHeight: number } = $props();
 
@@ -13,7 +13,8 @@ let focal = $state({ x: 0.5, y: 0.5 });
 let dragging = $state(false);
 let moves = $state(0);
 
-const shown = $derived(fit(stage, photoWidth, photoHeight));
+let frameId: number | undefined;
+let shown: Rect = { x: 0, y: 0, width: 0, height: 0 };
 const cropped = $derived(crop(focal, photoWidth, photoHeight, CROP_SIDE));
 const previewScale = $derived(PREVIEW / CROP_SIDE);
 
@@ -27,8 +28,15 @@ function onlayout(e: GpuixEvent) {
 	stage = { x: e.x!, y: e.y!, width: e.width!, height: e.height! };
 }
 
+function onPhotoLayout(e: GpuixEvent) {
+	frameId = e.elementId;
+	shown = { x: e.x!, y: e.y!, width: e.width!, height: e.height! };
+}
+
 function grab(e: GpuixEvent) {
 	if (e.button !== 0) return;
+	const id = frameId;
+	if (id !== undefined) shown = read_native((native) => native.getElementBounds(id)) ?? shown;
 	dragging = true;
 	focal = toFocal(shown, e.x!, e.y!);
 }
@@ -52,7 +60,7 @@ function release() {
 
 <div class="app">
 	<div class="stage" testId="stage" {onlayout} onmousedown={grab} onmousemove={move} onmouseup={release}>
-		<div class="photo-frame" style="aspect-ratio: {photoWidth / photoHeight};">
+		<div class="photo-frame" style="aspect-ratio: {photoWidth / photoHeight};" onlayout={onPhotoLayout}>
 			<img class="photo stage-photo" testId="photo" src={photo} />
 			<div class="marker-anchor" style="width: {focal.x * 100}%; height: {focal.y * 100}%;">
 				<div class="marker" class:dragging testId="marker"></div>
