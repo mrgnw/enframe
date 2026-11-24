@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
 import { launch } from 'gpuix-svelte/automation';
-import { crop } from './geometry.ts';
 import { readPng, region } from './png.ts';
 
 const HERE = new URL('.', import.meta.url).pathname;
@@ -47,9 +46,20 @@ try {
 	const initialPreview = region(first, previewBox, scale);
 
 	const at = (fx: number, fy: number) => ({ x: photo.x + fx * photo.width, y: photo.y + fy * photo.height });
-	const expectCrop = async (expected: number[], label: string) => {
-		const { x, y } = crop({ x: expected[0], y: expected[1] }, 1200, 800, 400);
-		within(await cropAt(), [x, y], 1, `${label} crop`);
+	const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+	const expectAt = async (pointer: { x: number; y: number }, label: string) => {
+		const fx = clamp01((pointer.x - photo.x) / photo.width);
+		const fy = clamp01((pointer.y - photo.y) / photo.height);
+		near(await focal(), [fx, fy], `${label} focal`);
+		const cropX = Math.min(800, Math.max(0, fx * 1200 - 200));
+		const cropY = Math.min(400, Math.max(0, fy * 800 - 200));
+		within(await cropAt(), [cropX, cropY], 1, `${label} crop`);
+	};
+	const until = async (condition: () => Promise<boolean>, label: string) => {
+		for (const deadline = Date.now() + 5000; Date.now() < deadline; await settle()) {
+			if (await condition()) return;
+		}
+		assert.fail(`timed out waiting for ${label}`);
 	};
 	await app.mouse.down(at(0.5, 0.5));
 	const timings: number[] = [];
@@ -57,13 +67,12 @@ try {
 	let previous = initialPreview;
 	for (let i = 1; i <= 40; i++) {
 		const started = performance.now();
-		await app.mouse.move(at(0.5 + i * 0.01, 0.5 - i * 0.01), { pressedButton: 0 });
+		const pointer = at(0.5 + i * 0.01, 0.5 - i * 0.01);
+		await app.mouse.move(pointer, { pressedButton: 0 });
 		timings.push(performance.now() - started);
 		crops.add(await text('crop'));
 		if (i % 10 === 0) {
-			const expected = [0.5 + i * 0.01, 0.5 - i * 0.01];
-			near(await focal(), expected, `tracks pointer at step ${i}`);
-			await expectCrop(expected, `step ${i}`);
+			await expectAt(pointer, `step ${i}`);
 			const pixels = await previewPixels(`02-dragging-step-${i}`);
 			assert.ok(!pixels.equals(previous), `preview pixels change at step ${i}`);
 			previous = pixels;
@@ -73,37 +82,47 @@ try {
 	assert.match(await text('state'), /dragging/);
 
 	const rightEdge = photo.x + photo.width;
-	await app.mouse.move({ x: rightEdge + 300, y: photo.y + photo.height / 2 }, { pressedButton: 0 });
-	near(await focal(), [1, 0.5], 'clamps x beyond right edge, y follows');
-	await expectCrop([1, 0.5], 'right edge');
+	const rightPointer = { x: rightEdge + 300, y: photo.y + photo.height / 2 };
+	await app.mouse.move(rightPointer, { pressedButton: 0 });
+	await expectAt(rightPointer, 'beyond right edge');
 	const pastRight = await previewPixels('03-clamped-right');
 	assert.ok(!pastRight.equals(previous), 'preview changes when pointer returns from top-right to right edge');
-	await app.mouse.move({ x: rightEdge + 600, y: photo.y + photo.height / 2 }, { pressedButton: 0 });
-	near(await focal(), [1, 0.5], 'stays clamped further beyond right edge');
+	const furtherPointer = { x: rightEdge + 600, y: photo.y + photo.height / 2 };
+	await app.mouse.move(furtherPointer, { pressedButton: 0 });
+	await expectAt(furtherPointer, 'further beyond right edge');
 	assert.ok((await previewPixels('03-clamped-right-further')).equals(pastRight), 'clamped preview is stable');
 
-	await app.mouse.move({ x: rightEdge + 300, y: photo.y - 300 }, { pressedButton: 0 });
-	near(await focal(), [1, 0], 'clamps beyond top-right');
-	await app.mouse.move({ x: photo.x - 300, y: photo.y + photo.height + 300 }, { pressedButton: 0 });
-	near(await focal(), [0, 1], 'clamps beyond bottom-left');
-	await expectCrop([0, 1], 'bottom-left');
+	const topRight = { x: rightEdge + 300, y: photo.y - 300 };
+	await app.mouse.move(topRight, { pressedButton: 0 });
+	await expectAt(topRight, 'beyond top-right');
+	const bottomLeft = { x: photo.x - 300, y: photo.y + photo.height + 300 };
+	await app.mouse.move(bottomLeft, { pressedButton: 0 });
+	await expectAt(bottomLeft, 'beyond bottom-left');
 	await app.screenshot({ path: `${OUT}03-clamped-bottom-left.png` });
 
 	await app.mouse.move(at(0.25, 0.75), { pressedButton: 0 });
-	near(await focal(), [0.25, 0.75], 'returns inside the photo');
+	await expectAt(at(0.25, 0.75), 'returns inside the photo');
 	await app.mouse.up({ x: photo.x + photo.width / 2, y: photo.y - 20 });
 	const released = await text('state');
 	assert.match(released, /idle/);
 	const releasedPreview = await previewPixels('04-released');
+	const releasedMarker = await app.getByTestId('marker').bounds();
 	await app.mouse.move(at(0.8, 0.2));
 	near(await focal(), [0.25, 0.75], 'release outside the photo stops tracking');
 	assert.equal(await text('state'), released, 'no moves counted after release');
+	assert.deepEqual(await app.getByTestId('marker').bounds(), releasedMarker, 'marker stays put after release');
 	assert.ok((await previewPixels('04-after-move-no-button')).equals(releasedPreview), 'preview unchanged after release');
 
 	const sizeBefore = await stageSize();
 	await app.call('keystrokes', { keys: 'z' });
-	await settle();
-	await settle();
+	await until(async () => {
+		const [w, h] = await stageSize();
+		return w !== sizeBefore[0] || h !== sizeBefore[1];
+	}, 'stage size change');
+	await until(async () => {
+		const b = await app.getByTestId('photo').bounds();
+		return b.width !== photo.width || b.height !== photo.height;
+	}, 'photo size change');
 	const sizeAfter = await stageSize();
 	assert.ok(
 		sizeAfter[0] !== sizeBefore[0] || sizeAfter[1] !== sizeBefore[1],
@@ -124,7 +143,10 @@ try {
 	previewBox = await app.getByTestId('preview').bounds();
 	await app.screenshot({ path: `${OUT}05-after-resize.png` });
 	const afterResize = readPng(`${OUT}05-after-resize.png`);
-	assert.notEqual(afterResize.width, first.width, 'screenshot width follows the window');
+	assert.ok(
+		afterResize.width !== first.width || afterResize.height !== first.height,
+		'screenshot size follows the window'
+	);
 	assert.ok(
 		region(afterResize, previewBox, afterResize.width / (sizeAfter[0] + SIDE_PANEL)).equals(releasedPreview),
 		'preview pixels survive resize'
