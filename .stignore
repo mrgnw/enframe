@@ -1,13 +1,14 @@
+// secrets — backstop; per-project opt-in is the real boundary
+!**/.env.example
+!**/.env.sample
 !**/*credentials*.rs
 !**/*credentials*.ts
 !**/*credentials*.py
 !**/*credentials*.js
 !**/*credentials*.svelte
-// secrets — backstop; per-project opt-in is the real boundary
-!**/.env.example
-!**/.env.sample
 (?d)**/.env
 (?d)**/.env.*
+(?d)**/.npmrc
 (?d)**/*.pem
 (?d)**/*.key
 (?d)**/*.p12
@@ -32,13 +33,26 @@
 (?d)**/.turbo
 (?d)**/.cache
 (?d)**/.pytest_cache
+(?d)**/.ruff_cache
+(?d)**/.mypy_cache
+(?d)**/test-results
+(?d)**/playwright-report
 (?d)**/*.bin
 (?d)**/*.pt
-(?d)**/*.db-shm
-(?d)**/*.db-wal
-(?d)**/*.db-journal
-(?d)**/*.sqlite-shm
-(?d)**/*.sqlite-wal
+// bloat
 (?d)**/.claude/worktrees
 (?d)**/*.gguf
+// live sqlite — the writer host owns it; no (?d), a remote dir delete must never take a live db
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.db-journal
+**/*.sqlite
+**/*.sqlite-shm
+**/*.sqlite-wal
+**/*.sqlite-journal
+**/*.sqlite3
+**/*.sqlite3-shm
+**/*.sqlite3-wal
+**/*.sqlite3-journal
 (?d)/scripts/lr_backup
